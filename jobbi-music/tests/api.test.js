@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 
 let navServer, downloadServer, appProcess, base, cookie, csrfToken;
 const received={};
+const nativeUsers=[{id:'admin-id',userName:'testadmin',name:'Admin',isAdmin:true},{id:'listener-id',userName:'listener',name:'Listener',isAdmin:false}];
 const json=(res,body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
 const ok=(extra={})=>({'subsonic-response':{status:'ok',version:'1.16.1',...extra}});
 
@@ -17,6 +18,20 @@ const get=url=>fetch(base+url,{headers:{cookie}});
 before(async()=>{
   navServer=createServer((req,res)=>{
     const u=new URL(req.url,'http://localhost');
+    if(u.pathname==='/auth/login'){
+      let body='';for await(const data of req)body+=data;
+      assert.equal(JSON.parse(body).username,'testadmin');
+      return json(res,{token:'a'.repeat(64)});
+    }
+    if(u.pathname==='/api/user'){
+      if(req.method==='GET')return json(res,{data:nativeUsers});
+      if(req.method==='POST'){
+        let body='';for await(const data of req)body+=data;
+        received.nativeCreate=JSON.parse(body);
+        return json(res,{id:'new-listener'},201);
+      }
+    }
+    if(u.pathname==='/api/user/listener-id'&&req.method==='DELETE'){received.nativeDeleted=true;return json(res,{ok:true});}
     const name=u.pathname.split('/').at(-1).replace('.view','');
     received.lastSubsonic={name,params:Object.fromEntries(u.searchParams)};
     if(name==='getUser')return json(res,ok({user:{username:u.searchParams.get('username'),adminRole:u.searchParams.get('username')==='testadmin'}}));
@@ -48,7 +63,7 @@ before(async()=>{
   appProcess=spawn(process.execPath,['server/index.js'],{
     cwd:process.cwd(),stdio:['ignore','pipe','pipe'],
     env:{...process.env,PORT:String(appPort),PUBLIC_HTTPS:'false',NAVIDROME_URL:'http://127.0.0.1:'+navPort,
-      DOWNLOADER_URL:'http://127.0.0.1:'+dlPort,ADMIN_USERS:'testadmin'}
+      DOWNLOADER_URL:'http://127.0.0.1:'+dlPort,ADMIN_USERS:'testadmin',ENABLE_ACCOUNT_MANAGEMENT:'true'}
   });
   let error='';appProcess.stderr.on('data',d=>error+=d.toString());
   let ready=false;
@@ -105,6 +120,30 @@ test('complete album and artist library APIs',async()=>{
   const list=await artists.json();
   assert.equal(list.count,1);
   assert.equal(list.artists[0].name,'Artist');
+});
+test('admin console shows user roles and restricted storage state',async()=>{
+  const r=await get('/api/admin/overview');
+  assert.equal(r.status,200);
+  const data=await r.json();
+  assert.equal(data.usersCount,2);
+  assert.equal(data.accountManagementEnabled,true);
+  assert.ok(['ready','unavailable'].includes(data.storage.status));
+  const accounts=await get('/api/admin/accounts');
+  assert.equal(accounts.status,200);
+  assert.equal((await accounts.json()).users.length,2);
+});
+test('admin creates a regular account and cannot create elevated roles',async()=>{
+  const bad=await post('/api/admin/accounts',{username:'ab',password:'short'});
+  assert.equal(bad.status,400);
+  const created=await post('/api/admin/accounts',{username:'another-listener',password:'a-good-test-password-99',isAdmin:true});
+  assert.equal(created.status,201);
+  assert.equal(received.nativeCreate.isAdmin,false);
+  assert.equal(received.nativeCreate.userName,'another-listener');
+  const deleteAdmin=await fetch(base+'/api/admin/accounts/admin-id?confirm=delete',{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
+  assert.equal(deleteAdmin.status,403);
+  const deleteListener=await fetch(base+'/api/admin/accounts/listener-id?confirm=delete',{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
+  assert.equal(deleteListener.status,200);
+  assert.equal(received.nativeDeleted,true);
 });
 test('playlist create, edit and delete',async()=>{
   const made=await post('/api/playlists',{name:'Road trip'});
