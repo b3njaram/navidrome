@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "check": "node --check server/index.js"
+    "check": "node --check server/index.js",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
