@@ -5,11 +5,14 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { searchSlskd, slskdConnection } from './slskd.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3131);
 const NAVIDROME = (process.env.NAVIDROME_URL || 'http://127.0.0.1:4533').replace(/\/$/, '');
 const DOWNLOADER = (process.env.DOWNLOADER_URL || '').replace(/\/$/, '');
+const SLSKD = (process.env.SLSKD_URL || '').replace(/\/$/, '');
+const SLSKD_KEY = process.env.SLSKD_API_KEY || '';
 const SECURE_COOKIE = process.env.PUBLIC_HTTPS === 'true';
 const ADMIN_USERS = new Set((process.env.ADMIN_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
 const sessions = new Map();
@@ -63,7 +66,7 @@ app.post('/api/login', route(async(req,res)=> {
 }));
 app.post('/api/logout', (req,res)=> {const token=cookies(req)[cookieName]; if(token)sessions.delete(token);res.clearCookie(cookieName,{path:'/',secure:SECURE_COOKIE,sameSite:'strict'});res.json({ok:true});});
 app.get('/api/session', (req,res)=>{const user=sess(req);res.json(user?{username:user.username,admin:user.admin}:null);});
-app.get('/api/status',(req,res)=>res.json({ok:true, service:'Jobbi Music', downloaderConfigured: Boolean(DOWNLOADER)}));
+app.get('/api/status',(req,res)=>res.json({ok:true, service:'Jobbi Music', downloaderConfigured: Boolean(DOWNLOADER), slskdSearchConfigured:Boolean(SLSKD&&SLSKD_KEY)}));
 
 app.get('/api/home',mustAuth,route(async(req,res)=>{
   const endpoints=[['recent','getAlbumList2',{type:'newest',size:16}],['featured','getAlbumList2',{type:'random',size:12}],['played','getAlbumList2',{type:'frequent',size:12}],['songs','getRandomSongs',{size:30}],['playlists','getPlaylists',{}]];
@@ -116,15 +119,47 @@ app.get('/api/soulseek/health',mustAuth,mustAdmin,route(async(req,res)=>{
   const r=await fetch(`${DOWNLOADER}/api/health`,{signal:AbortSignal.timeout(6000)});
   res.status(r.status).json(await r.json());
 }));
-app.post('/api/soulseek/search',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
-  if(!DOWNLOADER)return res.status(503).json({error:'Downloader is not configured'});
-  const query=String(req.body?.query||'').trim().slice(0,150);
-  if(!query)return res.status(400).json({error:'Enter a search query'});
-  const r=await fetch(`${DOWNLOADER}/api/search`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query}),signal:AbortSignal.timeout(20000)});
-  const content=await r.text();let data;try{data=JSON.parse(content)}catch{data={error:'Downloader did not return JSON'}};
-  res.status(r.status).json(data);
+app.get('/api/soulseek/status',mustAuth,mustAdmin,route(async(req,res)=>{
+  if(SLSKD&&SLSKD_KEY){
+    try {
+      const connection=await slskdConnection({url:SLSKD,key:SLSKD_KEY});
+      return res.json({mode:'slskd',configured:true,...connection});
+    } catch(err) {
+      return res.json({mode:'slskd',configured:true,serverConnected:false,
+        message:err.message||'Unable to reach slskd'});
+    }
+  }
+  return res.json({mode:'legacy',configured:Boolean(DOWNLOADER),serverConnected:null,
+    message:DOWNLOADER?'Using custom downloader search. Direct slskd search is not configured; empty results may not reflect the full peer network.':'Configure slskd access to search the Soulseek network.'});
 }));
-
+app.post('/api/soulseek/search',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+  const query=String(req.body?.query||'').trim().slice(0,150);
+  if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
+  if(SLSKD&&SLSKD_KEY){
+    try{
+      const result=await searchSlskd({url:SLSKD,key:SLSKD_KEY,query});
+      return res.json(result);
+    }catch(err){
+      console.warn('slskd search failed:',err?.message);
+      return res.status(502).json({error:'Soulseek search failed: '+String(err?.message||'Unknown error').slice(0,200)});
+    }
+  }
+  if(!DOWNLOADER)return res.status(503).json({error:'Soulseek is not configured. Set SLSKD_URL and SLSKD_API_KEY on your NAS.'});
+  // Compatibility mode for the existing custom Python downloader.
+  const upstream=await fetch(`${DOWNLOADER}/api/search`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query}),signal:AbortSignal.timeout(25000)
+  });
+  if(!upstream.ok)return res.status(502).json({error:'Custom downloader search returned HTTP '+upstream.status});
+  const raw=await upstream.text();
+  if(raw.length>1_000_000)return res.status(502).json({error:'Downloader response was too large'});
+  let parsed;
+  try{parsed=JSON.parse(raw)}catch{return res.status(502).json({error:'Custom downloader did not return JSON'})}
+  const empty=Array.isArray(parsed)?parsed.length===0:
+    !parsed||Array.isArray(parsed.results)&&parsed.results.length===0;
+  res.json({source:'legacy',results:Array.isArray(parsed)?parsed:parsed?.results||parsed,
+    message:empty?'Your custom downloader returned no results. For full Soulseek results, configure direct slskd search in the NAS environment.':''});
+}));
 
 /** Playlist actions use Navidrome's supported Subsonic endpoints.
  * Navidrome checks playlist ownership for updates and deletions.
