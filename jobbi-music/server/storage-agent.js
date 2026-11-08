@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 export async function scanTree(root,{maxEntries=2000000}={}){
   const folders=[root];
-  let musicBytes=0,files=0,foldersVisited=0,skipped=0;
+  const AUDIO_EXTENSIONS=new Set(['.mp3','.flac','.m4a','.aac','.ogg','.opus','.wav','.aif','.aiff','.alac','.wma']);
+  let musicBytes=0,libraryBytes=0,files=0,allFiles=0,foldersVisited=0,skipped=0;
   while(folders.length){
     const dir=folders.pop();
     let items;
@@ -18,13 +19,17 @@ export async function scanTree(root,{maxEntries=2000000}={}){
       try{
         const stat=await fs.lstat(filepath,{bigint:true});
         if(!stat.isFile())continue;
-        musicBytes+=Number(stat.size);
-        files++;
+        libraryBytes+=Number(stat.size);
+        allFiles++;
+        if(AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase())){
+          musicBytes+=Number(stat.size);
+          files++;
+        }
       }catch{skipped++;}
-      if(files+foldersVisited>=maxEntries)throw new Error('Music library exceeds the configured scan limit');
+      if(allFiles+foldersVisited>=maxEntries)throw new Error('Music library exceeds the configured scan limit');
     }
   }
-  return {musicBytes,files,folders:foldersVisited,skipped};
+  return {musicBytes,libraryBytes,files,allFiles,folders:foldersVisited,skipped};
 }
 export async function snapshot(musicDir='/music'){
   const mount=await fs.statfs(musicDir,{bigint:true});
