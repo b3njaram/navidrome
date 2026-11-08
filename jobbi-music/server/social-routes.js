@@ -245,7 +245,7 @@ export function createSocialRouter({mustAuth,subsonic}){
   r.get('/playlists/:id',respond(async(req,res)=>{
     const p=await loadPlaylist(req.params.id,req.socialName);
     const [tracks,members]=await Promise.all([
-      socialQuery(`SELECT id::text,track_id AS id,track_id,title,artist,album,cover_art AS "coverArt",duration,added_by,added_at
+      socialQuery(`SELECT id::text AS id,track_id,title,artist,album,cover_art AS "coverArt",duration,added_by,added_at
         FROM social_tracks WHERE playlist_id=$1 ORDER BY id LIMIT 1000`,[p.id]),
       socialQuery(`SELECT username,can_edit,joined_at FROM social_members WHERE playlist_id=$1 ORDER BY joined_at`,[p.id])
     ]);
