@@ -75,3 +75,7 @@
 .social-privacy>span{display:flex;align-items:center;gap:9px}
 @media(max-width:1100px){.social-columns{grid-template-columns:1fr}}
 @media(max-width:700px){.social-page{padding-bottom:40px}.social-intro{align-items:flex-start;flex-direction:column}.social-intro h1{font-size:32px;letter-spacing:-1px}.social-intro .social-me{width:100%}.social-tabs{margin:0 -8px 23px}.social-tabs button{padding:10px 12px;font-size:11px}.social-card{padding:17px}.social-playlist-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.social-inline{flex-wrap:wrap}.social-detailhero{align-items:flex-start;flex-wrap:wrap;padding:17px}.social-detailhero .social-playlist-icon{width:75px}.social-detailhero>button{width:100%}.social-person{gap:7px}.social-person .social-outline,.social-person .social-primary{padding:8px}.social-avatar-upload{max-width:100%}}
+
+.social-link-actions{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 18px}
+.header-profile-photo{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}
+@media(max-width:720px){.mobile-nav{grid-template-columns:repeat(5,minmax(0,1fr))}.mobile-nav.with-admin{grid-template-columns:repeat(6,minmax(0,1fr))}.mobile-nav button{min-width:0;padding:8px 1px;font-size:8px}}
