@@ -8,7 +8,7 @@ const OMIT=new Set([
   'connection','keep-alive','proxy-connection','transfer-encoding',
   'te','trailer','upgrade','proxy-authorization','proxy-authenticate',
   'host','cookie','x-forwarded-for','x-real-ip','true-client-ip','cf-connecting-ip',
-  'x-nd-authorization','authorization'
+  'x-nd-authorization'
 ]);
 
 export function subsonicProxy(upstreamOrigin){
