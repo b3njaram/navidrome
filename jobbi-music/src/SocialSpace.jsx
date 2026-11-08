@@ -27,7 +27,7 @@ function CardTitle({icon:Icon,title,subtitle,action}){
   return <div className="social-card-title"><span className="social-title-icon"><Icon size={19}/></span>
     <div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action&&<span className="social-card-action">{action}</span>}</div>;
 }
-export default function SocialSpace({api,user,playTracks,nativePlaylists=[],onProfileUpdate=()=>{}}){
+export default function SocialSpace({api,user,playTracks,nativePlaylists=[],initialPlaylistId,onProfileUpdate=()=>{}}){
   const [overview,setOverview]=useState(null),[tab,setTab]=useState('discover');
   const [profileName,setProfileName]=useState(''),[profile,setProfile]=useState(null),[profileDraft,setProfileDraft]=useState(null);
   const [currentId,setCurrentId]=useState(null),[playlist,setPlaylist]=useState(null);
@@ -64,6 +64,17 @@ export default function SocialSpace({api,user,playTracks,nativePlaylists=[],onPr
       const result=await api(apiPath('/playlists/'+encodeURIComponent(id)));
       setPlaylist(result);setVisibility(result.playlist.visibility);
     }catch(e){setError(e.message)}
+  };
+  useEffect(()=>{if(initialPlaylistId)loadPlaylist(initialPlaylistId)},[initialPlaylistId]);
+  const copyPlaylistLink=async()=>{
+    if(!playlist)return;
+    const url=new URL(window.location.href);
+    url.searchParams.set('community',playlist.playlist.id);
+    try{
+      if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(url.toString());
+      setNotice('Playlist link copied. Private playlists still require an invitation.');
+    }catch{window.prompt('Copy your playlist link:',url.toString())}
   };
   const act=fn=>handle(async()=>{await fn();await refresh()});
   const searchPeople=()=>handle(async()=>{
@@ -272,7 +283,7 @@ export default function SocialSpace({api,user,playTracks,nativePlaylists=[],onPr
         <div><div className="eyebrow">{playlist.playlist.kind==='blend'?'PRIVATE BLEND':playlist.playlist.visibility==='public'?'PUBLIC PLAYLIST':'PRIVATE PLAYLIST'}</div>
           <h2>{playlist.playlist.title}</h2><p>{playlist.playlist.description||'Music to share.'}</p><small>Created by @{playlist.playlist.owner} · {playlist.tracks.length} tracks</small></div>
         <button className="social-primary" disabled={!playlist.tracks.length} onClick={()=>playTracks(playlist.tracks.map(t=>({...t,id:t.track_id})),0)}><Play size={18} fill="currentColor"/> Play all</button></div>
-        {playlist.playlist.kind==='blend'&&<button className="social-outline" onClick={refreshBlend} disabled={busy}><RefreshCw size={16}/> Refresh blend from current shared favorites</button>}
+        <div className="social-link-actions"><button className="social-outline" onClick={copyPlaylistLink}><Share2 size={16}/> Copy playlist link</button>{playlist.playlist.kind==='blend'&&<button className="social-outline" onClick={refreshBlend} disabled={busy}><RefreshCw size={16}/> Refresh blend from current shared favorites</button>}</div>
         <div className="social-columns">
           <div className="social-card social-song-panel"><CardTitle icon={Music2} title="Tracks" subtitle="Contributors are credited on each addition"/>
             {playlist.tracks.map((t,index)=><div className="social-track" key={t.id}>
