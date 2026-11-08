@@ -59,7 +59,7 @@ test('listener can sign in, browse, search and manage own playlist without admin
   await expect(page.getByText('Test Album').first()).toBeVisible();
   await page.getByPlaceholder('Give your playlist a name').fill('Road Trip');
   await page.getByRole('button',{name:'Create',exact:true}).click();
-  await expect(page.getByText('Road Trip').first()).toBeVisible();
+  await expect(page.locator('.playlist-grid').getByRole('button',{name:/Road Trip/})).toBeVisible();
   expect(errors).toEqual([]);
 });
 test('administrator sees volume stats and restricted user management',async({page})=>{
