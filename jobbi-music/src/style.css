@@ -26,3 +26,6 @@
 .import-form .wide{width:100%}.import-form p{font-size:12px;overflow-wrap:anywhere}.import-filename{color:#f2d7e5;font-weight:650}
 .import-disclaimer{color:#aea1b0;font-size:11px!important;line-height:1.5}
 @media(max-width:720px){.remote-item{flex-wrap:wrap}.remote-item .import-button{margin-left:32px}.transfer-section .shelf-title{align-items:flex-start;flex-direction:column}}
+
+.load-more{margin:-17px 0 40px;padding:11px 17px;background:#27232e;border:1px solid #473844;border-radius:10px;display:inline-flex;align-items:center;gap:10px;font-weight:650;color:#f3ceda}
+.load-more:hover{background:#342b38}
