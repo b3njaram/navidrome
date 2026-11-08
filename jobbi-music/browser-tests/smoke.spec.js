@@ -175,7 +175,7 @@ test('Community friend requests, opt-in blends, profile stats and profile pictur
   await setupMocks(page);await mockSocial(page);await login(page,'listener');
   await navigate(page,'Community');
   await page.locator('.social-tabs').getByRole('button',{name:/^Friends/}).click();
-  await expect(page.getByText('Cathy')).toBeVisible();
+  await expect(page.getByText('Cathy',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Accept'}).click();
   await expect(page.getByText('@cathy').first()).toBeVisible();
   await page.getByRole('button',{name:'Blends',exact:true}).click();
