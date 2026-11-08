@@ -20,3 +20,37 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=16m
+    volumes:
+      - jobbi-storage-stats:/run/jobbi-stats:ro
+    cap_drop:
+      - ALL
+    pids_limit: 128
+
+  jobbi-storage-agent:
+    image: node:22-alpine
+    container_name: jobbi-storage-agent
+    restart: unless-stopped
+    network_mode: none
+    user: "0:0"
+    command: ["node", "/agent/storage-agent.js"]
+    environment:
+      MUSIC_ROOT: /music
+      STORAGE_OUTPUT: /stats/storage.json
+      STORAGE_INTERVAL_MS: "1800000"
+    volumes:
+      - /volume1/music:/music:ro
+      - ./server/storage-agent.js:/agent/storage-agent.js:ro
+      - jobbi-storage-stats:/stats:rw
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 192m
+    pids_limit: 64
+    tmpfs:
+      - /tmp:size=16m
+
+volumes:
+  jobbi-storage-stats: {}
+
