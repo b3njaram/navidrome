@@ -57,13 +57,15 @@ function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,h
     </div>)}</div>;
 }
 const extractRemote = data => {
-  const found=[];const visited=new Set();
-  const walk=(node, depth=0)=>{
-    if(depth>5 || found.length>=70 || !node || typeof node!=='object'||visited.has(node))return;
+  const found=[], visited=new Set();
+  const walk=(node,peer='',depth=0)=>{
+    if(depth>8||found.length>=120||!node||typeof node!=='object'||visited.has(node))return;
     visited.add(node);
-    if(Array.isArray(node)){node.forEach(x=>walk(x,depth+1));return;}
-    if((typeof node.filename==='string'||typeof node.fileName==='string')&&(node.size||node.filename||node.fileName)){found.push(node);return;}
-    for(const [key,value] of Object.entries(node)){if(/results|files|responses|matches|items|data|tracks|songs|users/i.test(key))walk(value,depth+1);}
+    if(Array.isArray(node)){node.forEach(x=>walk(x,peer,depth+1));return;}
+    const username=(typeof node.username==='string'&&node.username)||(typeof node.user==='string'&&node.user)||(typeof node.peer==='string'&&node.peer)||peer;
+    const filename=node.filename||node.fileName;
+    if(typeof filename==='string'){found.push({...node,filename,username});return;}
+    for(const value of Object.values(node))if(value&&typeof value==='object')walk(value,username,depth+1);
   };
   walk(data);return found;
 };
@@ -72,7 +74,7 @@ function App() {
   const [q,setQ]=useState(''),[results,setResults]=useState(null),[searchTab,setSearchTab]=useState('library'),[remote,setRemote]=useState(null),[remoteBusy,setRemoteBusy]=useState(false);
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const audio=useRef(null);
-  const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false);
+  const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false),[importSong,setImportSong]=useState(null),[importArtist,setImportArtist]=useState(''),[importTitle,setImportTitle]=useState(''),[importBusy,setImportBusy]=useState(false),[importNotice,setImportNotice]=useState('');
   const currentTrack=queue[currentIndex]||null;
   const albums = useMemo(()=>[...(home?.recent||[]),...(home?.featured||[])],[home]);
 
@@ -98,6 +100,38 @@ function App() {
   const renamePlaylist=async id=>{const name=window.prompt('New playlist name:',detail?.name||'');if(name===null)return;setError('');try{const r=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({name})});setDetail(r.playlist);await refreshPlaylists();}catch(e){setError(e.message)}};
   const deletePlaylist=async id=>{if(!window.confirm('Delete this playlist? Songs in your music library will not be deleted.'))return;setError('');try{await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'DELETE'});await refreshPlaylists();setPage({id:'library'});}catch(e){setError(e.message)}};
   const refreshDownloads=async()=>{setDownloadBusy(true);setError('');try{setDownloads(await api('/api/soulseek/downloads'));}catch(e){setError(e.message)}finally{setDownloadBusy(false)}};
+  const chooseImport=item=>{
+    const basename=item.filename?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/,'')||'';
+    const parts=basename.split(/\s+-\s+/);
+    setImportSong(item);
+    setImportArtist(parts.length>1?parts.shift():'');
+    setImportTitle(parts.length?parts.join(' - '):basename);
+    setImportNotice('');
+  };
+  const submitImport=async e=>{
+    e.preventDefault();if(!importSong||!importArtist.trim()||!importTitle.trim())return;
+    setImportBusy(true);setError('');
+    try{
+      await post('/api/soulseek/download',{
+        username:importSong.username,filename:importSong.filename,size:Number(importSong.size),
+        artist:importArtist.trim(),title:importTitle.trim()
+      });
+      setImportSong(null);setImportNotice('Transfer queued on your NAS. It will appear in Navidrome after importing and indexing.');
+      await refreshDownloads();
+    }catch(e){setError(e.message)}finally{setImportBusy(false)}
+  };
+  const scanLibrary=async()=>{
+    setError('');
+    try{await post('/api/library/scan',{});setImportNotice('Library scan requested. New songs may take a moment to appear.');}
+    catch(e){setError(e.message)}
+  };
+  useEffect(()=>{
+    if(!user?.admin||page.id!=='search'||searchTab!=='soulseek')return;
+    api('/api/soulseek/downloads').then(setDownloads).catch(()=>{});
+    const timer=setInterval(()=>api('/api/soulseek/downloads').then(setDownloads).catch(()=>{}),30000);
+    return()=>clearInterval(timer);
+  },[user?.admin,page.id,searchTab]);
+
 
   async function remoteSearch(){if(!q.trim())return;setRemoteBusy(true);setRemote(null);setError('');try{setRemote(await post('/api/soulseek/search',{query:q}));}catch(e){setError(e.message)}finally{setRemoteBusy(false)}}
   if(user===undefined)return <div className="loading-page"><div className="brand-symbol"><Waves/></div><span>Loading your music...</span></div>;
@@ -115,8 +149,8 @@ function App() {
   if(page.id==='search')main=<><div className="page-title"><div className="eyebrow">EXPLORE MUSIC</div><h1>Search<span className="spark-dot">.</span></h1><p>Find the sounds you're looking for.</p></div><div className="search-bar"><Search size={22}/><input className="search-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Songs, artists, albums..." autoFocus/>{q&&<button className="icon-button" onClick={()=>{setQ('');setRemote(null)}}><X size={18}/></button>}<span>⌘ K</span></div>
     <div className="segmented"><button className={searchTab==='library'?'selected':''} onClick={()=>setSearchTab('library')}><Library size={16}/> Your library</button>{user.admin&&<button className={searchTab==='soulseek'?'selected':''} onClick={()=>setSearchTab('soulseek')}><Radio size={16}/> Find more music <span className="experimental">PRIVATE</span></button>}</div>
     {searchTab==='library'?<>{results?<><AlbumRow items={results.album||[]} title="Albums" onClick={openAlbum}/>{(results.artist||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Artists</h2></div><div className="artist-strip">{results.artist.map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(results.song||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Songs</h2></div><SongList songs={results.song} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={setPickerSong}/></section>}{!results.album?.length&&!results.song?.length&&!results.artist?.length&&<div className="empty-state">No matches in your library.</div>}</>:<div className="search-suggestion"><Search size={35}/><h3>Every great listen starts somewhere.</h3><p>Search your own albums, artists, and tracks.</p></div>}</>:
-    <section className="remote-search"><div className="remote-notice"><Radio size={21}/><div><strong>Search your existing Soulseek setup</strong><p>This searches via your NAS downloader. Downloading from search results isn't activated until we confirm its exact API format. Only acquire music you're authorized to access.</p></div></div><button className="primary" disabled={remoteBusy||!q.trim()} onClick={remoteSearch}>{remoteBusy?<LoaderCircle className="spin" size={17}/>:<Search size={17}/>} Search Soulseek</button>{remote&&<div className="remote-results"><h2>Search results</h2>{extractRemote(remote).length?extractRemote(remote).map((item,i)=><div className="remote-item" key={i}><Music2 size={17}/><div><strong>{(item.filename||item.fileName||'Unknown').split(/[\\/]/).pop()}</strong><small>{item.username||item.user||'Peer'}{item.size?` · ${(Number(item.size)/1048576).toFixed(1)} MB`:''}</small></div><span>Preview only</span></div>):<div className="remote-json"><p>The downloader returned a response, but its result format needs to be mapped.</p><pre>{JSON.stringify(remote,null,2).slice(0,3000)}</pre></div>}</div>}
-      <div className="transfer-section"><div className="shelf-title"><div><h2>Your transfers</h2><p>Existing Soulseek transfers are monitored on your NAS.</p></div><button className="ghost-button" onClick={refreshDownloads} disabled={downloadBusy}><RefreshCw size={15}/> Refresh transfers</button></div>
+    <section className="remote-search"><div className="remote-notice"><Radio size={21}/><div><strong>Search your existing Soulseek setup</strong><p>This searches via your NAS downloader. Select a result to queue an authorized audio transfer to your NAS. Your existing downloader handles importing it into the library.</p></div></div><button className="primary" disabled={remoteBusy||!q.trim()} onClick={remoteSearch}>{remoteBusy?<LoaderCircle className="spin" size={17}/>:<Search size={17}/>} Search Soulseek</button>{remote&&<div className="remote-results"><h2>Search results</h2>{extractRemote(remote).length?extractRemote(remote).map((item,i)=><div className="remote-item" key={i}><Music2 size={17}/><div><strong>{(item.filename||item.fileName||'Unknown').split(/[\\/]/).pop()}</strong><small>{item.username||item.user||'Peer'}{item.size?` · ${(Number(item.size)/1048576).toFixed(1)} MB`:''}</small></div>{item.username&&Number(item.size)>0&&<button className="import-button" onClick={()=>chooseImport(item)} title="Queue transfer to NAS"><Plus size={15}/> Add to library</button>}</div>):<div className="remote-json"><p>The downloader returned a response, but its result format needs to be mapped.</p><pre>{JSON.stringify(remote,null,2).slice(0,3000)}</pre></div>}</div>}
+      {importNotice&&<div className="import-notice"><Check size={17}/>{importNotice}</div>}<div className="transfer-section"><div className="shelf-title"><div><h2>Your transfers</h2><p>Existing Soulseek transfers are monitored on your NAS.</p></div><button className="ghost-button" onClick={refreshDownloads} disabled={downloadBusy}><RefreshCw size={15}/> Refresh transfers</button><button className="ghost-button" onClick={scanLibrary} title="Ask Navidrome to scan for newly imported music"><RefreshCw size={15}/> Refresh library</button></div>
       {downloads&&<div className="remote-results">{extractRemote(downloads).length?extractRemote(downloads).map((item,i)=><div className="remote-item" key={i}><Music2 size={17}/><div><strong>{(item.filename||item.fileName||'Unknown').split(/[\\/]/).pop()}</strong><small>{item.state||item.status||'Transferring'} · {item.percentage||0}%</small></div></div>):<pre className="transfer-empty">{JSON.stringify(downloads,null,2).slice(0,1500)}</pre>}</div>}
       </div></section>}
   </>;
@@ -129,6 +163,7 @@ function App() {
     <div className="player-center"><div className="playback-controls"><button className={`icon-button ${shuffle?'control-on':''}`} onClick={()=>setShuffle(v=>!v)} title="Shuffle"><Shuffle size={16}/></button><button className="icon-button" onClick={prev} disabled={!currentTrack}><SkipBack size={19} fill="currentColor"/></button><button className="play-round" onClick={toggle} disabled={!currentTrack}>{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-button" onClick={next} disabled={!currentTrack}><SkipForward size={19} fill="currentColor"/></button><button className={`icon-button ${repeat?'control-on':''}`} onClick={()=>setRepeat(v=>!v)} title="Repeat"><Repeat2 size={16}/></button></div><div className="seek"><small>{duration(position)}</small><input type="range" min="0" max={Math.max(length,1)} value={Math.min(position,length||0)} onChange={e=>{if(audio.current){audio.current.currentTime=Number(e.target.value);setPosition(Number(e.target.value))}}} disabled={!currentTrack}/><small>{duration(length)}</small></div></div>
     <div className="player-extras"><button className={`icon-button ${panel==='lyrics'?'control-on':''}`} title="Lyrics" onClick={()=>setPanel(panel==='lyrics'?null:'lyrics')} disabled={!currentTrack}><Mic2 size={18}/></button><button className={`icon-button ${panel==='queue'?'control-on':''}`} title="Queue" onClick={()=>setPanel(panel==='queue'?null:'queue')}><ListMusic size={19}/></button><Volume2 size={18}/><input type="range" min="0" max="1" step=".01" value={volume} onChange={e=>setVolume(Number(e.target.value))} aria-label="Volume"/></div></div>
     <nav className="mobile-nav">{navs.map(n=><button key={n.id} className={page.id===n.id?'selected':''} onClick={()=>setPage({id:n.id})}><n.icon size={21}/><span>{n.label}</span></button>)}</nav>
+    {importSong&&<div className="panel-backdrop" onClick={()=>setImportSong(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">IMPORT AUDIO</span><h2>Add to your library</h2></div><button className="icon-button" onClick={()=>setImportSong(null)}><X size={22}/></button></header><form onSubmit={submitImport} className="import-form"><p className="import-filename">{importSong.filename?.split(/[\\/]/).pop()}</p><p>Source: {importSong.username||'Unknown peer'} · {(Number(importSong.size)/1048576).toFixed(1)} MB</p><label>Artist<input value={importArtist} maxLength="180" onChange={e=>setImportArtist(e.target.value)} required placeholder="Artist name"/></label><label>Track title<input value={importTitle} maxLength="180" onChange={e=>setImportTitle(e.target.value)} required placeholder="Song title"/></label><p className="import-disclaimer">Only transfer recordings you have permission to access. Files are saved on your NAS, not on this device.</p><button type="submit" className="primary wide" disabled={importBusy||!importArtist.trim()||!importTitle.trim()}>{importBusy?<LoaderCircle className="spin" size={16}/>:<ArrowDownToLine size={16}/>} Queue download</button></form></aside></div>}
     {pickerSong&&<div className="panel-backdrop" onClick={()=>setPickerSong(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">YOUR PLAYLISTS</span><h2>Add to playlist</h2></div><button className="icon-button" onClick={()=>setPickerSong(null)}><X size={22}/></button></header><p>{pickerSong.title} · {pickerSong.artist}</p><div className="queue-content">{(home?.playlists||[]).map(p=><button className="queue-item" key={p.id} disabled={playlistBusy} onClick={()=>addToPlaylist(p.id)}><ListMusic size={19}/><div><strong>{p.name}</strong><small>{p.songCount||0} songs</small></div><Plus size={19}/></button>)}{!(home?.playlists||[]).length&&<p>Make your first playlist under Your Library.</p>}</div></aside></div>}
     {panel&&<div className="panel-backdrop" onClick={()=>setPanel(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOW PLAYING</span><h2>{panel==='queue'?'Up next':'Lyrics'}</h2></div><button className="icon-button" onClick={()=>setPanel(null)}><X size={22}/></button></header>{panel==='queue'?<div className="queue-content">{queue.map((s,i)=><button className={`queue-item ${i===currentIndex?'selected':''}`} key={i} onClick={()=>setCurrentIndex(i)}><Art item={s} size="tiny"/><div><strong>{s.title}</strong><small>{s.artist}</small></div>{i===currentIndex&&<Waves size={18}/>}</button>)}</div>:<div className="lyrics-content"><Art item={currentTrack} size="big"/><h3>{currentTrack?.title}</h3><p>{currentTrack?.artist}</p>{(lyrics?.structuredLyrics||[]).length?<div className="lyrics-lines">{lyrics.structuredLyrics.flatMap((o,i)=>(o.line||[]).map((l,j)=><p key={`${i}-${j}`}>{l.value||'♪'}</p>))}</div>:<div className="lyrics-empty"><Mic2 size={24}/><p>No synced lyrics found for this track.</p><small>Your existing LRCLIB downloader may be able to add them.</small></div>}</div>}</aside></div>}
   </div>;
