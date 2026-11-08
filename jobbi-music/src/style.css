@@ -95,3 +95,5 @@
 .settings-row{margin:23px 0;max-width:420px}
 @media(max-width:950px){.admin-grid{grid-template-columns:1fr}}
 @media(max-width:650px){.admin-card{padding:19px}.admin-grid{gap:13px}.account-fields{grid-template-columns:1fr}.storage-stats{gap:12px 7px}.storage-figure,.stat-figure{flex-wrap:wrap}.admin-head .ghost-button{width:100%;justify-content:center}.user-row{gap:8px;flex-wrap:wrap}.user-delete{margin-left:45px}}
+
+@media(max-width:720px){.mobile-nav{grid-template-columns:repeat(4,minmax(0,1fr))}.mobile-nav.with-admin{grid-template-columns:repeat(5,minmax(0,1fr))}.mobile-nav button{min-width:0;font-size:9px}}
