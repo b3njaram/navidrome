@@ -27,7 +27,7 @@ function CardTitle({icon:Icon,title,subtitle,action}){
   return <div className="social-card-title"><span className="social-title-icon"><Icon size={19}/></span>
     <div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action&&<span className="social-card-action">{action}</span>}</div>;
 }
-export default function SocialSpace({api,user,playTracks,nativePlaylists=[]}){
+export default function SocialSpace({api,user,playTracks,nativePlaylists=[],onProfileUpdate=()=>{}}){
   const [overview,setOverview]=useState(null),[tab,setTab]=useState('discover');
   const [profileName,setProfileName]=useState(''),[profile,setProfile]=useState(null),[profileDraft,setProfileDraft]=useState(null);
   const [currentId,setCurrentId]=useState(null),[playlist,setPlaylist]=useState(null);
@@ -117,14 +117,14 @@ export default function SocialSpace({api,user,playTracks,nativePlaylists=[]}){
   });
   const saveProfile=()=>act(async()=>{
     const r=await patch('/me',profileDraft);
-    await openProfile(user.username);setNotice('Profile updated');
+    await openProfile(user.username);onProfileUpdate();setNotice('Profile updated');
   });
   const uploadAvatar=e=>{
     const f=e.target.files?.[0];if(!f)return;
     if(f.size>1024*1024||!['image/png','image/jpeg','image/webp'].includes(f.type)){setError('Choose a PNG, JPEG or WebP image under 1 MB');return}
     act(async()=>{
       await api(apiPath('/me/avatar'),{method:'POST',body:f,headers:{'Content-Type':f.type}});
-      setAvatarVersion(Date.now());await refresh();await openProfile(user.username);setNotice('Profile picture saved');
+      setAvatarVersion(Date.now());await refresh();await openProfile(user.username);onProfileUpdate();onProfileUpdate();setNotice('Profile picture saved');
     });
   };
   const removeAvatar=()=>act(async()=>{await remove('/me/avatar');setAvatarVersion(Date.now());await refresh();await openProfile(user.username)});
