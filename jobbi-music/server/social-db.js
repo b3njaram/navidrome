@@ -102,7 +102,7 @@ export function socialReady(){
       try{await client.query('SELECT pg_advisory_unlock(90280643)')}catch{}
       client.release();
     }
-  })().catch(err=>{ready=null;throw err});
+  })().catch(err=>{if(process.env.CI)console.error('Social schema test diagnostic:',err.code||err.name,String(err.message||'').slice(0,300));ready=null;throw err});
   return ready;
 }
 export async function withSocialTransaction(fn){
