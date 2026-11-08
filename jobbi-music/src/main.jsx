@@ -86,6 +86,35 @@ function App() {
   useEffect(()=>{if(!audio.current||!currentTrack)return;const a=audio.current;const src=`/api/stream/${encodeURIComponent(currentTrack.id)}`;if(a.getAttribute('src')!==src){a.src=src;a.load();}a.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));setPosition(0);setLength(Number(currentTrack.duration||0));},[currentTrack?.id]);
   useEffect(()=>{if(!currentTrack||panel!=='lyrics')return;setLyrics(null);api(`/api/lyrics/${encodeURIComponent(currentTrack.id)}`).then(setLyrics).catch(()=>setLyrics({}));},[currentTrack?.id,panel]);
   useEffect(()=>{const listener=e=>{if(e.target?.tagName==='INPUT')return;if(e.code==='Space'&&currentTrack){e.preventDefault();toggle();}if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();setPage({id:'search'});document.querySelector('.search-input')?.focus();}};window.addEventListener('keydown',listener);return()=>window.removeEventListener('keydown',listener);},[currentTrack,playing]);
+  // Integrate with OS media controls when the browser supports Media Session.
+  useEffect(()=>{
+    if(!currentTrack||!('mediaSession' in navigator))return;
+    const session=navigator.mediaSession;
+    if('MediaMetadata' in window){
+      const art=coverUrl(currentTrack);
+      session.metadata=new window.MediaMetadata({
+        title:currentTrack.title||'Unknown track',
+        artist:currentTrack.artist||'Unknown artist',
+        album:currentTrack.album||'Jobbi Music',
+        artwork:art?[{src:new URL(art,window.location.href).href}]:[]
+      });
+    }
+    const handlers={
+      play:()=>audio.current?.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false)),
+      pause:()=>{audio.current?.pause();setPlaying(false);},
+      previoustrack:()=>prev(),
+      nexttrack:()=>next(),
+      seekbackward:({seekOffset}={})=>{if(audio.current)audio.current.currentTime=Math.max(0,audio.current.currentTime-(seekOffset||10));},
+      seekforward:({seekOffset}={})=>{if(audio.current)audio.current.currentTime=Math.min(audio.current.duration||Infinity,audio.current.currentTime+(seekOffset||10));},
+      seekto:({seekTime})=>{if(audio.current&&Number.isFinite(seekTime))audio.current.currentTime=Math.max(0,seekTime);}
+    };
+    for(const [action,handler] of Object.entries(handlers)){try{session.setActionHandler(action,handler);}catch{}}
+    return()=>{for(const action of Object.keys(handlers)){try{session.setActionHandler(action,null);}catch{}}};
+  },[currentTrack?.id,queue.length,shuffle,repeat]);
+  useEffect(()=>{if('mediaSession' in navigator)navigator.mediaSession.playbackState=!currentTrack?'none':playing?'playing':'paused';},[currentTrack?.id,playing]);
+  useEffect(()=>{if(!currentTrack||!Number.isFinite(length)||length<=0||!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
+    try{navigator.mediaSession.setPositionState({duration:length,playbackRate:1,position:Math.max(0,Math.min(length,position))});}catch{}
+  },[position,length,currentTrack?.id]);
   const playTracks=(tracks,index=0)=>{const track=tracks?.[index];if(!track)return;const a=audio.current;if(a){const src=`/api/stream/${encodeURIComponent(track.id)}`;if(a.getAttribute('src')!==src){a.src=src;a.load();}a.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}setQueue(tracks);setCurrentIndex(index);};
   const next=()=>{if(!queue.length)return;setCurrentIndex(i=>shuffle?Math.floor(Math.random()*queue.length):repeat?i:(i+1)%queue.length)};
   const prev=()=>{if(!queue.length)return;if(audio.current?.currentTime>3){audio.current.currentTime=0;return;}setCurrentIndex(i=>(i-1+queue.length)%queue.length)};
