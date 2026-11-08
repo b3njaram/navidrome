@@ -14,6 +14,8 @@ const SECURE_COOKIE = process.env.PUBLIC_HTTPS === 'true';
 const ADMIN_USERS = new Set((process.env.ADMIN_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
 const sessions = new Map();
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+const ACTION_WINDOW_MS = 10 * 60 * 1000;
+const actionLimits = new Map();
 const attempts = new Map();
 const ttl = 12 * 60 * 60 * 1000;
 const cookieName = 'jobbi_session';
@@ -28,6 +30,9 @@ const cookieOptions = { httpOnly: true, secure: SECURE_COOKIE, sameSite: 'strict
 const sess = req => { const token = cookies(req)[cookieName]; const item = token && sessions.get(token); if (!item || item.expires < Date.now()) { if(token) sessions.delete(token); return null; } return item; };
 const mustAuth = (req, res, next) => { req.user = sess(req); if (!req.user) return res.status(401).json({error:'Please sign in'}); next(); };
 const mustAdmin = (req, res, next) => { if (!req.user.admin) return res.status(403).json({error:'This action is only available to designated music administrators'}); next(); };
+const mustBeLimited = (req,res,next) => { const key = req.user.username.toLowerCase(); const now = Date.now(); const prev = actionLimits.get(key) || {count:0,start:now}; if(now-prev.start > ACTION_WINDOW_MS){ prev.count=0; prev.start=now; } prev.count++; actionLimits.set(key,prev); if(prev.count > 30) return res.status(429).json({error:'Too many music discovery requests; try again shortly'}); next(); };
+const validId = x => typeof x === 'string' && x.length > 0 && x.length <= 150;
+const validName = x => typeof x === 'string' && x.trim().length >= 1 && x.trim().length <= 100;
 const saltAuth = (user) => { const s = crypto.randomBytes(8).toString('hex'); return {u:user.username, t:crypto.createHash('md5').update(user.password + s).digest('hex'),s,v:'1.16.1',c:'JobbiMusic',f:'json'}; };
 const subsonicUrl = (user, name, params={}) => { const url = new URL(`${NAVIDROME}/rest/${name}.view`); Object.entries({...saltAuth(user), ...params}).forEach(([k,v])=>url.searchParams.set(k,String(v))); return url; };
 const safeError = (e) => console.error('Request failed:', e?.message || e);
@@ -38,7 +43,7 @@ async function subsonic(user, name, params={}) {
   if (!data || data.status !== 'ok') throw new Error(data?.error?.message || 'Navidrome request failed');
   return data;
 }
-const route = handler => async (req,res) => {try { await handler(req,res); } catch(err) { safeError(err); if(!res.headersSent) res.status(502).json({error:err.message || 'Backend unavailable'}); }};
+const route = handler => async (req,res) => {try { await handler(req,res); } catch(err) { safeError(err); if(!res.headersSent) res.status(502).json({error:'The music service is temporarily unavailable. Please retry.'}); }};
 
 app.post('/api/login', route(async(req,res)=> {
   const ip = req.ip || 'unknown';
@@ -70,13 +75,19 @@ app.get('/api/albums/:id',mustAuth,route(async(req,res)=>{const d=await subsonic
 app.get('/api/artists/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getArtist',{id:req.params.id});res.json(d.artist||null);}));
 app.get('/api/playlists/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getPlaylist',{id:req.params.id});res.json(d.playlist||null);}));
 app.get('/api/starred',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getStarred2');res.json(d.starred2||{});}));
-app.post('/api/star',mustAuth,route(async(req,res)=>{const {id,starred}=req.body ||{};if(typeof id!=='string'||id.length>150)return res.status(400).json({error:'Invalid id'});await subsonic(req.user,starred?'star':'unstar',{id});res.json({ok:true});}));
-app.post('/api/scrobble',mustAuth,route(async(req,res)=>{const {id}=req.body ||{};if(typeof id!=='string'||id.length>150)return res.status(400).json({error:'Invalid id'});await subsonic(req.user,'scrobble',{id,submission:true});res.json({ok:true});}));
+app.post('/api/star',mustAuth,route(async(req,res)=>{const {id,starred}=req.body ||{};if(!validId(id)||typeof starred!=='boolean')return res.status(400).json({error:'Invalid favorite request'});await subsonic(req.user,starred?'star':'unstar',{id});res.json({ok:true});}));
+app.post('/api/scrobble',mustAuth,route(async(req,res)=>{const {id}=req.body ||{};if(!validId(id))return res.status(400).json({error:'Invalid id'});await subsonic(req.user,'scrobble',{id,submission:true});res.json({ok:true});}));
 app.get('/api/lyrics/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getLyricsBySongId',{id:req.params.id});res.json(d.lyricsList||{});}));
 async function binaryProxy(req,res,name){
   const url=subsonicUrl(req.user,name,{id:req.params.id,...(name==='stream'?{format:'mp3',maxBitRate:320}:{})});
   const headers={};if(req.headers.range)headers.Range=req.headers.range;
-  const upstream=await fetch(url,{headers,signal:AbortSignal.timeout(120000)});
+  // A fixed 120-second abort would truncate longer songs. Limit only the initial connection.
+  const controller = new AbortController();
+  res.on('close', () => controller.abort());
+  const connectTimeout = setTimeout(() => controller.abort(), 20000);
+  let upstream;
+  try { upstream = await fetch(url, {headers,signal:controller.signal}); }
+  finally { clearTimeout(connectTimeout); }
   if(!upstream.ok) return res.status(upstream.status).end();
   res.status(upstream.status);
   for(const k of ['content-type','content-length','content-range','accept-ranges','cache-control']){const val=upstream.headers.get(k);if(val)res.setHeader(k,val);}
@@ -93,7 +104,7 @@ app.get('/api/soulseek/health',mustAuth,mustAdmin,route(async(req,res)=>{
   const r=await fetch(`${DOWNLOADER}/api/health`,{signal:AbortSignal.timeout(6000)});
   res.status(r.status).json(await r.json());
 }));
-app.post('/api/soulseek/search',mustAuth,mustAdmin,route(async(req,res)=>{
+app.post('/api/soulseek/search',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
   if(!DOWNLOADER)return res.status(503).json({error:'Downloader is not configured'});
   const query=String(req.body?.query||'').trim().slice(0,150);
   if(!query)return res.status(400).json({error:'Enter a search query'});
@@ -102,8 +113,55 @@ app.post('/api/soulseek/search',mustAuth,mustAdmin,route(async(req,res)=>{
   res.status(r.status).json(data);
 }));
 
+
+/** Playlist actions use Navidrome's supported Subsonic endpoints.
+ * Navidrome checks playlist ownership for updates and deletions.
+ */
+app.get('/api/playlists',mustAuth,route(async(req,res)=>{
+  const data = await subsonic(req.user,'getPlaylists');
+  res.json(data.playlists?.playlist || []);
+}));
+app.post('/api/playlists',mustAuth,route(async(req,res)=>{
+  const name=req.body?.name;
+  if(!validName(name)) return res.status(400).json({error:'Playlist name must be 1–100 characters'});
+  const data=await subsonic(req.user,'createPlaylist',{name:name.trim()});
+  res.status(201).json({playlist:data.playlist||null});
+}));
+app.patch('/api/playlists/:id',mustAuth,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
+  const {name,addSongId,removeIndex}=req.body||{};
+  const changes={playlistId:req.params.id};
+  if(name!==undefined){if(!validName(name))return res.status(400).json({error:'Invalid playlist name'});changes.name=name.trim();}
+  if(addSongId!==undefined){if(!validId(addSongId))return res.status(400).json({error:'Invalid song'});changes.songIdToAdd=addSongId;}
+  if(removeIndex!==undefined){if(!Number.isInteger(removeIndex)||removeIndex<0)return res.status(400).json({error:'Invalid song position'});changes.songIndexToRemove=removeIndex;}
+  if(Object.keys(changes).length===1)return res.status(400).json({error:'No playlist changes supplied'});
+  await subsonic(req.user,'updatePlaylist',changes);
+  const updated=await subsonic(req.user,'getPlaylist',{id:req.params.id});
+  res.json({playlist:updated.playlist||null});
+}));
+app.delete('/api/playlists/:id',mustAuth,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
+  await subsonic(req.user,'deletePlaylist',{id:req.params.id});
+  res.json({ok:true});
+}));
+
+// Available to the designated music admin only. No direct browser access to
+// downloader/slskd. This uses the existing /api/downloads route read-only.
+app.get('/api/soulseek/downloads',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+  if(!DOWNLOADER)return res.status(503).json({error:'Downloader is not configured'});
+  const upstream=await fetch(`${DOWNLOADER}/api/downloads`,{signal:AbortSignal.timeout(10000)});
+  if(!upstream.ok)return res.status(502).json({error:'Unable to retrieve transfer status'});
+  const raw=await upstream.text();
+  if(raw.length>300000)return res.status(502).json({error:'Transfer response was too large'});
+  try {res.json(JSON.parse(raw));} catch {res.status(502).json({error:'Invalid downloader response'});}
+}));
+app.post('/api/library/scan',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+  const result=await subsonic(req.user,'startScan');
+  res.json({ok:true,scanStatus:result.scanStatus||null});
+}));
+
 const staticDir=path.join(path.dirname(fileURLToPath(import.meta.url)),'../dist');
-app.use(express.static(staticDir,{index:false,immutable:true,maxAge:'1h'}));
-app.get('*',(req,res)=>res.sendFile(path.join(staticDir,'index.html')));
-setInterval(()=>{const now=Date.now();for(const [key,item] of sessions)if(item.expires<now)sessions.delete(key);for(const[key,item]of attempts)if(now-item.start>LOGIN_WINDOW_MS)attempts.delete(key);},60000).unref();
+app.use('/assets',express.static(path.join(staticDir,'assets'),{index:false,immutable:true,maxAge:'1y',fallthrough:false}));
+app.get('*',(req,res)=>{res.setHeader('Cache-Control','no-store');res.sendFile(path.join(staticDir,'index.html'));});
+setInterval(()=>{const now=Date.now();for(const [key,item] of sessions)if(item.expires<now)sessions.delete(key);for(const[key,item]of attempts)if(now-item.start>LOGIN_WINDOW_MS)attempts.delete(key);for(const[key,item]of actionLimits)if(now-item.start>ACTION_WINDOW_MS)actionLimits.delete(key);},60000).unref();
 app.listen(PORT,'0.0.0.0',()=>console.log(`Jobbi Music listening on port ${PORT}`));
