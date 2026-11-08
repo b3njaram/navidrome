@@ -45,3 +45,10 @@
 .remote-empty h3{margin:3px 0 0;color:#f2e5ee}.remote-empty p{font-size:12px;max-width:400px;line-height:1.6}
 .remote-empty .ghost-button{background:#302532;border-radius:9px;padding:10px 14px}
 @media(max-width:720px){.search-actions{align-items:stretch;flex-direction:column}.search-actions .primary{width:100%}.remote-head{align-items:flex-start;flex-direction:column}.search-filters{width:100%}.search-filters label{flex:1}.search-filters select{max-width:100%;min-width:100px}.source-indicator{font-size:11px}}
+
+
+/* Private, ad-free playback quality settings */
+.quality-control{display:flex;align-items:center;gap:7px;background:#27222d;border:1px solid #443847;border-radius:9px;padding:6px 9px;color:#c1a9bd;font-size:10px}
+.quality-control select{border:0;background:transparent;color:#f3dfeb;max-width:160px;font-weight:650;font-size:11px;outline-offset:3px}
+.quality-control select option{color:#21202a;background:#eee}
+@media(max-width:720px){.quality-control{padding:5px 6px;gap:3px}.quality-control select{max-width:102px;font-size:9px}}
