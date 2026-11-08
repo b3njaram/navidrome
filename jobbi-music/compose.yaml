@@ -15,6 +15,10 @@ services:
       SLSKD_API_KEY: ${SLSKD_API_KEY:-}
       ADMIN_USERS: ${ADMIN_USERS:?Set ADMIN_USERS in .env}
       ENABLE_ACCOUNT_MANAGEMENT: ${ENABLE_ACCOUNT_MANAGEMENT:-false}
+      SOCIAL_DATABASE_URL: postgresql://jobbi_social:${SOCIAL_DB_PASSWORD:?Set SOCIAL_DB_PASSWORD in .env}@jobbi-social-db:5432/jobbi_social
+    depends_on:
+      jobbi-social-db:
+        condition: service_healthy
     mem_limit: 512m
     security_opt:
       - no-new-privileges:true
@@ -26,6 +30,26 @@ services:
     cap_drop:
       - ALL
     pids_limit: 128
+
+  jobbi-social-db:
+    image: postgres:17-alpine
+    container_name: jobbi-social-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jobbi_social
+      POSTGRES_USER: jobbi_social
+      POSTGRES_PASSWORD: ${SOCIAL_DB_PASSWORD:?Set SOCIAL_DB_PASSWORD in .env}
+    volumes:
+      - jobbi-social-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobbi_social -d jobbi_social"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 384m
+    pids_limit: 120
+    security_opt:
+      - no-new-privileges:true
 
   jobbi-storage-agent:
     image: node:22-alpine
@@ -54,4 +78,5 @@ services:
 
 volumes:
   jobbi-storage-stats: {}
+  jobbi-social-data: {}
 
