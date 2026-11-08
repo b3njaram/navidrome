@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "check": "node --check server/index.js",
+    "check": "node --check server/index.js && node --check server/social-routes.js && node --check server/social-db.js",
     "test": "node --test tests/*.test.js",
     "test:e2e": "playwright test"
   },
@@ -17,7 +17,8 @@
     "helmet": "^8.0.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
