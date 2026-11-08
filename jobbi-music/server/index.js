@@ -94,7 +94,9 @@ app.post('/api/star',mustAuth,route(async(req,res)=>{const {id,starred}=req.body
 app.post('/api/scrobble',mustAuth,route(async(req,res)=>{const {id}=req.body ||{};if(!validId(id))return res.status(400).json({error:'Invalid id'});await subsonic(req.user,'scrobble',{id,submission:true});res.json({ok:true});}));
 app.get('/api/lyrics/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getLyricsBySongId',{id:req.params.id});res.json(d.lyricsList||{});}));
 async function binaryProxy(req,res,name){
-  const url=subsonicUrl(req.user,name,{id:req.params.id,...(name==='stream'?{format:'mp3',maxBitRate:320}:{})});
+  const quality=['original','balanced','saver'].includes(req.query.quality)?req.query.quality:'balanced';
+  const streamSettings=quality==='original'?{format:'raw'}:quality==='saver'?{format:'mp3',maxBitRate:128}:{format:'mp3',maxBitRate:320};
+  const url=subsonicUrl(req.user,name,{id:req.params.id,...(name==='stream'?streamSettings:{})});
   const headers={};if(req.headers.range)headers.Range=req.headers.range;
   // A fixed 120-second abort would truncate longer songs. Limit only the initial connection.
   const controller = new AbortController();
