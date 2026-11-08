@@ -71,6 +71,18 @@ app.get('/api/home',mustAuth,route(async(req,res)=>{
   res.json(Object.fromEntries(entries));
 }));
 app.get('/api/search',mustAuth,route(async(req,res)=>{const q=String(req.query.q||'').slice(0,150).trim();if(!q)return res.json({artist:[],album:[],song:[]});const data=await subsonic(req.user,'search3',{query:q,artistCount:15,albumCount:25,songCount:40});res.json(data.searchResult3||{artist:[],album:[],song:[]});}));
+
+app.get('/api/library/albums',mustAuth,route(async(req,res)=>{
+  const offset=Math.max(0,Math.min(1000000,Math.trunc(Number(req.query.offset)||0)));
+  const size=Math.max(10,Math.min(100,Math.trunc(Number(req.query.size)||36)));
+  const data=await subsonic(req.user,'getAlbumList2',{type:'alphabeticalByName',size,offset});
+  res.json({albums:data.albumList2?.album||[],offset,size});
+}));
+app.get('/api/library/artists',mustAuth,route(async(req,res)=>{
+  const data=await subsonic(req.user,'getArtists');
+  const artists=(data.artists?.index||[]).flatMap(g=>g.artist||[]);
+  res.json({artists,count:artists.length});
+}));
 app.get('/api/albums/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getAlbum',{id:req.params.id});res.json(d.album||null);}));
 app.get('/api/artists/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getArtist',{id:req.params.id});res.json(d.artist||null);}));
 app.get('/api/playlists/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getPlaylist',{id:req.params.id});res.json(d.playlist||null);}));
