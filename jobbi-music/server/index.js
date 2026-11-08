@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { searchSlskd, slskdConnection } from './slskd.js';
 import { nativeAccounts, NativeAdminError, validateNewAccount } from './admin-native.js';
 import { subsonicProxy } from './navidrome-proxy.js';
+import { createSocialRouter } from './social-routes.js';
 import { promises as fs } from 'node:fs';
 
 const app = express();
@@ -300,6 +301,10 @@ app.delete('/api/admin/accounts/:id',mustAuth,mustAdmin,mustBeLimited,route(asyn
   await nativeAccounts(NAVIDROME,req.user,{action:'delete',id:req.params.id});
   res.json({deleted:true});
 }));
+
+// Social features reuse Navidrome's authenticated session but store sharing and
+// friendship relationships in an isolated, persistent private PostgreSQL database.
+app.use('/api/social',createSocialRouter({mustAuth,subsonic}));
 
 // Available to the designated music admin only. No direct browser access to
 // downloader/slskd. This uses the existing /api/downloads route read-only.
