@@ -19,7 +19,7 @@ const ttl = 12 * 60 * 60 * 1000;
 const cookieName = 'jobbi_session';
 
 app.disable('x-powered-by');
-app.use(helmet({ contentSecurityPolicy: { useDefaults: true, directives: { 'default-src': ["'self'"], 'img-src': ["'self'", 'data:'], 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'style-src': ["'self'", "'unsafe-inline'"], 'script-src': ["'self'"] } } }));
+app.use(helmet({ contentSecurityPolicy: { useDefaults: true, directives: { upgradeInsecureRequests: null, 'default-src': ["'self'"], 'img-src': ["'self'", 'data:'], 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'style-src': ["'self'", "'unsafe-inline'"], 'script-src': ["'self'"] } } }));
 app.use('/api', express.json({ limit: '64kb' }));
 app.use('/api', (_, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
