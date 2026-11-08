@@ -31,11 +31,30 @@ if docker inspect jobbi-storage-agent >/dev/null 2>&1;then
 else
   bad 'Storage scanner missing'
 fi
+if docker inspect jobbi-social-db >/dev/null 2>&1;then
+  health="$(docker inspect -f '{{.State.Health.Status}}' jobbi-social-db)"
+  if [ "$health" = healthy ];then pass 'Social PostgreSQL container healthy';else bad 'Social PostgreSQL not healthy';fi
+  ports="$(docker inspect -f '{{json .HostConfig.PortBindings}}' jobbi-social-db)"
+  case "$ports" in
+    '{}'|'null') pass 'Social PostgreSQL has no published host ports';;
+    *) bad 'Social PostgreSQL must not publish ports';;
+  esac
+  dbmounts="$(docker inspect -f '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}' jobbi-social-db)"
+  if printf '%s' "$dbmounts" | grep -qE 'docker\.sock|/volume1/music';then
+    bad 'Social database has a sensitive host mount'
+  else
+    pass 'Social database isolated from music library and Docker API'
+  fi
+else
+  bad 'Jobbi Music social database missing'
+fi
 if curl -fsS --max-time 8 http://127.0.0.1:3131/api/status >/dev/null;then pass 'Local API healthy';else bad 'Local API unavailable';fi
 code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:3131/api/admin/overview || true)"
 if [ "$code" = 401 ];then pass 'Admin API rejects unauthenticated requests';else bad "Admin API returned unexpected HTTP $code";fi
 code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:3131/api/soulseek/downloads || true)"
 if [ "$code" = 401 ];then pass 'Soulseek API rejects unauthenticated requests';else bad "Soulseek endpoint returned unexpected HTTP $code";fi
+code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:3131/api/social/home || true)"
+if [ "$code" = 401 ];then pass 'Social APIs reject unauthenticated requests';else bad "Social API returned unexpected HTTP $code";fi
 if [ -f .env ];then
   if grep -q '^ENABLE_ACCOUNT_MANAGEMENT=true' .env;then warn 'Native account creation ENABLED: confirm live API canary + backup';else pass 'Unsafe account provisioning disabled by default';fi
   if grep -q '^PUBLIC_HTTPS=true' .env;then pass 'HTTPS-only cookie flag set in .env';else warn 'HTTP preview cookie setting; do not use as public production login';fi
