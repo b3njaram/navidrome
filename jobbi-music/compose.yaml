@@ -11,6 +11,8 @@ services:
       PUBLIC_HTTPS: ${PUBLIC_HTTPS:-false}
       NAVIDROME_URL: ${NAVIDROME_URL:?Set NAVIDROME_URL in .env}
       DOWNLOADER_URL: ${DOWNLOADER_URL:?Set DOWNLOADER_URL in .env}
+      SLSKD_URL: ${SLSKD_URL:-}
+      SLSKD_API_KEY: ${SLSKD_API_KEY:-}
       ADMIN_USERS: ${ADMIN_USERS:?Set ADMIN_USERS in .env}
     mem_limit: 512m
     security_opt:
