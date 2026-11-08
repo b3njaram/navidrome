@@ -24,6 +24,7 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run check
+      - run: sh -n scripts/nas-security-audit.sh
       - run: npm test
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run build
