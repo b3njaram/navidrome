@@ -86,3 +86,107 @@ test('Soulseek search presents peer results instead of raw JSON',async({page})=>
   await expect(page.getByText('Add to your library')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+
+async function mockSocial(page){
+  const state={
+    me:{username:'listener',display_name:'Listener',bio:'',discoverable:true,blend_opt_in:false,has_avatar:false},
+    friends:[{username:'bob',display_name:'Bob',blend_opt_in:true,has_avatar:false}],
+    incoming:[{username:'cathy',display_name:'Cathy'}],outgoing:[],
+    playlists:[],discover:[{id:'00000000-0000-0000-0000-000000000111',title:'Public jams',description:'Come listen',owner:'bob',visibility:'public',kind:'manual',song_count:2}],
+    details:{},status:{}
+  };
+  await page.route('**/api/social/**',async route=>{
+    const req=route.request(),url=new URL(req.url()),path=url.pathname.replace('/api/social',''),method=req.method();
+    const body=(()=>{try{return req.postDataJSON()||{}}catch{return {}}})();
+    const reply=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
+    if(path==='/home'&&method==='GET')return reply({...state});
+    if(path==='/people'&&method==='GET')return reply({users:[{username:'chris',display_name:'Chris',has_avatar:false}]});
+    if(path.startsWith('/profiles/')&&path.endsWith('/avatar'))return route.fulfill({status:404,body:''});
+    if(path.startsWith('/profiles/')&&method==='GET'){
+      const username=path.split('/')[2];const self=username==='listener';
+      const p=self?state.me:{username,display_name:username,bio:'',discoverable:true,has_avatar:false};
+      return reply({profile:p,isFriend:username==='bob',stats:{playlists_created:1,songs_added:2},playlists:state.playlists.filter(p=>p.owner===username)});
+    }
+    if(path==='/me'&&method==='PATCH'){state.me={...state.me,display_name:body.displayName??state.me.display_name,bio:body.bio??state.me.bio,discoverable:body.discoverable??state.me.discoverable};return reply({profile:state.me});}
+    if(path==='/me/avatar'&&method==='POST'){state.me.has_avatar=true;return reply({saved:true});}
+    if(path==='/me/avatar'&&method==='DELETE'){state.me.has_avatar=false;return reply({removed:true});}
+    if(path==='/friends/request'&&method==='POST'){state.outgoing.push({username:body.username,display_name:body.username});return reply({requested:true},201);}
+    if(path.startsWith('/friends/')&&path.endsWith('/respond')&&method==='POST'){
+      const name=path.split('/')[2];state.incoming=state.incoming.filter(p=>p.username!==name);
+      if(body.accept)state.friends.push({username:name,display_name:name,blend_opt_in:false,has_avatar:false});
+      return reply({accepted:body.accept});
+    }
+    if(path.startsWith('/friends/')&&method==='DELETE'){state.friends=state.friends.filter(p=>p.username!==path.split('/')[2]);return reply({unfriended:true});}
+    if(path==='/playlists'&&method==='POST'){
+      const p={id:'00000000-0000-0000-0000-000000000123',title:body.title,description:body.description||'',visibility:body.visibility,kind:'manual',owner:'listener',song_count:0};
+      state.playlists.unshift(p);state.details[p.id]={playlist:p,tracks:[],members:[]};return reply({playlist:p},201);
+    }
+    if(path==='/playlists/import'&&method==='POST'){
+      const p={id:'00000000-0000-0000-0000-000000000124',title:'My imported mix',description:'Imported',visibility:'private',kind:'manual',owner:'listener',song_count:1};
+      state.playlists.unshift(p);state.details[p.id]={playlist:p,tracks:[{id:'1',track_id:'s1',title:'Kino',artist:'Test Artist',added_by:'listener'}],members:[]};
+      return reply({id:p.id,imported:1},201);
+    }
+    if(path.startsWith('/playlists/')&&method==='GET'){
+      const id=path.split('/')[2];return reply(state.details[id]||{playlist:{...state.discover[0]},tracks:[],members:[]});
+    }
+    if(path.startsWith('/playlists/')&&method==='PATCH'){
+      const id=path.split('/')[2];const d=state.details[id];if(d){d.playlist={...d.playlist,...body};state.playlists=state.playlists.map(p=>p.id===id?d.playlist:p);}
+      return reply({playlist:d?.playlist});
+    }
+    if(path.startsWith('/playlists/')&&path.endsWith('/members')&&method==='POST'){
+      const id=path.split('/')[2];state.details[id]?.members.push({username:body.username,can_edit:body.canEdit});return reply({shared:true});
+    }
+    if(path.startsWith('/playlists/')&&path.endsWith('/tracks')&&method==='POST'){
+      const id=path.split('/')[2];state.details[id]?.tracks.push({id:'12',track_id:body.trackId,title:'Kino',artist:'Test Artist',added_by:'listener'});return reply({added:true},201);
+    }
+    if(path.startsWith('/playlists/')&&method==='DELETE')return reply({deleted:true});
+    if(path==='/blend/picks'&&method==='POST'){state.me.blend_opt_in=true;return reply({optedIn:true,contributed:3});}
+    if(path==='/blend/picks'&&method==='DELETE'){state.me.blend_opt_in=false;return reply({optedOut:true});}
+    if(path==='/blends'&&method==='POST'){
+      const p={id:'00000000-0000-0000-0000-000000000125',title:'Blend · listener + bob',visibility:'private',kind:'blend',owner:'listener',song_count:2};
+      state.playlists.unshift(p);state.details[p.id]={playlist:p,tracks:[{id:'1',track_id:'s1',title:'Kino',artist:'Test Artist',added_by:'listener'}],members:[{username:'bob',can_edit:false}]};
+      return reply({id:p.id,count:2},201);
+    }
+    if(path.startsWith('/blends/')&&path.endsWith('/refresh'))return reply({updated:true,count:2});
+    return reply({error:'Not mocked'},404);
+  });
+}
+test('Community connects friends, public discovery, and listener-created shared playlists',async({page})=>{
+  const errors=[];page.on('pageerror',err=>errors.push(err.message));
+  await setupMocks(page);await mockSocial(page);await login(page,'listener');
+  await navigate(page,'Community');
+  await expect(page.getByText('Music is better')).toBeVisible();
+  await expect(page.getByRole('button',{name:/Public jams/})).toBeVisible();
+  await page.getByRole('button',{name:'Playlists',exact:true}).last().click();
+  await page.getByPlaceholder('Our favorite songs').fill('Our roadtrip');
+  await page.getByRole('button',{name:'Create playlist'}).click();
+  await expect(page.getByRole('heading',{name:'Our roadtrip'})).toBeVisible();
+  await page.getByLabel('Privacy').selectOption('public');
+  await page.getByRole('button',{name:'Save playlist'}).click();
+  await expect(page.getByText('Public to signed-in users')).toBeVisible();
+  await page.getByLabel('Find songs to add').fill('Kino');
+  await page.locator('.social-addsong').getByRole('button',{name:'',exact:true}).first().click();
+  await expect(page.getByText('Kino',{exact:true}).first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test('Community friend requests, opt-in blends, profile stats and profile picture',async({page})=>{
+  const errors=[];page.on('pageerror',err=>errors.push(err.message));
+  await setupMocks(page);await mockSocial(page);await login(page,'listener');
+  await navigate(page,'Community');
+  await page.getByRole('button',{name:'Friends',exact:true}).click();
+  await expect(page.getByText('Cathy')).toBeVisible();
+  await page.getByRole('button',{name:'Accept'}).click();
+  await expect(page.getByText('@cathy').first()).toBeVisible();
+  await page.getByRole('button',{name:'Blends',exact:true}).click();
+  await page.getByRole('button',{name:'Share my favorites for blends'}).click();
+  await page.getByLabel('Blend with').selectOption('bob');
+  await page.getByRole('button',{name:'Make blend'}).click();
+  await expect(page.getByRole('heading',{name:/Blend · listener/})).toBeVisible();
+  await page.getByRole('button',{name:'My profile',exact:true}).click();
+  await expect(page.getByText('Visible playlists created')).toBeVisible();
+  const photo=Buffer.alloc(32);Buffer.from([137,80,78,71,13,10,26,10]).copy(photo);
+  await page.locator('.social-avatar-upload input[type=file]').setInputFiles({name:'test.png',mimeType:'image/png',buffer:photo});
+  await expect(page.getByText('Profile picture saved')).toBeVisible();
+  expect(errors).toEqual([]);
+});
