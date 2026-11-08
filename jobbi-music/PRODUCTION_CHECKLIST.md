@@ -13,7 +13,7 @@
 
 ## Release blockers that must be addressed on the actual NAS
 
-- [ ] Confirm the installed Navidrome version has current security fixes. **Do not blindly auto-update the Navidrome image or database.** First perform and validate a full backup and review release notes for database migrations.
+- [ ] **Navidrome backend version and security patches:** Official release v0.64.2 (2026-09-24) follows v0.64.1, which fixed five security vulnerabilities involving Subsonic authentication, artwork, playlists, player ownership, and cross-user libraries. v0.64.0 also fixed an SQL injection vulnerability in the native API. Before enabling the public frontend, check the actually running NAS container version with `docker exec navidrome-navidrome-1 /app/navidrome --version` or inspect startup logs; require a reviewed release with these fixes. **Do not blindly pull `latest` or replace the Navidrome container.** First back up its database and music, and review the release's breaking internal-ID migration notes. References: https://github.com/navidrome/navidrome/releases and https://github.com/navidrome/navidrome/security/advisories/GHSA-hm54-32q6-3rcr.
 - [ ] Rotate the previously disclosed administrator password and reauthenticate all test devices.
 - [ ] Backup and verify restore for `/volume1/docker/navidrome`, `/volume1/music`, and the slskd/downloader configuration and relevant volumes. Confirm backups are available outside the NAS.
 - [ ] Confirm Cloudflare Tunnel serves `https://music-preview.jobbisoft.com.mx` using HTTPS. Configure `PUBLIC_HTTPS=true` *on the public HTTPS deployment*, then redeploy only Jobbi Music. Do not expose password sign-in over public HTTP.
