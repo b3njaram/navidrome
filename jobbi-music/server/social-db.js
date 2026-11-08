@@ -90,7 +90,19 @@ export function socialPool() {
   return pool;
 }
 export function socialReady(){
-  if(!ready)ready=(async()=>{const p=socialPool();await p.query(schema);return p;})().catch(err=>{ready=null;throw err});
+  if(!ready)ready=(async()=>{
+    const p=socialPool(),client=await p.connect();
+    try{
+      // Serialize schema creation across application processes. Concurrent
+      // CREATE TABLE IF NOT EXISTS can otherwise conflict in pg_class/pg_type.
+      await client.query('SELECT pg_advisory_lock(90280643)');
+      await client.query(schema);
+      return p;
+    }finally{
+      try{await client.query('SELECT pg_advisory_unlock(90280643)')}catch{}
+      client.release();
+    }
+  })().catch(err=>{ready=null;throw err});
   return ready;
 }
 export async function withSocialTransaction(fn){
