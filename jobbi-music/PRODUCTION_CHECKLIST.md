@@ -69,6 +69,14 @@ docker compose -f compose.yaml logs --tail=40 jobbi-storage-agent
 
 Only the new Jobbi Music and storage-agent services are changed by these commands.
 
+Then run the non-destructive hardening audit:
+```sh
+sh scripts/nas-security-audit.sh
+```
+
+It checks read-only Docker confinement, absence of the Docker socket, scanner network isolation, unauthenticated admin/Soulseek denial, cookie mode, and whether unvalidated account provisioning is disabled. It does not prove the entire application or NAS is free from vulnerabilities; manual penetration testing and live acceptance tests remain essential.
+
+
 ## Production promotion and rollback
 
 When *all* release blockers pass and production promotion is approved:
