@@ -155,6 +155,37 @@ app.get('/api/soulseek/downloads',mustAuth,mustAdmin,mustBeLimited,route(async(r
   if(raw.length>300000)return res.status(502).json({error:'Transfer response was too large'});
   try {res.json(JSON.parse(raw));} catch {res.status(502).json({error:'Invalid downloader response'});}
 }));
+
+/** Queue an explicitly selected, authorized audio transfer through the NAS's
+ * existing custom downloader. That service remains responsible for moving
+ * complete files and tagging/indexing them; this app never writes to /music.
+ */
+app.post('/api/soulseek/download',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+  if(!DOWNLOADER)return res.status(503).json({error:'Downloader is not configured'});
+  const {username,filename,size,artist,title}=req.body||{};
+  if(typeof username!=='string'||!username.trim()||username.length>100||
+     typeof filename!=='string'||filename.length>900||
+     typeof artist!=='string'||!artist.trim()||artist.length>180||
+     typeof title!=='string'||!title.trim()||title.length>180||
+     !Number.isSafeInteger(size)||size<1024||size>2147483648)
+    return res.status(400).json({error:'Select a valid audio file, peer, artist, and title'});
+  if(!/\.(mp3|flac|m4a|aac|ogg|opus|wav|aiff|alac)$/i.test(filename.trim()) ||
+     filename.split(/[\\/]/).some(part=>part==='..'))
+    return res.status(400).json({error:'Only supported audio files may be added'});
+  const upstream=await fetch(`${DOWNLOADER}/api/download`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:username.trim(),filename,size,artist:artist.trim(),title:title.trim()}),
+    signal:AbortSignal.timeout(16000)
+  });
+  const raw=await upstream.text();
+  if(raw.length>30000)return res.status(502).json({error:'Downloader sent an oversized response'});
+  let data;
+  try{data=JSON.parse(raw)}catch{return res.status(502).json({error:'Downloader returned an unexpected response'});}
+  if(!upstream.ok) return res.status(upstream.status>=400&&upstream.status<500?upstream.status:502).json({
+    error:typeof data.error==='string'?data.error.slice(0,250):'Downloader rejected the request'
+  });
+  res.status(202).json({queued:true,details:data});
+}));
 app.post('/api/library/scan',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
   const result=await subsonic(req.user,'startScan');
   res.json({ok:true,scanStatus:result.scanStatus||null});
