@@ -11,9 +11,12 @@ test('storage scan counts nested files and excludes symlink targets',async()=>{
     await fs.mkdir(path.join(root,'artist'));
     await fs.writeFile(path.join(root,'song.flac'),Buffer.alloc(3200));
     await fs.writeFile(path.join(root,'artist','song.mp3'),Buffer.alloc(800));
+    await fs.writeFile(path.join(root,'cover.jpg'),Buffer.alloc(1000));
     await fs.symlink(path.join(root,'song.flac'),path.join(root,'artist','duplicate.flac'));
     const result=await scanTree(root);
     assert.equal(result.musicBytes,4000);
+    assert.equal(result.libraryBytes,5000);
+    assert.equal(result.allFiles,3);
     assert.equal(result.files,2);
     assert.equal(result.folders,2);
   }finally{await fs.rm(root,{recursive:true,force:true});}
