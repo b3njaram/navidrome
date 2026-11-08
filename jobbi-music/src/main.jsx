@@ -302,7 +302,7 @@ function App() {
       <div className="admin-card"><div className="admin-card-head"><HardDrive size={22}/><h2>NAS storage</h2></div>
         {adminOverview.storage?.status==='ready'?<><div className="storage-figure">{humanBytes(adminOverview.storage.musicBytes)}<small>Music files</small></div>
         <div className="storage-track"><div style={{width:Math.min(100,100*Number(adminOverview.storage.usedBytes||0)/Math.max(1,Number(adminOverview.storage.totalBytes||1)))+'%'}}/></div>
-        <div className="storage-stats"><span>Volume used <b>{humanBytes(adminOverview.storage.usedBytes)}</b></span><span>Available <b>{humanBytes(adminOverview.storage.freeBytes)}</b></span><span>Capacity <b>{humanBytes(adminOverview.storage.totalBytes)}</b></span><span>Music tracks/files <b>{Number(adminOverview.storage.files||0).toLocaleString()}</b></span></div>
+        <div className="storage-stats"><span>Volume used <b>{humanBytes(adminOverview.storage.usedBytes)}</b></span><span>Available <b>{humanBytes(adminOverview.storage.freeBytes)}</b></span><span>Capacity <b>{humanBytes(adminOverview.storage.totalBytes)}</b></span><span>Audio tracks <b>{Number(adminOverview.storage.files||0).toLocaleString()}</b></span><span>Library folder total <b>{humanBytes(adminOverview.storage.libraryBytes)}</b></span></div>
         <p className="admin-help">Library scanning checked at {new Date(adminOverview.storage.checkedAt).toLocaleString()}. Used capacity includes other NAS data, not only music.</p>
         </>:<p className="admin-help">Storage statistics unavailable. Check the isolated storage-agent container and its read-only library mount.</p>}
       </div>
