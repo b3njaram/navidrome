@@ -6,6 +6,8 @@ import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { searchSlskd, slskdConnection } from './slskd.js';
+import { nativeAccounts, NativeAdminError, validateNewAccount } from './admin-native.js';
+import { promises as fs } from 'node:fs';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3131);
@@ -14,6 +16,8 @@ const DOWNLOADER = (process.env.DOWNLOADER_URL || '').replace(/\/$/, '');
 const SLSKD = (process.env.SLSKD_URL || '').replace(/\/$/, '');
 const SLSKD_KEY = process.env.SLSKD_API_KEY || '';
 const SECURE_COOKIE = process.env.PUBLIC_HTTPS === 'true';
+const ACCOUNT_MANAGEMENT_ENABLED=process.env.ENABLE_ACCOUNT_MANAGEMENT==='true';
+const STORAGE_STATS_PATH='/run/jobbi-stats/storage.json';
 const ADMIN_USERS = new Set((process.env.ADMIN_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
 const sessions = new Map();
 const MAX_SESSIONS = 1000;
@@ -99,7 +103,7 @@ app.post('/api/login', route(async(req,res)=> {
 }));
 app.post('/api/logout', (req,res)=> {const token=cookies(req)[cookieName]; if(token)sessions.delete(token);res.clearCookie(cookieName,{path:'/',secure:SECURE_COOKIE,sameSite:'strict'});res.json({ok:true});});
 app.get('/api/session', (req,res)=>{const user=sess(req);res.json(user?{username:user.username,admin:user.admin,csrfToken:user.csrfToken}:null);});
-app.get('/api/status',(req,res)=>res.json({ok:true, service:'Jobbi Music', downloaderConfigured: Boolean(DOWNLOADER), slskdSearchConfigured:Boolean(SLSKD&&SLSKD_KEY)}));
+app.get('/api/status',(req,res)=>res.json({ok:true,service:'Jobbi Music'}));
 
 app.get('/api/home',mustAuth,route(async(req,res)=>{
   const endpoints=[['recent','getAlbumList2',{type:'newest',size:16}],['featured','getAlbumList2',{type:'random',size:12}],['played','getAlbumList2',{type:'frequent',size:12}],['songs','getRandomSongs',{size:30}],['playlists','getPlaylists',{}]];
@@ -225,6 +229,62 @@ app.delete('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
   await subsonic(req.user,'deletePlaylist',{id:req.params.id});
   res.json({ok:true});
+}));
+
+
+/** Administrative operations are available only to verified Navidrome admins
+ * explicitly allowlisted by ADMIN_USERS. Never mount Docker's socket in this app.
+ */
+app.get('/api/admin/overview',mustAuth,mustAdmin,route(async(req,res)=>{
+  let storage={status:'unavailable',reason:'Storage agent has not provided a snapshot yet'};
+  try{
+    const raw=await fs.readFile(STORAGE_STATS_PATH,'utf8');
+    const obj=JSON.parse(raw);
+    if(['ready','unavailable'].includes(obj.status))storage=obj;
+  }catch{}
+  let usersCount=null;
+  try{
+    const data=await subsonic(req.user,'getUsers');
+    usersCount=(data.users?.user||[]).length;
+  }catch{}
+  res.json({storage,usersCount,accountManagementEnabled:ACCOUNT_MANAGEMENT_ENABLED,
+    directSearchConfigured:Boolean(SLSKD&&SLSKD_KEY),
+    httpsOnlyCookies:SECURE_COOKIE,
+    statsNote:'Capacity reflects the filesystem containing /volume1/music. Music size excludes non-music files.'});
+}));
+app.get('/api/admin/accounts',mustAuth,mustAdmin,route(async(req,res)=>{
+  if(ACCOUNT_MANAGEMENT_ENABLED){
+    try{
+      const data=await nativeAccounts(NAVIDROME,req.user,{action:'list'});
+      const arr=Array.isArray(data)?data:Array.isArray(data?.data)?data.data:Array.isArray(data?.users)?data.users:null;
+      if(arr) return res.json({users:arr.map(u=>({id:String(u.id||u.userName||u.username),username:String(u.userName||u.username||''),name:String(u.name||''),isAdmin:u.isAdmin===true,email:String(u.email||'')})),readOnly:false});
+    }catch(e){safeError(e);}
+  }
+  const data=await subsonic(req.user,'getUsers');
+  const users=(data.users?.user||[]).map(u=>({id:String(u.username),username:String(u.username),name:String(u.name||''),isAdmin:u.adminRole===true,email:''}));
+  res.json({users,readOnly:true,message:ACCOUNT_MANAGEMENT_ENABLED?'Navidrome native user-management API is not compatible with this server version.':'Enable account management after validating the native Navidrome API on your NAS.'});
+}));
+app.post('/api/admin/accounts',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+  if(!ACCOUNT_MANAGEMENT_ENABLED)return res.status(503).json({error:'Account creation is disabled until the Navidrome API is verified'});
+  try{
+    const payload=validateNewAccount(req.body);
+    await nativeAccounts(NAVIDROME,req.user,{action:'create',payload});
+    res.status(201).json({created:true,username:payload.userName,role:'listener'});
+  }catch(err){
+    if(err instanceof NativeAdminError)return res.status([400,401,403,409].includes(err.status)?err.status:502).json({error:err.message});
+    throw err;
+  }
+}));
+app.delete('/api/admin/accounts/:id',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+  if(!ACCOUNT_MANAGEMENT_ENABLED)return res.status(503).json({error:'Account deletion is disabled'});
+  if(req.query.confirm!=='delete')return res.status(400).json({error:'Deletion must be explicitly confirmed'});
+  const data=await nativeAccounts(NAVIDROME,req.user,{action:'list'});
+  const entries=Array.isArray(data)?data:Array.isArray(data?.data)?data.data:[];
+  const target=entries.find(u=>String(u.id)===req.params.id);
+  if(!target)return res.status(404).json({error:'User not found'});
+  if(target.isAdmin===true||target.userName===req.user.username)return res.status(403).json({error:'Administrative accounts cannot be deleted from this interface'});
+  await nativeAccounts(NAVIDROME,req.user,{action:'delete',id:req.params.id});
+  res.json({deleted:true});
 }));
 
 // Available to the designated music admin only. No direct browser access to
