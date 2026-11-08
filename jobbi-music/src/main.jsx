@@ -3,10 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { Album, ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Disc3, Heart, Home, Library, ListMusic, LoaderCircle, LogOut, Maximize2, Music2, Pause, Play, Plus, Repeat2, Search, Settings2, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles, Volume2, VolumeX, Waves, X, Mic2, Radio, RefreshCw, Headphones } from 'lucide-react';
 import './style.css';
 
+let currentCsrfToken='';
 const api = async (url, opts={}) => {
-  const res = await fetch(url, {credentials:'same-origin', ...opts, headers:{'Content-Type':'application/json', ...(opts.headers || {})}});
+  const method=(opts.method||'GET').toUpperCase();
+  const headers={'Content-Type':'application/json',...(opts.headers||{})};
+  if(method!=='GET'&&method!=='HEAD'&&currentCsrfToken)headers['X-CSRF-Token']=currentCsrfToken;
+  const res = await fetch(url, {credentials:'same-origin', ...opts, headers});
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if((url==='/api/session'||url==='/api/login')&&data?.csrfToken)currentCsrfToken=data.csrfToken;
+  if(url==='/api/logout')currentCsrfToken='';
   return data;
 };
 const post = (url,payload) => api(url,{method:'POST',body:JSON.stringify(payload)});
