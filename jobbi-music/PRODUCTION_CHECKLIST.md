@@ -52,6 +52,25 @@
 
 Passing mock tests is **not** the same as testing the real NAS, Cloudflare identity controls, real library, or music file integrity.
 
+## Social feature release gate
+
+This upgrade introduces one **additional** persistent database, `jobbi-social-db`, with an isolated `jobbi-social-data` Docker volume. Navidrome, slskd, and existing music files remain unchanged. The public domain must **not** be switched solely because GitHub CI passes.
+
+- [ ] Generate and retain `SOCIAL_DB_PASSWORD` using `sh scripts/enable-social.sh`. It is local to the NAS and never committed, printed, or provided to a browser. Verify PostgreSQL has no published host port.
+- [ ] Back up `jobbi-social-db` using `pg_dump` and verify its restore to an isolated throwaway database. Keep an off-NAS copy.
+- [ ] Sign in with **two real non-admin Navidrome accounts**, ensuring both can access Community but neither can access `/api/admin/*` or Soulseek administrative routes.
+- [ ] Verify pending, accepted, declined, and revoked friend requests. Ensure an unsolicited request does not reveal private playlists.
+- [ ] Create a private social playlist with user A; verify user B receives 404 before invitation, even if they're friends. Invite B as viewer and verify view-only; change to editor and verify B can add/remove tracks. Revoke access; B must get 404 again.
+- [ ] Change an A-owned social playlist to public; verify another signed-in user can view but cannot edit. Switch back to private; verify an uninvited user loses access. Test direct `?community=<id>` links through the Cloudflare hostname.
+- [ ] Import a personal Navidrome playlist into social sharing; confirm the original Navidrome playlist is unchanged. Contributors must be credited for social playlist additions.
+- [ ] Verify user profiles show created playlist counts and contributed-song counts **only for social playlists the viewer is authorized to see**. Hidden profiles and avatars must not be accessible to nonfriends.
+- [ ] Upload PNG, JPEG, and WebP avatars below 1 MB; reject SVG, malformed images, and oversize uploads. Verify mobile and desktop rendering and deletion.
+- [ ] Opt user A into favorite sharing; ensure B cannot blend until B explicitly opts in. Create and refresh a private blend, then opt out or unfriend and confirm the blend disappears and no previous favorites remain exposed.
+- [ ] Test social database restarts and app rebuilds: all friends, albums of social playlists, avatars and invitations must persist. Do not run `docker compose down -v`.
+- [ ] Evaluate whether existing Navidrome accounts are discoverable only after each user's initial Jobbi Music sign-in (current design). Public playlists are visible to **signed-in** Jobbi Music users, not unauthenticated internet visitors.
+
+The GitHub social tests include a real temporary PostgreSQL service, backend route privacy checks, and desktop/iPhone browser smoke tests using mocked playback APIs. Live NAS and Cloudflare tests must still be performed.
+
 ## Safe preview update without Synology host Git
 
 From a NAS root shell, after verifying a clean working tree:
