@@ -35,6 +35,40 @@ The server retains login sessions in memory. Only usernames listed in `ADMIN_USE
 ## Follow-up
 Inspect the existing downloader's Flask route bodies around lines 806–899 of `/app/app.py` before enabling download actions.
 
+## Soulseek search — why an empty [] happens
+
+The original frontend forwarded a single search to the Python downloader. slskd works asynchronously: starting a search returns a search ID, and peer responses arrive later. An empty immediate response isn't proof no music exists. The updated direct-slskd integration starts a search, polls responses, filters non-audio files, deduplicates, sorts by relevance and quality, and displays a useful empty state.
+
+Direct search is **optional but recommended**. In `jobbi-music/.env` set:
+```env
+SLSKD_URL=http://192.168.1.20:5030
+SLSKD_API_KEY=YOUR_EXISTING_PRIVATE_SLSKD_API_KEY
+```
+Create or obtain a **search-capable** API key through your existing slskd setup. Do not paste secrets into ChatGPT, commit them to GitHub, or put them into the browser. Docker Compose passes the key only to the server container. The app exposes neither key nor authentication tokens to clients. The original custom downloader still handles download/imports.
+
+If the running `soulseek-downloader` container already has an `SLSKD_API_KEY` environment variable, an administrator on the NAS can transfer its value privately into the local `.env` without displaying the key:
+
+```sh
+cd /volume1/docker/jobbi-music-source/jobbi-music
+test -f .env || cp .env.example .env
+key="$(docker exec soulseek-downloader sh -c 'printf %s "$SLSKD_API_KEY"')"
+if [ -z "$key" ]; then
+  echo "Existing downloader has no SLSKD_API_KEY environment variable; obtain a search-capable slskd API key from your admin settings."
+else
+  tmp="$(mktemp .env.XXXXXX)"
+  grep -vE '^(SLSKD_URL|SLSKD_API_KEY)=' .env > "$tmp" || true
+  printf 'SLSKD_URL=http://192.168.1.20:5030\nSLSKD_API_KEY=%s\n' "$key" >> "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" .env
+  unset key
+fi
+docker compose -f compose.yaml up -d --build
+```
+
+Searches are admin-only and temporary; the app cleans up only its own slskd search ID. Direct mode is selected only when both URL and key are configured. An unconfigured fallback continues to query the existing downloader and tells you when its results are empty rather than displaying raw `[]`.
+
+If **direct mode** returns no results, check that slskd is connected to Soulseek, that peers are online, and try more specific or alternate-language titles. For the band Kino, try `Кино` or `Виктор Цой`.
+
 ## Release validation — DO NOT SKIP
 
 This version is a **release candidate**, not an independently verified production deployment. CI uses mock Navidrome and downloader services, not your live Synology containers.
@@ -43,7 +77,7 @@ Before changing the original music domain:
 1. Back up the NAS volumes for Navidrome settings/database (`/volume1/docker/navidrome`), the library (`/volume1/music`), and Soulseek downloader settings/data; confirm a restore method.
 2. With the preview running, sign in and out on mobile Safari and desktop. Play a full track longer than three minutes; test seek, next, previous, favorites, lyrics and playlists, including add/remove/rename/delete.
 3. Inspect the Flask handler at `/app/app.py` lines 806–899 inside your `soulseek-downloader` container and compare its actual `/api/search` and `/api/download` fields with this integration. Do not enable automated/unattended imports until both are verified.
-4. Manually test a small **authorized** audio download, verify its transfer status, final location under `/volume1/music`, and ability to search and play it in Navidrome. Validate audio metadata and lyrics. The player does **not** stream directly from Soulseek peers.
+4. Manually test a small **authorized** audio download, verify its transfer status, final location under `/volume1/music`, and ability to search and play it in Navidrome. Validate audio metadata and lyrics. The player does **not** stream directly from Soulseek peers. Direct slskd search is tested with mocked peer responses but needs a live NAS API key and connection verification.
 5. For publicly reachable domains, use Cloudflare HTTPS, enable appropriate Cloudflare Access policies and set `PUBLIC_HTTPS=true` in `.env`. Restart the new Jobbi Music service after changes. **Do not expose Navidrome credentials on cleartext public HTTP.** For your private HTTP Tailscale preview keep `PUBLIC_HTTPS=false`.
 6. Use the preview subdomain until tests have passed. The GitHub workflow tests/builds code but **does not deploy to the NAS** and does not change your existing Cloudflare route.
 
