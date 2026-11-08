@@ -14,6 +14,7 @@ services:
       SLSKD_URL: ${SLSKD_URL:-}
       SLSKD_API_KEY: ${SLSKD_API_KEY:-}
       ADMIN_USERS: ${ADMIN_USERS:?Set ADMIN_USERS in .env}
+      ENABLE_ACCOUNT_MANAGEMENT: ${ENABLE_ACCOUNT_MANAGEMENT:-false}
     mem_limit: 512m
     security_opt:
       - no-new-privileges:true
