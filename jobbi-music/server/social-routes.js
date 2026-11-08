@@ -9,6 +9,8 @@ const fail=(status,message)=>{throw new SocialError(message,status)};
 const key=x=>normalUsername(x);
 const validId=x=>typeof x==='string'&&/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(x)&&x.length<=40;
 const safeText=(x,max)=>typeof x==='string'&&x.trim().length>0&&x.trim().length<=max;
+const socialMutations=new Map();
+setInterval(()=>{const now=Date.now();for(const [user,record] of socialMutations)if(now-record.start>600000)socialMutations.delete(user)},60000).unref();
 const short=(x,max)=>String(x||'').slice(0,max);
 const visibility=x=>x==='public'||x==='private';
 const ordered=(a,b)=>[a,b].sort();
@@ -22,6 +24,7 @@ async function loadPlaylist(id,viewer){
   const {rows}=await socialQuery(`SELECT p.*,m.can_edit, (m.username IS NOT NULL) AS is_member,
       (SELECT COUNT(*)::int FROM social_tracks t WHERE t.playlist_id=p.id) AS song_count
     FROM social_playlists p LEFT JOIN social_members m ON m.playlist_id=p.id AND m.username=$2
+      AND EXISTS(SELECT 1 FROM social_friends f WHERE f.a=LEAST(p.owner,$2) AND f.b=GREATEST(p.owner,$2))
     WHERE p.id=$1 AND (p.owner=$2 OR p.visibility='public' OR m.username IS NOT NULL)`,[id,viewer]);
   if(!rows.length)fail(404,'Playlist not found');
   return rows[0];
@@ -78,6 +81,15 @@ function respond(handler){
 export function createSocialRouter({mustAuth,subsonic}){
   const r=express.Router();
   r.use(mustAuth);
+  r.use((req,res,next)=>{
+    if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
+    const name=key(req.user?.username)||'invalid';
+    const now=Date.now(),entry=socialMutations.get(name)||{start:now,count:0};
+    if(now-entry.start>600000){entry.start=now;entry.count=0;}
+    entry.count++;socialMutations.set(name,entry);
+    if(entry.count>80)return res.status(429).json({error:'Too many changes. Please try again later.'});
+    next();
+  });
   r.use(respond(async(req,res,next)=>{
     req.socialName=await ensureSocialProfile(req.user.username);
     next();
