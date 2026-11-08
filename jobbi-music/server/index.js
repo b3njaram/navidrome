@@ -16,6 +16,7 @@ const SLSKD_KEY = process.env.SLSKD_API_KEY || '';
 const SECURE_COOKIE = process.env.PUBLIC_HTTPS === 'true';
 const ADMIN_USERS = new Set((process.env.ADMIN_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
 const sessions = new Map();
+const MAX_SESSIONS = 1000;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const ACTION_WINDOW_MS = 10 * 60 * 1000;
 const actionLimits = new Map();
@@ -32,7 +33,14 @@ const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';'
 const cookieOptions = { httpOnly: true, secure: SECURE_COOKIE, sameSite: 'strict', path: '/', maxAge: ttl };
 const sess = req => { const token = cookies(req)[cookieName]; const item = token && sessions.get(token); if (!item || item.expires < Date.now()) { if(token) sessions.delete(token); return null; } return item; };
 const mustAuth = (req, res, next) => { req.user = sess(req); if (!req.user) return res.status(401).json({error:'Please sign in'}); next(); };
-const mustAdmin = (req, res, next) => { if (!req.user.admin) return res.status(403).json({error:'This action is only available to designated music administrators'}); next(); };
+const mustAdmin = async (req, res, next) => {
+  if (!req.user?.admin || !ADMIN_USERS.has(req.user.username.toLowerCase())) return res.status(403).json({error:'Administrator access required'});
+  try {
+    const data=await subsonic(req.user,'getUser',{username:req.user.username});
+    if(data.user?.adminRole!==true){req.user.admin=false;return res.status(403).json({error:'Administrator privileges are no longer active'});}
+    next();
+  } catch {return res.status(503).json({error:'Cannot verify administrator permissions with the music server'});}
+};
 const mustBeLimited = (req,res,next) => { const key = req.user.username.toLowerCase(); const now = Date.now(); const prev = actionLimits.get(key) || {count:0,start:now}; if(now-prev.start > ACTION_WINDOW_MS){ prev.count=0; prev.start=now; } prev.count++; actionLimits.set(key,prev); if(prev.count > 30) return res.status(429).json({error:'Too many music discovery requests; try again shortly'}); next(); };
 const validId = x => typeof x === 'string' && x.length > 0 && x.length <= 150;
 const validName = x => typeof x === 'string' && x.trim().length >= 1 && x.trim().length <= 100;
@@ -48,6 +56,25 @@ async function subsonic(user, name, params={}) {
 }
 const route = handler => async (req,res) => {try { await handler(req,res); } catch(err) { safeError(err); if(!res.headersSent) res.status(502).json({error:'The music service is temporarily unavailable. Please retry.'}); }};
 
+// Defense-in-depth: reject cross-origin requests and require per-session
+// CSRF tokens for all state-changing authenticated API requests.
+app.use('/api',(req,res,next)=>{
+  if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
+  const origin=req.headers.origin;
+  if(origin){
+    try{if(new URL(origin).host!==req.headers.host)return res.status(403).json({error:'Cross-origin request denied'});}
+    catch{return res.status(403).json({error:'Invalid request origin'});}
+  }
+  if(req.path==='/login')return next();
+  const user=sess(req);
+  if(!user)return res.status(401).json({error:'Please sign in'});
+  const submitted=req.get('x-csrf-token')||'';
+  if(!submitted||!crypto.timingSafeEqual(Buffer.from(submitted.padEnd(80,' ').slice(0,80)),Buffer.from(user.csrfToken.padEnd(80,' ').slice(0,80)))||submitted!==user.csrfToken){
+    return res.status(403).json({error:'Security token missing or expired; sign in again'});
+  }
+  next();
+});
+
 app.post('/api/login', route(async(req,res)=> {
   const ip = req.ip || 'unknown';
   const entry = attempts.get(ip) || {n:0,start:Date.now()};
@@ -59,13 +86,19 @@ app.post('/api/login', route(async(req,res)=> {
   try {await subsonic(user,'ping');} catch {entry.n++; attempts.set(ip,entry); return res.status(401).json({error:'Invalid credentials or Navidrome unavailable'});}
   attempts.delete(ip);
   const token=crypto.randomBytes(32).toString('base64url');
-  const session={...user, admin:ADMIN_USERS.has(user.username.toLowerCase()), expires:Date.now()+ttl};
+  let admin=false;
+  if(ADMIN_USERS.has(user.username.toLowerCase())){
+    try { const detail=await subsonic(user,'getUser',{username:user.username});admin=detail.user?.adminRole===true; }
+    catch { /* Fail closed: never give admin access without proof of role. */ }
+  }
+  const session={...user,admin,csrfToken:crypto.randomBytes(32).toString('base64url'),expires:Date.now()+ttl};
+  if(sessions.size>=MAX_SESSIONS){const oldest=sessions.keys().next().value;if(oldest)sessions.delete(oldest);}
   sessions.set(token,session);
   res.cookie(cookieName,token,cookieOptions);
-  res.json({username:session.username,admin:session.admin});
+  res.json({username:session.username,admin:session.admin,csrfToken:session.csrfToken});
 }));
 app.post('/api/logout', (req,res)=> {const token=cookies(req)[cookieName]; if(token)sessions.delete(token);res.clearCookie(cookieName,{path:'/',secure:SECURE_COOKIE,sameSite:'strict'});res.json({ok:true});});
-app.get('/api/session', (req,res)=>{const user=sess(req);res.json(user?{username:user.username,admin:user.admin}:null);});
+app.get('/api/session', (req,res)=>{const user=sess(req);res.json(user?{username:user.username,admin:user.admin,csrfToken:user.csrfToken}:null);});
 app.get('/api/status',(req,res)=>res.json({ok:true, service:'Jobbi Music', downloaderConfigured: Boolean(DOWNLOADER), slskdSearchConfigured:Boolean(SLSKD&&SLSKD_KEY)}));
 
 app.get('/api/home',mustAuth,route(async(req,res)=>{
