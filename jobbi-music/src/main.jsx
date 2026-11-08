@@ -42,6 +42,10 @@ function Sidebar({page,setPage,user,logout,playlists}) {
   return <aside className="sidebar"><button className="brand" onClick={()=>setPage({id:'home'})}><span className="brand-symbol"><Waves size={19}/></span><span>jobbi<span className="brand-soft">music</span></span></button>
     <div className="sidebar-section"><span className="sidebar-heading">DISCOVER</span>{navs.map(n=><button key={n.id} onClick={()=>setPage({id:n.id})} className={`nav-item ${page.id===n.id?'active':''}`}><n.icon size={19} strokeWidth={1.8}/><span>{n.label}</span></button>)}</div>
     <div className="sidebar-section library-sidebar"><span className="sidebar-heading">YOUR COLLECTION</span><button className={`nav-item ${page.id==='favorites'?'active':''}`} onClick={()=>setPage({id:'favorites'})}><Heart size={19} strokeWidth={1.8}/> Favorites</button><button className="nav-item" onClick={()=>setPage({id:'library'})}><ListMusic size={19} strokeWidth={1.8}/> Playlists</button><div className="sidebar-playlists">{(playlists||[]).slice(0,10).map(p=><button key={p.id} onClick={()=>setPage({id:'playlist',idValue:p.id})}>{p.name}</button>)}</div></div>
+    <div className="sidebar-section"><span className="sidebar-heading">ACCOUNT</span>
+      {user.admin&&<button className={`nav-item ${page.id==='admin'?'active':''}`} onClick={()=>setPage({id:'admin'})}><Settings2 size={19}/> Admin console</button>}
+      <button className={`nav-item ${page.id==='settings'?'active':''}`} onClick={()=>setPage({id:'settings'})}><SlidersHorizontal size={19}/> Settings</button>
+    </div>
     <div className="sidebar-bottom"><div className="user-avatar">{(user.username||'?').slice(0,1).toUpperCase()}</div><div className="account-name"><strong>{user.username}</strong><span>Personal library</span></div><button className="icon-button" onClick={logout} title="Sign out"><LogOut size={18}/></button></div>
   </aside>;
 }
@@ -84,6 +88,8 @@ function App() {
   const audio=useRef(null);
   const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false),[importSong,setImportSong]=useState(null),[importArtist,setImportArtist]=useState(''),[importTitle,setImportTitle]=useState(''),[importBusy,setImportBusy]=useState(false),[importNotice,setImportNotice]=useState('');
   const [libraryAlbums,setLibraryAlbums]=useState([]),[libraryArtists,setLibraryArtists]=useState([]),[libraryOffset,setLibraryOffset]=useState(0),[libraryMore,setLibraryMore]=useState(true),[libraryLoading,setLibraryLoading]=useState(false);
+  const [adminOverview,setAdminOverview]=useState(null),[adminUsers,setAdminUsers]=useState(null),[adminLoading,setAdminLoading]=useState(false),[adminBusy,setAdminBusy]=useState(false);
+  const [accountForm,setAccountForm]=useState({username:'',name:'',email:'',password:''}),[adminNotice,setAdminNotice]=useState('');
   const currentTrack=queue[currentIndex]||null;
   const albums = useMemo(()=>[...(home?.recent||[]),...(home?.featured||[])],[home]);
   const remoteItems = useMemo(()=>{
@@ -177,6 +183,45 @@ function App() {
   const toggle=()=>{if(!audio.current||!currentTrack)return;if(audio.current.paused)audio.current.play().then(()=>setPlaying(true)).catch(()=>{});else{audio.current.pause();setPlaying(false);}};
   const favorite=async item=>{const shouldStar=!starred.has(item.id);await post('/api/star',{id:item.id,starred:shouldStar});setStarred(old=>{const a=new Set(old);shouldStar?a.add(item.id):a.delete(item.id);return a;});};
   const logout=async()=>{await post('/api/logout',{}).catch(()=>{});audio.current?.pause();setCurrentIndex(-1);setQueue([]);setUser(null);};
+
+  const loadAdmin=async()=>{
+    setAdminLoading(true);setError('');
+    try{
+      const [overview,accounts]=await Promise.all([
+        api('/api/admin/overview'),api('/api/admin/accounts')
+      ]);
+      setAdminOverview(overview);setAdminUsers(accounts);
+    }catch(err){setError(err.message)}
+    finally{setAdminLoading(false)}
+  };
+  useEffect(()=>{if(user?.admin&&page.id==='admin')loadAdmin();},[user?.admin,page.id]);
+  const createAccount=async e=>{
+    e.preventDefault();setAdminBusy(true);setAdminNotice('');setError('');
+    try{
+      await post('/api/admin/accounts',accountForm);
+      setAdminNotice('Listener account created. Share credentials using a secure channel.');
+      setAccountForm({username:'',name:'',email:'',password:''});
+      await loadAdmin();
+    }catch(err){setError(err.message)}finally{setAdminBusy(false)}
+  };
+  const deleteAccount=async account=>{
+    if(account.isAdmin)return;
+    if(!window.confirm(`Permanently delete the listener account "${account.username}"? Personal playlists and preferences may be lost.`))return;
+    const typed=window.prompt(`To confirm deletion, type: ${account.username}`);
+    if(typed!==account.username)return;
+    setAdminBusy(true);setAdminNotice('');setError('');
+    try{
+      await api(`/api/admin/accounts/${encodeURIComponent(account.id)}?confirm=delete`,{method:'DELETE'});
+      setAdminNotice('Listener account deleted.');await loadAdmin();
+    }catch(err){setError(err.message)}finally{setAdminBusy(false)}
+  };
+  const humanBytes=value=>{
+    const bytes=Number(value);if(!Number.isFinite(bytes)||bytes<0)return 'Unavailable';
+    if(bytes===0)return '0 B';
+    const units=['B','KB','GB','TB','PB']; // The first non-byte step uses MB.
+    const exponent=Math.min(5,Math.floor(Math.log(bytes)/Math.log(1024)));
+    return (bytes/1024**exponent).toFixed(exponent===0?0:1)+' '+['B','KB','MB','GB','TB','PB'][exponent];
+  };
   const openAlbum = item=>setPage({id:'album',idValue:item.id});
   const refreshPlaylists=async()=>{const playlists=await api('/api/playlists');setHome(h=>({...h,playlists}));return playlists;};
   const createPlaylist=async e=>{e.preventDefault();if(!newPlaylist.trim())return;setPlaylistBusy(true);setError('');try{await post('/api/playlists',{name:newPlaylist.trim()});setNewPlaylist('');await refreshPlaylists();}catch(e){setError(e.message)}finally{setPlaylistBusy(false)}};
@@ -249,6 +294,34 @@ function App() {
       </div></section>}
   </>;
   if(page.id==='library')main=<><div className="page-title"><div className="eyebrow">COLLECTION</div><h1>Your library<span className="spark-dot">.</span></h1><p>A home for every sound you love.</p></div><form className="playlist-create" onSubmit={createPlaylist}><label htmlFor="new-playlist">Create a playlist</label><input id="new-playlist" maxLength="100" value={newPlaylist} onChange={e=>setNewPlaylist(e.target.value)} placeholder="Give your playlist a name"/><button className="primary" disabled={playlistBusy||!newPlaylist.trim()} type="submit"><Plus size={16}/> Create</button></form><div className="library-shortcuts"><button onClick={()=>setPage({id:'favorites'})}><span className="shortcut-icon red"><Heart size={25} fill="currentColor"/></span><strong>Favorites</strong><ArrowRight size={17}/></button><button onClick={()=>setPage({id:'search'})}><span className="shortcut-icon purple"><Search size={25}/></span><strong>Discover more</strong><ArrowRight size={17}/></button></div><AlbumRow items={libraryAlbums} title="All albums" tagline="Browse your complete music collection" onClick={openAlbum}/>{libraryLoading&&<div className="loading-block"><LoaderCircle className="spin" size={17}/> Loading library…</div>}{libraryMore&&!libraryLoading&&<button className="ghost-button load-more" onClick={loadMoreAlbums}>Load more albums <ArrowDownToLine size={16}/></button>}{libraryArtists.length>0&&<section className="shelf"><div className="shelf-title"><div><h2>Artists</h2><p>Explore your favorite musicians</p></div></div><div className="artist-strip">{libraryArtists.slice(0,80).map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(home?.playlists||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Your playlists</h2></div><div className="playlist-grid">{home.playlists.map(p=><button onClick={()=>setPage({id:'playlist',idValue:p.id})} key={p.id}><div className="playlist-graphic"><ListMusic size={31}/></div><strong>{p.name}</strong><span>{p.songCount||0} songs</span></button>)}</div></section>}</>;
+  if(page.id==='settings')main=<section className="admin-page"><div className="page-title"><div className="eyebrow">MY ACCOUNT</div><h1>Settings<span className="spark-dot">.</span></h1><p>Your personal listening preferences.</p></div><div className="admin-card"><h2>Signed in as {user.username}</h2><p>Role: {user.admin?'Administrator':'Listener'}. Your playlists, favorites and playback history are managed by Navidrome.</p><div className="settings-row"><label htmlFor="personal-quality">Streaming quality</label><select id="personal-quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original / lossless where supported</option><option value="balanced">High quality · 320 kbps</option><option value="saver">Data saver · 128 kbps</option></select></div><button className="ghost-button" onClick={logout}>Sign out</button></div></section>;
+  if(page.id==='admin'&&user.admin)main=<section className="admin-page"><div className="page-title"><div className="eyebrow">PRIVATE SERVER OPERATIONS</div><h1>Admin console<span className="spark-dot">.</span></h1><p>Manage your music service, storage and access.</p></div>
+    <div className="admin-head"><span className="admin-verified"><Check size={16}/> Verified Navidrome administrator</span><button className="ghost-button" onClick={loadAdmin} disabled={adminLoading}><RefreshCw size={16}/> Refresh dashboard</button></div>
+    {adminLoading&&!adminOverview&&<div className="loading-block"><LoaderCircle className="spin"/> Loading server overview…</div>}
+    {adminOverview&&<div className="admin-grid">
+      <div className="admin-card"><div className="admin-card-head"><HardDrive size={22}/><h2>NAS storage</h2></div>
+        {adminOverview.storage?.status==='ready'?<><div className="storage-figure">{humanBytes(adminOverview.storage.musicBytes)}<small>Music files</small></div>
+        <div className="storage-track"><div style={{width:Math.min(100,100*Number(adminOverview.storage.usedBytes||0)/Math.max(1,Number(adminOverview.storage.totalBytes||1)))+'%'}}/></div>
+        <div className="storage-stats"><span>Volume used <b>{humanBytes(adminOverview.storage.usedBytes)}</b></span><span>Available <b>{humanBytes(adminOverview.storage.freeBytes)}</b></span><span>Capacity <b>{humanBytes(adminOverview.storage.totalBytes)}</b></span><span>Music tracks/files <b>{Number(adminOverview.storage.files||0).toLocaleString()}</b></span></div>
+        <p className="admin-help">Library scanning checked at {new Date(adminOverview.storage.checkedAt).toLocaleString()}. Used capacity includes other NAS data, not only music.</p>
+        </>:<p className="admin-help">Storage statistics unavailable. Check the isolated storage-agent container and its read-only library mount.</p>}
+      </div>
+      <div className="admin-card"><div className="admin-card-head"><Library size={22}/><h2>Service access</h2></div>
+        <div className="stat-figure">{adminOverview.usersCount??'—'} <small>Navidrome accounts</small></div>
+        <div className="admin-stat"><span>Direct Soulseek configured</span><b>{adminOverview.directSearchConfigured?'Yes':'No'}</b></div>
+        <div className="admin-stat"><span>HTTPS-only cookies</span><b>{adminOverview.httpsOnlyCookies?'Enabled':'Disabled (private preview)'}</b></div>
+        <div className="admin-stat"><span>Account provisioning</span><b>{adminOverview.accountManagementEnabled?'Enabled':'Needs verification'}</b></div>
+        {!adminOverview.httpsOnlyCookies&&<p className="admin-help">For a public production domain, use Cloudflare HTTPS and set PUBLIC_HTTPS=true.</p>}
+      </div>
+    </div>}
+    <div className="admin-card admin-users"><div className="admin-card-head"><Settings2 size={22}/><div><h2>Accounts & permissions</h2><p>Administrator access is verified against Navidrome and the local allowlist.</p></div></div>
+      {adminNotice&&<div className="import-notice"><Check size={16}/>{adminNotice}</div>}
+      {adminUsers?.message&&<div className="search-notice">{adminUsers.message}</div>}
+      <div className="user-table">{(adminUsers?.users||[]).map(person=><div className="user-row" key={person.id}><div className="user-avatar">{(person.username||'?').slice(0,1).toUpperCase()}</div><div><strong>{person.name||person.username}</strong><small>@{person.username}</small></div><span className={person.isAdmin?'admin-role':'listener-role'}>{person.isAdmin?'Administrator':'Listener'}</span>{!adminUsers.readOnly&&!person.isAdmin&&<button className="user-delete" disabled={adminBusy} onClick={()=>deleteAccount(person)}>Delete</button>}</div>)}</div>
+      {!adminOverview?.accountManagementEnabled?<p className="admin-help">Account changes are disabled until the server's native API is verified. Existing accounts can still sign in normally.</p>:
+      <form className="account-form" onSubmit={createAccount}><h3>Create listener account</h3><div className="account-fields"><label>Username<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9_-]+" value={accountForm.username} autoComplete="off" onChange={e=>setAccountForm(p=>({...p,username:e.target.value}))}/></label><label>Display name<input maxLength={80} value={accountForm.name} onChange={e=>setAccountForm(p=>({...p,name:e.target.value}))}/></label><label>Email (optional)<input type="email" maxLength={200} value={accountForm.email} onChange={e=>setAccountForm(p=>({...p,email:e.target.value}))}/></label><label>Temporary password<input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={accountForm.password} onChange={e=>setAccountForm(p=>({...p,password:e.target.value}))}/></label></div><button type="submit" className="primary" disabled={adminBusy||adminUsers?.readOnly}><Plus size={16}/> Create listener</button><p>New accounts are listeners by default. There is no public sign-up or privilege escalation from this form.</p></form>}
+    </div>
+  </section>;
   if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} favorite={favorite} openAlbum={openAlbum} onAdd={setPickerSong}/></>;
   if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><Art item={detail} size="big" round={page.id==='artist'}/><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit"><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{(detail.song||detail.entry||[]).length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={detail.song||detail.entry} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={setPickerSong} onRemove={page.id==='playlist'?i=>removeFromPlaylist(page.idValue,i):undefined}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
   return <div className="app-shell"><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span><label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Your account">{user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
