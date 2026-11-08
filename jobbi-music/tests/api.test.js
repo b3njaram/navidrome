@@ -22,7 +22,8 @@ before(async()=>{
     if(name==='getPlaylists')return json(res,ok({playlists:{playlist:[{id:'pl-1',name:'Road trip',songCount:0}]}}));
     if(name==='getPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')||'Road trip',entry:[]}}));
     if(name==='createPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')}}));
-    if(name==='getAlbumList2')return json(res,ok({albumList2:{album:[]}}));
+    if(name==='getAlbumList2')return json(res,ok({albumList2:{album:[{id:'album-1',name:'Album'}]}}));
+    if(name==='getArtists')return json(res,ok({artists:{index:[{name:'A',artist:[{id:'artist-1',name:'Artist'}]}]}}));
     if(name==='getRandomSongs')return json(res,ok({randomSongs:{song:[]}}));
     if(name==='getStarred2')return json(res,ok({starred2:{song:[]}}));
     if(name==='getLyricsBySongId')return json(res,ok({lyricsList:{structuredLyrics:[]}}));
@@ -74,6 +75,16 @@ test('Navidrome login and session cookies',async()=>{
   assert.match(cookie,/jobbi_session=/);
   const session=await(await get('/api/session')).json();
   assert.equal(session.username,'testadmin');
+});
+test('complete album and artist library APIs',async()=>{
+  const albums=await get('/api/library/albums?offset=0&size=48');
+  assert.equal(albums.status,200);
+  assert.equal((await albums.json()).albums[0].id,'album-1');
+  const artists=await get('/api/library/artists');
+  assert.equal(artists.status,200);
+  const list=await artists.json();
+  assert.equal(list.count,1);
+  assert.equal(list.artists[0].name,'Artist');
 });
 test('playlist create, edit and delete',async()=>{
   const made=await post('/api/playlists',{name:'Road trip'});
