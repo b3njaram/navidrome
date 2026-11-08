@@ -7,6 +7,44 @@ Apple Music-inspired dark UI, Navidrome login, album and artist browser, search,
 
 Soulseek downloads are now queued via the existing custom Flask downloader at `/api/download` and transfers are read at `/api/downloads`. **Important:** the request body uses the inferred fields `username,filename,size,artist,title` based on your earlier NAS output. The live Flask handler has NOT yet been reviewed; verify it before considering Soulseek production-ready. Only acquire music you have permission to access.
 
+## Social community — friends, playlists, blends and profiles
+
+The **Community** tab is available to every signed-in Navidrome user. Social information is stored in a **dedicated PostgreSQL 17 container** called `jobbi-social-db`, with a private `jobbi-social-data` Docker volume. It has **no published database port**, no Docker socket mount and no access to the music folder. Navidrome remains the source of truth for music, credentials and personal playlists.
+
+- **Friends:** Users appear in search after signing into Jobbi Music once. Send requests, accept or decline, view accepted friends and unfriend. Unfriending revokes their shared-playlist access and removes any mixes that contain both users' contributed favorite tracks.
+- **Profiles:** Upload or remove JPEG, PNG or WebP pictures (max 1 MB), customize display name and bio, and opt out of user discovery. Only authenticated users can view other profiles; undiscoverable profiles stay unavailable to nonfriends.
+- **Statistics:** Profiles show the number of **visible social playlists created** and **songs the user contributed to visible social playlists**. These are privacy-filtered social contributions, **not** all the user's private Navidrome playlists, download history, or entire library.
+- **Collaborative playlists:** Create a new social playlist, or **import a copy** of an existing Navidrome playlist. Set it **private** (owner and explicitly invited members only) or **public** (visible to all signed-in Jobbi Music users, not anonymous internet visitors). Share with accepted friends as either **viewer** or **editor**. Editors may add or remove songs; only owners can change visibility, edit details, add/remove collaborators, or delete the playlist. Individual tracks retain `added_by` attribution. Imported copies are not kept in sync with the originals.
+- **Playlist links:** Copy a link of the form `https://music.jobbisoft.com.mx/?community=<playlist-id>`. A private link **never** bypasses membership checks; recipients must be logged in and explicitly invited.
+- **Blends:** Both accepted friends must deliberately opt in by using **Share my favorites for blends**. The app takes up to 100 starred songs from each participating user's Navidrome account and alternates distinct tracks in a **private** blend. Either participant can refresh. Opting out deletes their saved blend contributions and the blends they participated in. Existing listening history is never published, and blends cannot be made public.
+
+### Install/enable the persistent social database on Synology
+
+First update the existing `feature/jobbi-music-preview` checkout (see update commands below). From your root SSH session on `nasjobbi`, execute:
+
+```sh
+cd /volume1/docker/jobbi-music-source/jobbi-music
+sh scripts/enable-social.sh
+```
+
+The script generates a random 64-character PostgreSQL password inside your local `.env` (mode `600`) **without displaying the secret**, or reuses the existing one. It then validates and rebuilds Jobbi Music and starts the dedicated database. It **does not** stop, modify or replace Navidrome, Soulseek, or your music files. The social database uses a persistent named volume and survives future application rebuilds. Never run `docker compose down -v` because that removes named data volumes.
+
+All social API requests require Navidrome login. Mutation routes reuse the app's session-based CSRF defenses, validate permissions in the backend, and rate-limit account changes. Direct database and audio-file access is not exposed to browsers.
+
+### Back up social data
+
+Run on the Synology root shell, storing snapshots inside a shared folder:
+
+```sh
+mkdir -p /volume1/docker/jobbi-music-backups
+docker exec jobbi-social-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U jobbi_social -d jobbi_social --format=custom' \
+  > "/volume1/docker/jobbi-music-backups/social-$(date +%Y%m%d-%H%M%S).dump"
+```
+
+Test that a backup can be restored to a **separate** PostgreSQL instance before relying on it. Never restore over live social data without a maintenance plan. Keep an off-NAS backup as protection against NAS failure.
+
+**New database and social app are still a preview feature** until you verify the real NAS, backup/restore, two separate Navidrome accounts, playlist access controls, and Cloudflare HTTPS. GitHub CI exercises social behavior with a temporary PostgreSQL service and a browser with mocked music APIs, not your live NAS.
+
 ## Administrator / listener permissions and production release gate
 
 Jobbi Music authenticates users against the **existing Navidrome accounts**, rather than creating a parallel user database. The full role matrix, live acceptance tests, security controls, backup steps and rollback procedure are maintained in [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md).
