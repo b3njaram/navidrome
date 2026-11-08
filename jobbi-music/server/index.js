@@ -277,7 +277,7 @@ app.post('/api/admin/accounts',mustAuth,mustAdmin,mustBeLimited,route(async(req,
   if(!ACCOUNT_MANAGEMENT_ENABLED)return res.status(503).json({error:'Account creation is disabled until the Navidrome API is verified'});
   try{
     const payload=validateNewAccount(req.body);
-    await nativeAccounts(NAVIDROME,req.user,{action:'create',payload});
+    await nativeAccounts(NAVIDROME,req.user,{action:'create',payload:req.body});
     res.status(201).json({created:true,username:payload.userName,role:'listener'});
   }catch(err){
     if(err instanceof NativeAdminError)return res.status([400,401,403,409].includes(err.status)?err.status:502).json({error:err.message});
