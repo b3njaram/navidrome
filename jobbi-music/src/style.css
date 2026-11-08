@@ -52,3 +52,46 @@
 .quality-control select{border:0;background:transparent;color:#f3dfeb;max-width:160px;font-weight:650;font-size:11px;outline-offset:3px}
 .quality-control select option{color:#21202a;background:#eee}
 @media(max-width:720px){.quality-control{padding:5px 6px;gap:3px}.quality-control select{max-width:102px;font-size:9px}}
+
+
+/* Security-focused Jobbi Music administrative workspace */
+.admin-page{max-width:1260px;margin:0 auto;padding-bottom:50px}
+.admin-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 22px;flex-wrap:wrap}
+.admin-verified{display:inline-flex;align-items:center;gap:8px;color:#8cdcc0;font-weight:700;font-size:12px}
+.admin-head>.ghost-button,.admin-card .ghost-button{border:1px solid #473d4a;border-radius:9px;padding:10px 15px;color:#e6d7e0;display:inline-flex;align-items:center;gap:8px}
+.admin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:19px;margin:0 0 22px}
+.admin-card{background:linear-gradient(145deg,rgba(46,38,52,.9),rgba(25,22,31,.95));border:1px solid rgba(236,165,207,.11);border-radius:18px;padding:26px;box-shadow:0 12px 45px rgba(0,0,0,.13);min-width:0}
+.admin-card-head{display:flex;align-items:center;gap:12px;margin-bottom:21px;color:#ef8eb0}
+.admin-card-head h2{font-size:19px;letter-spacing:-.5px;color:#f4e8ee;margin:0}
+.admin-card-head p{font-size:12px;color:#988b99;margin:6px 0 0}
+.storage-figure,.stat-figure{font-size:clamp(2rem,4vw,2.9rem);font-weight:780;letter-spacing:-1.7px;display:flex;align-items:baseline;gap:12px;margin-bottom:20px}
+.storage-figure small,.stat-figure small{font-size:12px;color:#ab99a9;letter-spacing:normal;font-weight:500}
+.storage-track{height:9px;border-radius:20px;background:#4b3b4b;overflow:hidden;margin:20px 0}
+.storage-track>div{height:100%;border-radius:20px;background:linear-gradient(90deg,#ca668d,#f7a1ba);transition:width .25s}
+.storage-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.storage-stats span,.admin-stat{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#ad9daa}
+.storage-stats b,.admin-stat b{color:#f6ecf1;font-size:13px;font-weight:700}
+.admin-stat{flex-direction:row;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #403444;padding:12px 0}
+.admin-stat b{text-align:right}
+.admin-help{font-size:11px;color:#aea0b0;line-height:1.65;margin:18px 0 0}
+.admin-users{margin-top:20px}
+.user-table{display:flex;flex-direction:column;gap:2px}
+.user-row{display:flex;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid #403440}
+.user-row .user-avatar{flex:0 0 37px;width:37px;height:37px}
+.user-row>div:nth-child(2){min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}
+.user-row strong{font-size:13px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.user-row small{font-size:11px;color:#98889b}
+.admin-role,.listener-role{font-size:10px;font-weight:700;white-space:nowrap;padding:6px 9px;border-radius:100px}
+.admin-role{background:rgba(222,147,188,.15);color:#ffc4d9}
+.listener-role{background:rgba(126,145,211,.14);color:#b6c4f7}
+.user-delete{border:1px solid #80475a;border-radius:8px;color:#ffb1bd;font-size:11px;font-weight:700;padding:7px 9px}
+.account-form{border-top:1px solid #423744;margin-top:26px;padding-top:22px}
+.account-form h3{margin:0 0 18px;font-size:17px}
+.account-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+.account-fields label,.settings-row{display:flex;flex-direction:column;gap:9px;font-size:11px;font-weight:700;color:#c5b3c1}
+.account-fields input,.settings-row select{background:#231f29;border:1px solid #5b4859;border-radius:10px;color:#f4e9ef;font-size:13px;padding:12px;min-width:0}
+.account-fields input:focus,.settings-row select:focus{outline:2px solid #ed8ca9;outline-offset:2px}
+.account-form>p{font-size:11px;color:#9f93a2;line-height:1.55}
+.settings-row{margin:23px 0;max-width:420px}
+@media(max-width:950px){.admin-grid{grid-template-columns:1fr}}
+@media(max-width:650px){.admin-card{padding:19px}.admin-grid{gap:13px}.account-fields{grid-template-columns:1fr}.storage-stats{gap:12px 7px}.storage-figure,.stat-figure{flex-wrap:wrap}.admin-head .ghost-button{width:100%;justify-content:center}.user-row{gap:8px;flex-wrap:wrap}.user-delete{margin-left:45px}}
