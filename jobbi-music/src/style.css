@@ -15,3 +15,14 @@
 .transfer-section .shelf-title{gap:16px;align-items:center}
 .transfer-empty{white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;color:#a8a0af}
 @media(max-width:720px){.playlist-create{padding:14px}.playlist-create input{min-width:130px}.track-actions{min-width:94px}.track-row,.track-header{grid-template-columns:25px minmax(0,1fr) 114px}.track-actions .icon-button{padding:4px}.playlist-edit{flex-wrap:wrap}}
+
+/* Authorized audio import */
+.import-button{display:flex;align-items:center;justify-content:center;gap:7px;font-size:11px;font-weight:700;background:rgba(242,109,150,.13);border:1px solid rgba(250,117,160,.26);color:#ff9eb5;border-radius:9px;padding:9px 11px;white-space:nowrap}
+.import-button:hover{background:rgba(242,109,150,.25)}
+.import-notice{display:flex;gap:10px;align-items:flex-start;background:rgba(41,126,95,.14);color:#adf1d2;border:1px solid rgba(55,170,121,.28);padding:13px 16px;border-radius:12px;margin:20px 0;font-size:12px}
+.import-form{display:flex;flex-direction:column;gap:19px}.import-form label{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#c8bfc9;font-weight:650}
+.import-form input{background:#24202b;border:1px solid #514457;border-radius:9px;color:#eee;padding:12px;font-size:13px;min-width:0}
+.import-form input:focus{outline:2px solid #fa829e;outline-offset:2px}
+.import-form .wide{width:100%}.import-form p{font-size:12px;overflow-wrap:anywhere}.import-filename{color:#f2d7e5;font-weight:650}
+.import-disclaimer{color:#aea1b0;font-size:11px!important;line-height:1.5}
+@media(max-width:720px){.remote-item{flex-wrap:wrap}.remote-item .import-button{margin-left:32px}.transfer-section .shelf-title{align-items:flex-start;flex-direction:column}}
