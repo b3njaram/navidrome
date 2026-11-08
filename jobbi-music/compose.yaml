@@ -33,14 +33,14 @@ services:
     restart: unless-stopped
     network_mode: none
     user: "0:0"
-    command: ["node", "/agent/storage-agent.js"]
+    command: ["node", "/agent/storage-agent.mjs"]
     environment:
       MUSIC_ROOT: /music
       STORAGE_OUTPUT: /stats/storage.json
       STORAGE_INTERVAL_MS: "1800000"
     volumes:
       - /volume1/music:/music:ro
-      - ./server/storage-agent.js:/agent/storage-agent.js:ro
+      - ./server/storage-agent.js:/agent/storage-agent.mjs:ro
       - jobbi-storage-stats:/stats:rw
     read_only: true
     cap_drop:
