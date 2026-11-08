@@ -1,0 +1,20 @@
+services:
+  jobbi-music:
+    build: .
+    container_name: jobbi-music
+    restart: unless-stopped
+    ports:
+      - "3131:3131"
+    environment:
+      PORT: "3131"
+      NODE_ENV: production
+      PUBLIC_HTTPS: "true"
+      NAVIDROME_URL: ${NAVIDROME_URL:?Set NAVIDROME_URL in .env}
+      DOWNLOADER_URL: ${DOWNLOADER_URL:?Set DOWNLOADER_URL in .env}
+      ADMIN_USERS: ${ADMIN_USERS:?Set ADMIN_USERS in .env}
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
