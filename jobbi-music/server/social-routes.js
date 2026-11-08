@@ -136,8 +136,9 @@ export function createSocialRouter({mustAuth,subsonic}){
   }));
   r.get('/profiles/:username/avatar',respond(async(req,res)=>{
     const name=key(req.params.username);if(!name)fail(404,'Avatar not found');
-    const result=await socialQuery('SELECT avatar_mime,avatar_bytes FROM social_profiles WHERE username=$1',[name]);
+    const result=await socialQuery('SELECT avatar_mime,avatar_bytes,discoverable FROM social_profiles WHERE username=$1',[name]);
     if(!result.rows[0]?.avatar_mime||!result.rows[0]?.avatar_bytes)fail(404,'Avatar not found');
+    if(!result.rows[0].discoverable&&name!==req.socialName&&!await friends(name,req.socialName))fail(404,'Avatar not found');
     res.setHeader('Content-Type',result.rows[0].avatar_mime);
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Cache-Control','private, max-age=60');
@@ -201,6 +202,11 @@ export function createSocialRouter({mustAuth,subsonic}){
     if(!other||other===me)fail(400,'Invalid friend');
     const [a,b]=ordered(me,other);
     await withSocialTransaction(async client=>{
+      // Blends contain both users' expressly contributed favorite-track metadata.
+      // Unfriending destroys shared blends rather than leaving stale private picks.
+      await client.query(`DELETE FROM social_playlists p WHERE p.kind='blend' AND
+        ((p.owner=$1 AND EXISTS(SELECT 1 FROM social_members m WHERE m.playlist_id=p.id AND m.username=$2))
+          OR (p.owner=$2 AND EXISTS(SELECT 1 FROM social_members m WHERE m.playlist_id=p.id AND m.username=$1)))`,[me,other]);
       await client.query('DELETE FROM social_friends WHERE a=$1 AND b=$2',[a,b]);
       await client.query(`DELETE FROM social_members m USING social_playlists p
         WHERE m.playlist_id=p.id
