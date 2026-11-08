@@ -124,10 +124,10 @@ export default function SocialSpace({api,user,playTracks,nativePlaylists=[],onPr
     if(f.size>1024*1024||!['image/png','image/jpeg','image/webp'].includes(f.type)){setError('Choose a PNG, JPEG or WebP image under 1 MB');return}
     act(async()=>{
       await api(apiPath('/me/avatar'),{method:'POST',body:f,headers:{'Content-Type':f.type}});
-      setAvatarVersion(Date.now());await refresh();await openProfile(user.username);onProfileUpdate();onProfileUpdate();setNotice('Profile picture saved');
+      setAvatarVersion(Date.now());await refresh();await openProfile(user.username);onProfileUpdate();setNotice('Profile picture saved');
     });
   };
-  const removeAvatar=()=>act(async()=>{await remove('/me/avatar');setAvatarVersion(Date.now());await refresh();await openProfile(user.username)});
+  const removeAvatar=()=>act(async()=>{await remove('/me/avatar');setAvatarVersion(Date.now());await refresh();await openProfile(user.username);onProfileUpdate()});
   const contribute=()=>act(async()=>{const r=await post('/blend/picks',{});setNotice('Shared '+r.contributed+' favorite tracks for your opt-in blends')});
   const optOut=()=>{if(!window.confirm('Stop sharing favorites for blends? Existing blends you participate in will be deleted.'))return;
     act(async()=>{await remove('/blend/picks');setNotice('Blend sharing disabled')})};
