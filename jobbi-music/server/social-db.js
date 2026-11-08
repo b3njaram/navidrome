@@ -125,7 +125,7 @@ export async function socialQuery(sql,params=[]){
 export function normalUsername(username){
   if(typeof username!=='string')return null;
   const clean=username.trim().toLowerCase();
-  return /^[a-z0-9_.-]{1,80}$/.test(clean)?clean:null;
+  return /^[\\p{L}\\p{M}\\p{N}_.@-]{1,80}$/u.test(clean)?clean:null;
 }
 export async function ensureSocialProfile(username){
   const name=normalUsername(username);
