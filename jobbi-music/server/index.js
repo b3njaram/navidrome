@@ -20,6 +20,9 @@ const ACCOUNT_MANAGEMENT_ENABLED=process.env.ENABLE_ACCOUNT_MANAGEMENT==='true';
 const STORAGE_STATS_PATH='/run/jobbi-stats/storage.json';
 const ADMIN_USERS = new Set((process.env.ADMIN_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
 const sessions = new Map();
+const sessionEncryptionKey=crypto.randomBytes(32);
+const sealPassword=plain=>{const iv=crypto.randomBytes(12);const cipher=crypto.createCipheriv('aes-256-gcm',sessionEncryptionKey,iv);const bytes=Buffer.concat([cipher.update(plain,'utf8'),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),bytes]).toString('base64url');};
+const unsealPassword=value=>{const bytes=Buffer.from(value,'base64url');const dec=crypto.createDecipheriv('aes-256-gcm',sessionEncryptionKey,bytes.subarray(0,12));dec.setAuthTag(bytes.subarray(12,28));return Buffer.concat([dec.update(bytes.subarray(28)),dec.final()]).toString('utf8');};
 const MAX_SESSIONS = 1000;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const ACTION_WINDOW_MS = 10 * 60 * 1000;
@@ -29,13 +32,19 @@ const ttl = 12 * 60 * 60 * 1000;
 const cookieName = 'jobbi_session';
 
 app.disable('x-powered-by');
-app.use(helmet({ contentSecurityPolicy: { useDefaults: true, directives: { upgradeInsecureRequests: null, 'default-src': ["'self'"], 'img-src': ["'self'", 'data:'], 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'style-src': ["'self'", "'unsafe-inline'"], 'script-src': ["'self'"] } } }));
+app.use(helmet({ contentSecurityPolicy: { useDefaults: true, directives: { upgradeInsecureRequests: SECURE_COOKIE ? [] : null, 'default-src': ["'self'"], 'img-src': ["'self'", 'data:'], 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'style-src': ["'self'", "'unsafe-inline'"], 'script-src': ["'self'"] } } }));
 app.use('/api', express.json({ limit: '64kb' }));
 app.use('/api', (_, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
 const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map(kv => { const i=kv.indexOf('='); return i < 0 ? [] : [kv.slice(0,i).trim(), kv.slice(i+1).trim()]; }).filter(a=>a.length === 2));
 const cookieOptions = { httpOnly: true, secure: SECURE_COOKIE, sameSite: 'strict', path: '/', maxAge: ttl };
-const sess = req => { const token = cookies(req)[cookieName]; const item = token && sessions.get(token); if (!item || item.expires < Date.now()) { if(token) sessions.delete(token); return null; } return item; };
+const sess = req => {
+  const token=cookies(req)[cookieName];
+  const item=token&&sessions.get(token);
+  if(!item||item.expires<Date.now()){if(token)sessions.delete(token);return null;}
+  try{return {...item,password:unsealPassword(item.sealedPassword)};}
+  catch{if(token)sessions.delete(token);return null;}
+};
 const mustAuth = (req, res, next) => { req.user = sess(req); if (!req.user) return res.status(401).json({error:'Please sign in'}); next(); };
 const mustAdmin = async (req, res, next) => {
   if (!req.user?.admin || !ADMIN_USERS.has(req.user.username.toLowerCase())) return res.status(403).json({error:'Administrator access required'});
@@ -95,7 +104,7 @@ app.post('/api/login', route(async(req,res)=> {
     try { const detail=await subsonic(user,'getUser',{username:user.username});admin=detail.user?.adminRole===true; }
     catch { /* Fail closed: never give admin access without proof of role. */ }
   }
-  const session={...user,admin,csrfToken:crypto.randomBytes(32).toString('base64url'),expires:Date.now()+ttl};
+  const session={username:user.username,admin,csrfToken:crypto.randomBytes(32).toString('base64url'),sealedPassword:sealPassword(password),expires:Date.now()+ttl};
   if(sessions.size>=MAX_SESSIONS){const oldest=sessions.keys().next().value;if(oldest)sessions.delete(oldest);}
   sessions.set(token,session);
   res.cookie(cookieName,token,cookieOptions);
