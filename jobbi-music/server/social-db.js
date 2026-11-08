@@ -1,0 +1,124 @@
+import pg from 'pg';
+
+const { Pool } = pg;
+let pool;
+let ready;
+const schema = `
+CREATE TABLE IF NOT EXISTS social_profiles (
+  username TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL CHECK (length(display_name) BETWEEN 1 AND 80),
+  bio TEXT NOT NULL DEFAULT '' CHECK (length(bio) <= 300),
+  discoverable BOOLEAN NOT NULL DEFAULT TRUE,
+  blend_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
+  avatar_mime TEXT,
+  avatar_bytes BYTEA,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS social_friend_requests (
+  requester TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  recipient TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','declined')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(requester,recipient),
+  CHECK(requester <> recipient)
+);
+CREATE TABLE IF NOT EXISTS social_friends (
+  a TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  b TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(a,b),
+  CHECK(a < b)
+);
+CREATE TABLE IF NOT EXISTS social_playlists (
+  id UUID PRIMARY KEY,
+  owner TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 100),
+  description TEXT NOT NULL DEFAULT '' CHECK(length(description) <= 300),
+  visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private','public')),
+  kind TEXT NOT NULL DEFAULT 'manual' CHECK(kind IN ('manual','blend')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK(kind <> 'blend' OR visibility = 'private')
+);
+CREATE TABLE IF NOT EXISTS social_members (
+  playlist_id UUID NOT NULL REFERENCES social_playlists(id) ON DELETE CASCADE,
+  username TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  can_edit BOOLEAN NOT NULL DEFAULT FALSE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(playlist_id,username)
+);
+CREATE TABLE IF NOT EXISTS social_tracks (
+  id BIGSERIAL PRIMARY KEY,
+  playlist_id UUID NOT NULL REFERENCES social_playlists(id) ON DELETE CASCADE,
+  track_id TEXT NOT NULL CHECK(length(track_id) BETWEEN 1 AND 180),
+  title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 200),
+  artist TEXT NOT NULL DEFAULT '' CHECK(length(artist) <= 200),
+  album TEXT NOT NULL DEFAULT '' CHECK(length(album) <= 200),
+  cover_art TEXT NOT NULL DEFAULT '' CHECK(length(cover_art) <= 180),
+  duration INTEGER NOT NULL DEFAULT 0 CHECK(duration BETWEEN 0 AND 100000),
+  added_by TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(playlist_id,track_id)
+);
+CREATE TABLE IF NOT EXISTS social_blend_picks (
+  username TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  track_id TEXT NOT NULL CHECK(length(track_id) BETWEEN 1 AND 180),
+  title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 200),
+  artist TEXT NOT NULL DEFAULT '' CHECK(length(artist) <= 200),
+  album TEXT NOT NULL DEFAULT '' CHECK(length(album) <= 200),
+  cover_art TEXT NOT NULL DEFAULT '' CHECK(length(cover_art) <= 180),
+  duration INTEGER NOT NULL DEFAULT 0 CHECK(duration BETWEEN 0 AND 100000),
+  PRIMARY KEY(username,track_id)
+);
+CREATE INDEX IF NOT EXISTS social_playlists_public_idx ON social_playlists(updated_at DESC) WHERE visibility='public';
+CREATE INDEX IF NOT EXISTS social_playlists_owner_idx ON social_playlists(owner);
+CREATE INDEX IF NOT EXISTS social_members_username_idx ON social_members(username);
+CREATE INDEX IF NOT EXISTS social_tracks_playlist_idx ON social_tracks(playlist_id,id);
+CREATE INDEX IF NOT EXISTS social_tracks_added_by_idx ON social_tracks(added_by);
+CREATE INDEX IF NOT EXISTS social_requests_incoming_idx ON social_friend_requests(recipient,status);
+`;
+
+export function socialPool() {
+  if(!pool){
+    const connectionString=process.env.SOCIAL_DATABASE_URL;
+    if(!connectionString)throw new Error('SOCIAL_DATABASE_URL is not configured');
+    pool=new Pool({connectionString,max:8,connectionTimeoutMillis:4000,idleTimeoutMillis:30000,
+      statement_timeout:8000,query_timeout:10000,application_name:'jobbi_social'});
+    pool.on('error',err=>console.error('Social database connection error:',err.code||err.name));
+  }
+  return pool;
+}
+export function socialReady(){
+  if(!ready)ready=(async()=>{const p=socialPool();await p.query(schema);return p;})().catch(err=>{ready=null;throw err});
+  return ready;
+}
+export async function withSocialTransaction(fn){
+  const p=await socialReady();
+  const client=await p.connect();
+  try{
+    await client.query('BEGIN');
+    const output=await fn(client);
+    await client.query('COMMIT');
+    return output;
+  }catch(err){
+    try{await client.query('ROLLBACK')}catch{}
+    throw err;
+  }finally{client.release()}
+}
+export async function socialQuery(sql,params=[]){
+  const p=await socialReady();
+  return p.query(sql,params);
+}
+export function normalUsername(username){
+  if(typeof username!=='string')return null;
+  const clean=username.trim().toLowerCase();
+  return /^[a-z0-9_.-]{1,80}$/.test(clean)?clean:null;
+}
+export async function ensureSocialProfile(username){
+  const name=normalUsername(username);
+  if(!name)throw new Error('Account name is not supported by social features');
+  await socialQuery(`INSERT INTO social_profiles(username,display_name) VALUES($1,$2)
+    ON CONFLICT(username) DO NOTHING`,[name,username.trim().slice(0,80)]);
+  return name;
+}
