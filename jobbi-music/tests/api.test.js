@@ -63,7 +63,7 @@ before(async()=>{
   appProcess=spawn(process.execPath,['server/index.js'],{
     cwd:process.cwd(),stdio:['ignore','pipe','pipe'],
     env:{...process.env,PORT:String(appPort),PUBLIC_HTTPS:'false',NAVIDROME_URL:'http://127.0.0.1:'+navPort,
-      DOWNLOADER_URL:'http://127.0.0.1:'+dlPort,ADMIN_USERS:'testadmin',ENABLE_ACCOUNT_MANAGEMENT:'true'}
+      DOWNLOADER_URL:'http://127.0.0.1:'+dlPort,ADMIN_USERS:'testadmin',ENABLE_ACCOUNT_MANAGEMENT:'true',SOCIAL_DATABASE_URL:process.env.SOCIAL_TEST_DATABASE_URL||''}
   });
   let error='';appProcess.stderr.on('data',d=>error+=d.toString());
   let ready=false;
@@ -192,6 +192,35 @@ test('audio quality settings route to original or 128 kbps transcoded streaming'
   await saver.arrayBuffer();
   assert.equal(received.lastSubsonic.params.format,'mp3');
   assert.equal(received.lastSubsonic.params.maxBitRate,'128');
+});
+test('social routes use real Navidrome sessions, forbid unauthenticated access, and enforce CSRF',async()=>{
+  if(!process.env.SOCIAL_TEST_DATABASE_URL)return;
+  const noCookie=await fetch(base+'/api/social/home');
+  assert.equal(noCookie.status,401);
+  const adminHome=await get('/api/social/home');
+  assert.equal(adminHome.status,200);
+  const created=await post('/api/social/playlists',{title:'Private integration mix',visibility:'private'});
+  assert.equal(created.status,201);
+  const id=(await created.json()).playlist.id;
+  const regularLogin=await post('/api/login',{username:'listener',password:'test-only'},null);
+  assert.equal(regularLogin.status,200);
+  const regular=(await regularLogin.json());
+  const regularCookie=regularLogin.headers.get('set-cookie')?.split(';')[0];
+  const forbidden=await fetch(base+'/api/social/playlists/'+id,{
+    headers:{cookie:regularCookie}
+  });
+  assert.equal(forbidden.status,404,'Another logged-in user cannot view a private social playlist');
+  const forged=await fetch(base+'/api/social/playlists/'+id,{
+    method:'PATCH',headers:{cookie:regularCookie,'content-type':'application/json','x-csrf-token':regular.csrfToken},
+    body:JSON.stringify({visibility:'public'})
+  });
+  assert.equal(forged.status,404);
+  const missingCsrf=await fetch(base+'/api/social/playlists',{method:'POST',
+    headers:{cookie:regularCookie,'content-type':'application/json'},
+    body:JSON.stringify({title:'Forged social mix'})});
+  assert.equal(missingCsrf.status,403);
+  const deleted=await fetch(base+'/api/social/playlists/'+id,{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
+  assert.equal(deleted.status,200);
 });
 test('admin-initiated library scan',async()=>{
   const res=await post('/api/library/scan',{});
