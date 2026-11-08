@@ -111,6 +111,29 @@ test('Soulseek search, transfer status and safe import',async()=>{
   assert.equal((await queued.json()).queued,true);
   assert.deepEqual(received.download,entry);
 });
+test('Soulseek fallback explains an empty response instead of exposing []',async()=>{
+  const status=await get('/api/soulseek/status');
+  const state=await status.json();
+  assert.equal(state.mode,'legacy');
+  assert.equal(state.configured,true);
+  const result=await post('/api/soulseek/search',{query:'Kino'});
+  assert.equal(result.status,200);
+  const data=await result.json();
+  assert.equal(data.source,'legacy');
+  assert.ok(data.results);
+});
+test('audio quality settings route to original or 128 kbps transcoded streaming',async()=>{
+  const original=await get('/api/stream/track-1?quality=original');
+  assert.equal(original.status,200);
+  await original.arrayBuffer();
+  assert.equal(received.lastSubsonic.name,'stream');
+  assert.equal(received.lastSubsonic.params.format,'raw');
+  const saver=await get('/api/stream/track-1?quality=saver');
+  assert.equal(saver.status,200);
+  await saver.arrayBuffer();
+  assert.equal(received.lastSubsonic.params.format,'mp3');
+  assert.equal(received.lastSubsonic.params.maxBitRate,'128');
+});
 test('admin-initiated library scan',async()=>{
   const res=await post('/api/library/scan',{});
   assert.equal(res.status,200);
