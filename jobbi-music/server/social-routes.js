@@ -63,8 +63,8 @@ const avatarType=bytes=>{
   return null;
 };
 function respond(handler){
-  return async(req,res)=>{
-    try{await handler(req,res);}
+  return async(req,res,next)=>{
+    try{await handler(req,res,next);}
     catch(err){
       if(err instanceof SocialError) return res.status(err.status).json({error:err.message});
       if(err?.code==='23505')return res.status(409).json({error:'That entry already exists'});
