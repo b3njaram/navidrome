@@ -41,6 +41,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run check
       - run: sh -n scripts/nas-security-audit.sh
+      - run: sh -n scripts/enable-social.sh
       - run: SOCIAL_DB_PASSWORD=ci-only-secret ADMIN_USERS=ci-admin NAVIDROME_URL=http://127.0.0.1:4533 DOWNLOADER_URL=http://127.0.0.1:8383 docker compose -f compose.yaml config --quiet
       - run: npm test
       - run: npm audit --omit=dev --audit-level=high
