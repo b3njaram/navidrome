@@ -196,7 +196,7 @@ app.delete('/api/playlists/:id',mustAuth,route(async(req,res)=>{
 
 // Available to the designated music admin only. No direct browser access to
 // downloader/slskd. This uses the existing /api/downloads route read-only.
-app.get('/api/soulseek/downloads',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+app.get('/api/soulseek/downloads',mustAuth,mustAdmin,route(async(req,res)=>{
   if(!DOWNLOADER)return res.status(503).json({error:'Downloader is not configured'});
   const upstream=await fetch(`${DOWNLOADER}/api/downloads`,{signal:AbortSignal.timeout(10000)});
   if(!upstream.ok)return res.status(502).json({error:'Unable to retrieve transfer status'});
