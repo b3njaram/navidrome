@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 
-let navServer, downloadServer, appProcess, base, cookie;
+let navServer, downloadServer, appProcess, base, cookie, csrfToken;
 const received={};
 const json=(res,body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
 const ok=(extra={})=>({'subsonic-response':{status:'ok',version:'1.16.1',...extra}});
 
 async function listen(server){await new Promise((resolve,reject)=>server.listen(0,'127.0.0.1',resolve).once('error',reject));return server.address().port;}
 async function vacantPort(){const s=createServer();const p=await listen(s);await new Promise(resolve=>s.close(resolve));return p;}
-const post=(url,body,cookieValue=cookie)=>fetch(base+url,{method:'POST',headers:{'content-type':'application/json',...(cookieValue?{cookie:cookieValue}:{})},body:JSON.stringify(body)});
-const patch=(url,body)=>fetch(base+url,{method:'PATCH',headers:{'content-type':'application/json',cookie},body:JSON.stringify(body)});
+const post=(url,body,cookieValue=cookie)=>fetch(base+url,{method:'POST',headers:{'content-type':'application/json',...(cookieValue?{cookie:cookieValue,'x-csrf-token':csrfToken}:{})},body:JSON.stringify(body)});
+const patch=(url,body)=>fetch(base+url,{method:'PATCH',headers:{'content-type':'application/json',cookie,'x-csrf-token':csrfToken},body:JSON.stringify(body)});
 const get=url=>fetch(base+url,{headers:{cookie}});
 
 before(async()=>{
@@ -19,6 +19,8 @@ before(async()=>{
     const u=new URL(req.url,'http://localhost');
     const name=u.pathname.split('/').at(-1).replace('.view','');
     received.lastSubsonic={name,params:Object.fromEntries(u.searchParams)};
+    if(name==='getUser')return json(res,ok({user:{username:u.searchParams.get('username'),adminRole:u.searchParams.get('username')==='testadmin'}}));
+    if(name==='getUsers')return json(res,ok({users:{user:[{username:'testadmin',adminRole:true},{username:'listener',adminRole:false}]}}));
     if(name==='getPlaylists')return json(res,ok({playlists:{playlist:[{id:'pl-1',name:'Road trip',songCount:0}]}}));
     if(name==='getPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')||'Road trip',entry:[]}}));
     if(name==='createPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')}}));
@@ -70,11 +72,29 @@ test('health endpoint and access control',async()=>{
 test('Navidrome login and session cookies',async()=>{
   const r=await post('/api/login',{username:'testadmin',password:'mock-password'},null);
   assert.equal(r.status,200);
-  assert.equal((await r.json()).admin,true);
+  const login=await r.json();
+  assert.equal(login.admin,true);
+  csrfToken=login.csrfToken;
+  assert.ok(csrfToken?.length>=20);
   cookie=r.headers.get('set-cookie')?.split(';')[0];
   assert.match(cookie,/jobbi_session=/);
   const session=await(await get('/api/session')).json();
   assert.equal(session.username,'testadmin');
+});
+test('CSRF validation rejects missing tokens and untrusted origins',async()=>{
+  const noCsrf=await fetch(base+'/api/playlists',{method:'POST',headers:{cookie,'Content-Type':'application/json'},body:JSON.stringify({name:'Unsafe'})});
+  assert.equal(noCsrf.status,403);
+  const crossOrigin=await fetch(base+'/api/playlists',{method:'POST',headers:{cookie,'Content-Type':'application/json','x-csrf-token':csrfToken,origin:'https://evil.example'},body:JSON.stringify({name:'Unsafe'})});
+  assert.equal(crossOrigin.status,403);
+});
+test('non-admin sessions never inherit administrator privileges',async()=>{
+  const r=await post('/api/login',{username:'listener',password:'regular'},null);
+  assert.equal(r.status,200);
+  const info=await r.json();
+  assert.equal(info.admin,false);
+  const regularCookie=r.headers.get('set-cookie')?.split(';')[0];
+  const denied=await fetch(base+'/api/soulseek/status',{headers:{cookie:regularCookie}});
+  assert.equal(denied.status,403);
 });
 test('complete album and artist library APIs',async()=>{
   const albums=await get('/api/library/albums?offset=0&size=48');
@@ -94,7 +114,7 @@ test('playlist create, edit and delete',async()=>{
   assert.equal(updated.status,200);
   assert.equal(received.lastSubsonic.name,'getPlaylist');
   assert.equal((await patch('/api/playlists/pl-1',{removeIndex:-1})).status,400);
-  const gone=await fetch(base+'/api/playlists/pl-1',{method:'DELETE',headers:{cookie}});
+  const gone=await fetch(base+'/api/playlists/pl-1',{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
   assert.equal(gone.status,200);
   assert.deepEqual(await gone.json(),{ok:true});
 });
