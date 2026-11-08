@@ -16,7 +16,7 @@ const patch=(url,body)=>fetch(base+url,{method:'PATCH',headers:{'content-type':'
 const get=url=>fetch(base+url,{headers:{cookie}});
 
 before(async()=>{
-  navServer=createServer((req,res)=>{
+  navServer=createServer(async(req,res)=>{
     const u=new URL(req.url,'http://localhost');
     if(u.pathname==='/auth/login'){
       let body='';for await(const data of req)body+=data;
