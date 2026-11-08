@@ -8,7 +8,7 @@ services:
     environment:
       PORT: "3131"
       NODE_ENV: production
-      PUBLIC_HTTPS: "true"
+      PUBLIC_HTTPS: ${PUBLIC_HTTPS:-false}
       NAVIDROME_URL: ${NAVIDROME_URL:?Set NAVIDROME_URL in .env}
       DOWNLOADER_URL: ${DOWNLOADER_URL:?Set DOWNLOADER_URL in .env}
       ADMIN_USERS: ${ADMIN_USERS:?Set ADMIN_USERS in .env}
