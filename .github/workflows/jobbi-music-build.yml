@@ -1,0 +1,28 @@
+name: Jobbi Music preview build
+on:
+  push:
+    branches: [main, feature/jobbi-music-preview]
+    paths:
+      - 'jobbi-music/**'
+      - '.github/workflows/jobbi-music-build.yml'
+  pull_request:
+    paths:
+      - 'jobbi-music/**'
+      - '.github/workflows/jobbi-music-build.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: jobbi-music
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: npm run build
+      - run: docker build -t jobbi-music:ci .
