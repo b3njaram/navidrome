@@ -85,4 +85,7 @@ When *all* release blockers pass and production promotion is approved:
 3. Leave the original Navidrome Docker container and library completely intact. Continue operating on 4533 internally for Subsonic API and native administration.
 4. **Rollback:** Restore the Cloudflare route to `http://192.168.1.20:4533`. No database or music file restoration is needed because the new frontend uses the same existing Navidrome system.
 
+**Compatibility:** Jobbi Music now forwards `/rest/*` requests at the original hostname to Navidrome's fixed backend origin, preserving Subsonic/OpenSubsonic clients, including existing credentials, POST requests, streaming and byte ranges. Navidrome—not Jobbi Music—still authenticates these clients. Test an existing mobile Subsonic client against the actual production hostname **before** and **after** the route change. If Cloudflare Access MFA is enabled for the hostname, arrange an explicitly reviewed path-specific exception or separate service hostname for legacy clients, because many music clients cannot solve interactive browser MFA challenges. Do **not** bypass authentication in Navidrome. 
+
+
 Do not switch to production automatically on every commit. Use a protected deployment branch or manual production approval. Never attach `/var/run/docker.sock` or a privileged shell endpoint to the web server.
