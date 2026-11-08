@@ -7,6 +7,18 @@ Apple Music-inspired dark UI, Navidrome login, album and artist browser, search,
 
 Soulseek downloads are now queued via the existing custom Flask downloader at `/api/download` and transfers are read at `/api/downloads`. **Important:** the request body uses the inferred fields `username,filename,size,artist,title` based on your earlier NAS output. The live Flask handler has NOT yet been reviewed; verify it before considering Soulseek production-ready. Only acquire music you have permission to access.
 
+## Administrator / listener permissions and production release gate
+
+Jobbi Music authenticates users against the **existing Navidrome accounts**, rather than creating a parallel user database. The full role matrix, live acceptance tests, security controls, backup steps and rollback procedure are maintained in [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md).
+
+- Administrator means **both** an existing Navidrome account with `adminRole=true` **and** an exact username in the NAS-only `ADMIN_USERS` environment allowlist. Admin authorization is reverified against Navidrome for admin requests.
+- Listeners can use their own library, playback, favorites and playlists; admin and Soulseek actions are server-restricted. There is no unauthenticated public registration.
+- The admin console shows user roles and counts, NAS total/used/free space, audio-only track bytes/count, and total `/volume1/music` folder size. These are aggregate read-only periodic measurements, not live per-file browser access.
+- Native account administration defaults to disabled (`ENABLE_ACCOUNT_MANAGEMENT=false`) until explicitly tested against the *installed* Navidrome native API on the NAS. Creating users is possible from the admin UI only after compatibility and backup validation, and always creates a listener without elevated privileges.
+- Production requires `PUBLIC_HTTPS=true` **and a working HTTPS endpoint**. It prevents cookie-based login over plain Tailscale HTTP; use the HTTPS Cloudflare hostname or Tailscale Serve HTTPS in production.
+- Never mount Docker socket or a NAS root shell into the public app. The storage scanner has no network, only a read-only music volume, and drops all Linux capabilities. The Node app cannot read or write the actual music filesystem.
+- All GitHub CI browser tests use mocked services; they cannot establish real Synology authorization, Cloudflare Access, actual disk statistics, full song playback or Soulseek imports.
+
 ## Preview on the NAS
 
 ```sh
