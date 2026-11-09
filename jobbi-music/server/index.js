@@ -13,7 +13,7 @@ import { androidLatest } from './android-update.js';
 import { createSocialRouter } from './social-routes.js';
 import { createMusicRequestsRouter } from './music-requests.js';
 import {createMusicImportRouter,checkStorageStats} from './music-import.js';
-import {searchInvidious} from './invidious.js';
+import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
 import {createInvidiousImportRouter} from './invidious-import.js';
 import { promises as fs } from 'node:fs';
 
@@ -157,7 +157,26 @@ app.get('/api/library/artists',mustAuth,route(async(req,res)=>{
   res.json({artists,count:artists.length});
 }));
 app.get('/api/albums/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getAlbum',{id:req.params.id});res.json(d.album||null);}));
-app.get('/api/artists/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getArtist',{id:req.params.id});res.json(d.artist||null);}));
+app.get('/api/artists/:id',mustAuth,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid artist'});
+  const d=await subsonic(req.user,'getArtist',{id:req.params.id});
+  const artist=d.artist;
+  if(!artist)return res.status(404).json({error:'Artist not found'});
+  const albums=(artist.album||[]).slice(0,18);
+  const groups=[];
+  // Get real Navidrome album tracks rather than approximate search results.
+  for(let i=0;i<albums.length;i+=6){
+    const batch=await Promise.all(albums.slice(i,i+6).map(async album=>{
+      try{
+        const result=await subsonic(req.user,'getAlbum',{id:album.id});
+        return (result.album?.song||[]).map(song=>({...song,albumId:song.albumId||album.id,
+          artistId:song.artistId||artist.id}));
+      }catch{return []}
+    }));
+    groups.push(...batch);
+  }
+  res.json({...artist,song:groups.flat().slice(0,360)});
+}));
 app.get('/api/playlists/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getPlaylist',{id:req.params.id});res.json(d.playlist||null);}));
 app.get('/api/starred',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getStarred2');res.json(d.starred2||{});}));
 app.post('/api/star',mustAuth,route(async(req,res)=>{const {id,starred}=req.body ||{};if(!validId(id)||typeof starred!=='boolean')return res.status(400).json({error:'Invalid favorite request'});await subsonic(req.user,starred?'star':'unstar',{id});res.json({ok:true});}));
@@ -206,6 +225,25 @@ app.get('/api/invidious/search',mustAuth,mustLimitPeerSearch,route(async(req,res
   if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
   const result=await searchInvidious(query);
   res.json(result);
+}));
+app.get('/api/invidious/thumbnail/:id',mustAuth,route(async(req,res)=>{
+  const id=req.params.id;
+  if(!videoIdValid(id))return res.status(400).end();
+  for(const origin of configuredInvidious()){
+    try{
+      const response=await fetch(origin+'/vi/'+id+'/mqdefault.jpg',{
+        redirect:'error',signal:AbortSignal.timeout(4500)
+      });
+      const size=Number(response.headers.get('content-length')||0);
+      if(!response.ok||size>1500000||!response.headers.get('content-type')?.startsWith('image/'))continue;
+      const bytes=Buffer.from(await response.arrayBuffer());
+      if(bytes.length>1500000)continue;
+      res.setHeader('Content-Type','image/jpeg');
+      res.setHeader('Cache-Control','private, max-age=3600');
+      return res.send(bytes);
+    }catch{}
+  }
+  res.status(404).end();
 }));
 app.get('/api/soulseek/health',mustAuth,mustAdmin,route(async(req,res)=>{
   if(!DOWNLOADER)return res.status(503).json({error:'Downloader is not configured'});
