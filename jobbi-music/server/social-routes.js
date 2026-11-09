@@ -73,7 +73,7 @@ function respond(handler){
       if(err?.code==='23505')return res.status(409).json({error:'That entry already exists'});
       if(err?.code==='23503')return res.status(409).json({error:'Referenced account or playlist no longer exists'});
       if(err?.code==='22P02')return res.status(400).json({error:'Invalid identifier'});
-      console.error('Social request failed:',err?.code||err?.name||'unknown');
+      console.error('Social request failed:',err?.code||err?.name||'unknown',process.env.CI?String(err?.message||'').slice(0,250):'');
       if(!res.headersSent)res.status(503).json({error:'Social service unavailable. Please try again.'});
     }
   };
