@@ -1,7 +1,7 @@
 
 /* Jobbi Music immersive player — original, Apple Music-inspired interaction language. */
 .immersive-player{position:fixed;inset:0;z-index:120;isolation:isolate;background:#151019;color:#fff;overflow:hidden;animation:immersive-in .35s cubic-bezier(.2,.75,.23,1) both;outline:none}
-.immersive-backdrop{position:absolute;inset:-60px;background:radial-gradient(circle at 27% 40%,#9b4f7d 0,transparent 53%),linear-gradient(135deg,#271829,#12121a);background-position:center;background-size:cover;filter:blur(55px) saturate(1.15);opacity:.8;transform:scale(1.18);pointer-events:none}
+.immersive-backdrop{position:absolute;inset:0;background:radial-gradient(circle at 27% 40%,#9b4f7d 0,transparent 53%),linear-gradient(135deg,#271829,#12121a);background-position:center;background-size:cover;filter:blur(55px) saturate(1.15);opacity:.8;transform:none;pointer-events:none}
 .immersive-player:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(20,15,24,.48),rgba(12,10,19,.72));z-index:-1;pointer-events:none}
 .immersive-shell{height:100%;max-width:1320px;margin:auto;padding:20px clamp(20px,3vw,54px) 34px;display:flex;flex-direction:column;position:relative}
 .immersive-top{display:grid;grid-template-columns:60px 1fr 60px;align-items:center;gap:10px;min-height:56px}
