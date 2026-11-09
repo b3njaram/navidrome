@@ -339,7 +339,6 @@ test('listener can import permitted Invidious fallback audio using optional work
   await page.getByRole('button',{name:'Search music sources'}).click();
   await expect(page.getByText('Luis Miguel - Test Music')).toBeVisible();
   await page.getByRole('button',{name:'Import audio'}).click();
-  await page.getByRole('checkbox',{name:/I confirm I have permission/}).check();
   await page.getByRole('button',{name:'Import audio to NAS'}).click();
   await expect(page.getByText('Alternate-source imports')).toBeVisible();
   await expect(page.locator('.request-status.queued').last()).toBeVisible();
