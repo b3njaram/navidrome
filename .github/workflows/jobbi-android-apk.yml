@@ -23,7 +23,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android 35 using the runner SDK
+      - name: Install Android 36 using the runner SDK
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
           ${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
