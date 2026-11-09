@@ -15,3 +15,7 @@ This is a native Android shell using the **same live React interface** as Jobbi 
 Install by opening the APK on Android and allowing installation from that trusted source. Set the server if your DNS differs. Sign in, tap the download symbol beside a song, and open **Offline** for locally saved songs.
 
 Offline downloads are **device-specific** and not a sync or bypass of Navidrome permissions. This is not a redistribution/DRM circumvention tool.
+
+### Android 1.0.1 display fixes
+
+Android 15/16 edge-to-edge requires accounting for system status and navigation bar insets. Both activities now reserve those insets explicitly; the native top toolbar uses vector icons and a compact title, and the online WebView hides the duplicate web top bar. Community's five tabs wrap into two rows, the mobile bottom nav uses five evenly sized icons with an accessible More menu, and album tiles use a responsive two-column grid rather than widening the page. Android WebView respects the viewport and does not use desktop overview scaling.

@@ -20,6 +20,10 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.app.DownloadManager;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
@@ -62,11 +66,20 @@ public final class OfflineActivity extends Activity {
     }
     @Override public void onCreate(Bundle savedInstanceState){
         super.onCreate(savedInstanceState);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
+        WindowCompat.getInsetsController(getWindow(),getWindow().getDecorView()).setAppearanceLightStatusBars(false);
+        WindowCompat.getInsetsController(getWindow(),getWindow().getDecorView()).setAppearanceLightNavigationBars(false);
         getWindow().setStatusBarColor(color("#17131D"));
         getWindow().setNavigationBarColor(color("#17131D"));
         root=vertical();root.setBackgroundColor(color("#17131D"));
-        root.setPadding(dp(15),dp(14),dp(15),dp(7));
         setContentView(root);
+        ViewCompat.setOnApplyWindowInsetsListener(root,(v,insets)->{
+            Insets bars=insets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                WindowInsetsCompat.Type.displayCutout());
+            root.setPadding(dp(15)+bars.left,dp(14)+bars.top,dp(15)+bars.right,dp(7)+bars.bottom);
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
         LinearLayout toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);
         Button back=button("‹  Listen Now",false);back.setOnClickListener(v->finish());
         toolbar.addView(back,new LinearLayout.LayoutParams(0,dp(45),1));

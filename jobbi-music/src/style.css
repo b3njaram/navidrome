@@ -102,3 +102,63 @@
 .native-offline-link{display:inline-flex;align-items:center;gap:6px;background:rgba(240,136,178,.13);border:1px solid rgba(240,136,178,.3);border-radius:9px;padding:8px 10px;font-size:11px;font-weight:700;color:#F5A7C6;white-space:nowrap}
 .native-offline-link:hover{background:rgba(240,136,178,.22)}
 @media(max-width:720px){.native-offline-link{padding:7px;font-size:10px}.track-actions .icon-button{min-width:27px}}
+
+
+/* Mobile-first containment: don't let desktop-width flex children move the
+   entire viewport sideways. Only intentional galleries may scroll locally. */
+html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
+.app-shell,.main-column,.content{min-width:0;max-width:100%}
+.topbar-left,.topbar-right{min-width:0}
+.native-android .topbar{display:none}
+.native-android .app-shell{min-height:100%;}
+
+@media(max-width:720px){
+  .app-shell{width:100%;overflow-x:clip;padding-bottom:153px}
+  .main-column{width:100%;overflow-x:clip}
+  .content{width:100%;padding:20px 15px 25px;overflow-x:clip}
+  .hero-card{max-width:100%;overflow:hidden;padding:23px 19px;min-height:228px}
+  .hero-copy{position:relative;z-index:2;min-width:0;max-width:100%}
+  .hero-copy h2{font-size:clamp(1.6rem,7.2vw,2.07rem);line-height:1.12;overflow-wrap:normal}
+  .hero-copy p{max-width:88%;font-size:12px}
+  .hero-buttons{display:flex;flex-wrap:wrap;gap:9px}
+  .hero-buttons>*{max-width:100%}
+  .album-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px 12px;overflow:visible;padding:0}
+  .album-card{width:100%;min-width:0;max-width:100%;flex:auto}
+  .album-card strong{font-size:12px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .album-card .album-art-wrap{margin-bottom:8px}
+  .artist-strip{max-width:100%}
+  .social-page,.admin-page,.library-shortcuts{max-width:100%;min-width:0}
+  .mobile-nav,.mobile-nav.with-admin{height:68px;grid-template-columns:repeat(5,minmax(0,1fr));padding:3px 4px 0;gap:1px;box-shadow:0 -8px 25px rgba(0,0,0,.21)}
+  .mobile-nav button{min-width:0;min-height:58px;gap:4px;font-size:10px;font-weight:700;color:#C4B1C4;border-radius:11px;line-height:1.15}
+  .mobile-nav button svg{flex:0 0 21px}
+  .mobile-nav button.selected{color:#FFA1C0;background:rgba(246,136,182,.12)}
+  .player{bottom:68px;height:70px;min-height:70px;padding:7px 11px;gap:8px;width:100%;max-width:100%;z-index:24}
+  .player-song{min-width:0}
+  .player-song-text{min-width:0;max-width:100%}
+  .player-song-text strong,.player-song-text span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .player .playback-controls{gap:7px}
+  .player .play-round{width:39px;height:39px}
+  .side-panel{bottom:68px}
+  .topbar{padding:0 12px;gap:6px;max-width:100%}
+  .topbar-left{min-width:0;flex:1}
+  .topbar-right{min-width:0;flex:0 1 auto;gap:6px}
+  .topbar-search{min-width:0;width:36px;flex:0 0 36px;padding:0;justify-content:center}
+  .native-offline-link{flex:0 0 auto}
+  .quality-control{min-width:0;max-width:112px}
+  .quality-control select{max-width:80px}
+  .header-avatar{flex:0 0 30px}
+}
+@media(max-width:355px){
+  .content{padding-left:11px;padding-right:11px}
+  .mobile-nav button{font-size:9px}
+  .hero-copy h2{font-size:1.58rem}
+  .album-grid{gap:10px}
+}
+.mobile-more-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:28;display:flex;align-items:flex-end}
+.mobile-more-sheet{width:100%;background:#28202E;border-radius:22px 22px 0 0;border:1px solid #5F435D;padding:20px 18px 95px;display:flex;flex-direction:column;gap:7px;max-height:82vh;overflow-y:auto}
+.mobile-more-heading{display:flex;justify-content:space-between;align-items:center;padding-bottom:9px;color:#F5DDEA}
+.mobile-more-heading strong{font-size:16px}
+.mobile-more-heading button{padding:9px;color:#F1BCD1}
+.mobile-more-sheet>button{display:flex;align-items:center;gap:13px;text-align:left;background:#392D3D;border-radius:12px;padding:15px;color:#F6E8F0;font-size:13px;font-weight:700}
+.mobile-more-sheet>button svg{color:#F0A0BC}
+@media(min-width:721px){.mobile-more-backdrop{display:none}}

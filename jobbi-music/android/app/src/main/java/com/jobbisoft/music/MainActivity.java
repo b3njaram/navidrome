@@ -8,6 +8,16 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.widget.ImageView;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.TextUtils;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -64,6 +74,11 @@ public final class MainActivity extends Activity {
     private void toast(String text){runOnUiThread(()->Toast.makeText(this,text,Toast.LENGTH_LONG).show());}
     @Override public void onCreate(Bundle savedInstanceState){
         super.onCreate(savedInstanceState);
+        // Android 15+ draws activities behind system bars. Reserve real safe-area
+        // insets instead of letting the status icons cover the app toolbar.
+        WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
+        WindowCompat.getInsetsController(getWindow(),getWindow().getDecorView()).setAppearanceLightStatusBars(false);
+        WindowCompat.getInsetsController(getWindow(),getWindow().getDecorView()).setAppearanceLightNavigationBars(false);
         getWindow().setStatusBarColor(color("#17131D"));
         getWindow().setNavigationBarColor(color("#17131D"));
         serverUrl=getPreferences(MODE_PRIVATE).getString("server",DEFAULT_SERVER);
@@ -72,26 +87,64 @@ public final class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(color("#17131D"));
         setContentView(root);
+        ViewCompat.setOnApplyWindowInsetsListener(root,(v,insets)->{
+            Insets safe=insets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                WindowInsetsCompat.Type.displayCutout());
+            root.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
         createShell();
         loadServer();
     }
     private void createShell(){
         LinearLayout bar=new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(this,14),dp(this,5),dp(this,9),dp(this,5));
+        bar.setPadding(dp(this,14),dp(this,4),dp(this,12),dp(this,4));
         bar.setBackgroundColor(color("#17131D"));
-        TextView name=text(this,"◈  jobbi music",17,color("#F5E5EF"),true);
-        bar.addView(name,new LinearLayout.LayoutParams(0,dp(this,42),1));
+        bar.setMinimumHeight(dp(this,56));
+
+        ImageView logo=new ImageView(this);
+        logo.setImageResource(R.drawable.ic_wave_mark);
+        logo.setContentDescription("Jobbi Music");
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoParams=new LinearLayout.LayoutParams(dp(this,30),dp(this,30));
+        logoParams.rightMargin=dp(this,8);
+        bar.addView(logo,logoParams);
+
+        SpannableString brand=new SpannableString("jobbi music");
+        brand.setSpan(new ForegroundColorSpan(color("#F49DBF")),6,11,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        TextView name=text(this,"",18,color("#F5E5EF"),true);
+        name.setText(brand);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
         name.setGravity(Gravity.CENTER_VERTICAL);
-        Button offline=barButton("↓  Offline");
+        bar.addView(name,new LinearLayout.LayoutParams(0,dp(this,44),1));
+
+        TextView offline=text(this,"Offline",12,color("#F4C7DB"),true);
+        offline.setGravity(Gravity.CENTER);
+        offline.setCompoundDrawablePadding(dp(this,5));
+        offline.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_download_small,0,0,0);
+        offline.setPadding(dp(this,10),0,dp(this,10),0);
+        GradientDrawable offlineBg=new GradientDrawable();
+        offlineBg.setColor(color("#382735"));
+        offlineBg.setCornerRadius(dp(this,12));
+        offlineBg.setStroke(dp(this,1),color("#70465F"));
+        offline.setBackground(offlineBg);
         offline.setContentDescription("Open downloaded songs");
         offline.setOnClickListener(v->openOffline());
-        bar.addView(offline,new LinearLayout.LayoutParams(-2,dp(this,37)));
-        Button settings=barButton("⚙");
+        bar.addView(offline,new LinearLayout.LayoutParams(-2,dp(this,38)));
+
+        ImageView settings=new ImageView(this);
+        settings.setImageResource(R.drawable.ic_settings_small);
+        settings.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        settings.setPadding(dp(this,11),dp(this,11),dp(this,11),dp(this,11));
         settings.setContentDescription("Change Jobbi Music server");
         settings.setOnClickListener(v->chooseServer());
-        bar.addView(settings,new LinearLayout.LayoutParams(dp(this,44),dp(this,37)));
-        root.addView(bar);
+        LinearLayout.LayoutParams settingsParams=new LinearLayout.LayoutParams(dp(this,44),dp(this,44));
+        settingsParams.leftMargin=dp(this,4);
+        bar.addView(settings,settingsParams);
+        root.addView(bar,new LinearLayout.LayoutParams(-1,dp(this,56)));
     }
     private Button barButton(String text){
         Button b=new Button(this);
@@ -155,6 +208,10 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setMediaPlaybackRequiresUserGesture(true);
         settings.setSupportZoom(false);
+        // Honor the page viewport width; never scale a desktop layout into a phone.
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(false);
+        settings.setTextZoom(100);
         settings.setSaveFormData(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         CookieManager.getInstance().setAcceptCookie(true);

@@ -65,7 +65,10 @@ test('listener can sign in, browse, search and manage own playlist without admin
 test('administrator sees volume stats and restricted user management',async({page})=>{
   const errors=[];page.on('pageerror',err=>errors.push(err.message));
   await setupMocks(page);await login(page,'testadmin');
-  await navigate(page,await page.locator('.mobile-nav').first().isVisible()?'Admin':'Admin console');
+  if(await page.locator('.mobile-nav').first().isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:'Admin console'}).click();
+  }else await navigate(page,'Admin console');
   await expect(page.getByText('NAS storage')).toBeVisible();
   await expect(page.getByText('Accounts & permissions')).toBeVisible();
   await expect(page.getByText('Listener',{exact:true}).first()).toBeVisible();
@@ -189,4 +192,38 @@ test('Community friend requests, opt-in blends, profile stats and profile pictur
   await page.locator('.social-avatar-upload input[type=file]').setInputFiles({name:'test.png',mimeType:'image/png',buffer:photo});
   await expect(page.getByText('Profile picture saved')).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test('mobile navigation and Community fit narrow displays without a horizontal page scrollbar',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await mockSocial(page);
+  await page.setViewportSize({width:320,height:690});
+  await login(page,'listener');
+  const noOverflow=async()=>page.evaluate(()=>({width:window.innerWidth,html:document.documentElement.scrollWidth,body:document.body.scrollWidth}));
+  const home=await noOverflow();
+  expect(home.html).toBeLessThanOrEqual(home.width+1);
+  await navigate(page,'Community');
+  await expect(page.locator('.social-tabs button')).toHaveCount(5);
+  const community=await noOverflow();
+  expect(community.html).toBeLessThanOrEqual(community.width+1);
+  const inViewport=await page.locator('.social-tabs button').evaluateAll(elements=>elements.every(el=>{
+    const b=el.getBoundingClientRect();
+    return b.left>=-1&&b.right<=window.innerWidth+1;
+  }));
+  expect(inViewport).toBe(true);
+  await page.getByRole('button',{name:'More options'}).click();
+  await expect(page.locator('.mobile-more-sheet')).toBeVisible();
+  await page.locator('.mobile-more-sheet').getByRole('button',{name:'Settings'}).click();
+  await expect(page.getByText('Streaming quality')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test('Android native shell hides duplicate web header and keeps all five navigation buttons visible',async({page})=>{
+  await setupMocks(page);await mockSocial(page);
+  await page.setViewportSize({width:360,height:780});
+  await login(page,'listener');
+  await page.evaluate(()=>document.documentElement.classList.add('native-android'));
+  await expect(page.locator('.topbar')).toBeHidden();
+  await expect(page.locator('.mobile-nav>button')).toHaveCount(5);
+  const width=await page.evaluate(()=>({vw:window.innerWidth,scroll:document.documentElement.scrollWidth}));
+  expect(width.scroll).toBeLessThanOrEqual(width.vw+1);
 });
