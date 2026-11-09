@@ -157,6 +157,13 @@ app.get('/api/library/artists',mustAuth,route(async(req,res)=>{
   res.json({artists,count:artists.length});
 }));
 app.get('/api/albums/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getAlbum',{id:req.params.id});res.json(d.album||null);}));
+app.get('/api/songs/:id',mustAuth,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid song'});
+  const data=await subsonic(req.user,'getSong',{id:req.params.id});
+  if(!data.song)return res.status(404).json({error:'Song not in your library'});
+  res.json(data.song);
+}));
+
 app.get('/api/artists/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid artist'});
   const d=await subsonic(req.user,'getArtist',{id:req.params.id});
