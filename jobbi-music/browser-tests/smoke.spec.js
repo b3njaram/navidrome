@@ -16,6 +16,7 @@ async function setupMocks(page){
     if(pathname==='/api/logout'){state.session=null;return reply({ok:true});}
     if(pathname==='/api/home')return reply({recent:[{id:'a1',name:'Test Album',artist:'Test Artist'}],featured:[],played:[],songs:[{id:'s1',title:'Kino',artist:'Test Artist',duration:180}],playlists:state.playlists});
     if(pathname==='/api/starred')return reply({song:[],album:[]});
+    if(pathname==='/api/lyrics/s1')return reply({available:true,synced:true,source:'Navidrome',lines:[{at:0,text:'First line of the song'},{at:4500,text:'Second line of the song'}]});
     if(pathname==='/api/search')return reply({artist:[],album:[{id:'a1',name:'Test Album',artist:'Test Artist'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',album:'Test Album',duration:180}]});
     if(pathname==='/api/library/albums')return reply({albums:[{id:'a1',name:'Test Album',artist:'Test Artist'}],offset:0,size:48});
     if(pathname==='/api/library/artists')return reply({artists:[{id:'artist1',name:'Test Artist'}],count:1});
@@ -226,4 +227,36 @@ test('Android native shell hides duplicate web header and keeps all five navigat
   await expect(page.locator('.mobile-nav>button')).toHaveCount(5);
   const width=await page.evaluate(()=>({vw:window.innerWidth,scroll:document.documentElement.scrollWidth}));
   expect(width.scroll).toBeLessThanOrEqual(width.vw+1);
+});
+
+test('tapping playing track opens immersive player, with synced lyrics and queue',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await login(page,'listener');
+  await page.getByRole('button',{name:/Play something good/}).click();
+  await page.getByRole('button',{name:/Open now playing for Kino/}).click();
+  await expect(page.getByRole('dialog',{name:'Now playing'})).toBeVisible();
+  await page.getByRole('button',{name:'Show lyrics'}).click();
+  await expect(page.getByText('First line of the song')).toBeVisible();
+  await expect(page.getByText('Second line of the song')).toBeVisible();
+  await page.getByRole('button',{name:'Show queue'}).click();
+  await expect(page.getByText('UP NEXT')).toBeVisible();
+  await page.getByRole('button',{name:'Track options'}).click();
+  await expect(page.getByRole('button',{name:'Add to playlist'}).last()).toBeVisible();
+  await page.getByRole('button',{name:'Close now playing'}).click();
+  await expect(page.getByRole('dialog',{name:'Now playing'})).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+test('immersive player fits phone and respects reduced motion',async({page})=>{
+  await setupMocks(page);
+  await page.setViewportSize({width:320,height:720});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await login(page,'listener');
+  await page.getByRole('button',{name:/Play something good/}).click();
+  await page.getByRole('button',{name:/Open now playing for Kino/}).click();
+  const viewport=await page.evaluate(()=>{
+    const layer=document.querySelector('.immersive-player');
+    return {width:window.innerWidth,scrollWidth:layer.scrollWidth,animation:getComputedStyle(layer).animationName};
+  });
+  expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.width+1);
+  expect(viewport.animation).toBe('none');
 });
