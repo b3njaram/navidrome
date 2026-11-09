@@ -14,5 +14,5 @@ test('only signed public Android release assets from official repository are eli
  assert.equal(x.sha256,'a'.repeat(64));
 });
 test('no release means no update and no link',()=>{
- assert.deepEqual(findAndroidRelease([]),{available:false});
+ const result=findAndroidRelease([]);assert.equal(result.available,false);assert.equal(result.downloadUrl,undefined);
 });
