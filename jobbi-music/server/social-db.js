@@ -48,6 +48,21 @@ CREATE TABLE IF NOT EXISTS social_members (
   joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY(playlist_id,username)
 );
+CREATE TABLE IF NOT EXISTS social_playlist_invitations (
+  id UUID PRIMARY KEY,
+  playlist_id UUID NOT NULL REFERENCES social_playlists(id) ON DELETE CASCADE,
+  sender TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  recipient TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  can_edit BOOLEAN NOT NULL DEFAULT TRUE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','declined','revoked')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK(sender <> recipient)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS social_playlist_pending_invite
+  ON social_playlist_invitations(playlist_id,recipient) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS social_playlist_inbox
+  ON social_playlist_invitations(recipient,status,created_at DESC);
 CREATE TABLE IF NOT EXISTS social_tracks (
   id BIGSERIAL PRIMARY KEY,
   playlist_id UUID NOT NULL REFERENCES social_playlists(id) ON DELETE CASCADE,
