@@ -9,6 +9,10 @@ on:
       - '.github/workflows/jobbi-android-apk.yml'
   workflow_dispatch:
 
+concurrency:
+  group: jobbi-android-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
