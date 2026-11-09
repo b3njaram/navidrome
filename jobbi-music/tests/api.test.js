@@ -52,7 +52,12 @@ before(async()=>{
     if(name==='getRandomSongs')return json(res,ok({randomSongs:{song:[]}}));
     if(name==='getStarred2')return json(res,ok({starred2:{song:[]}}));
     if(name==='getLyricsBySongId')return json(res,ok({lyricsList:{structuredLyrics:[]}}));
-    if(name==='search3')return json(res,ok({searchResult3:{song:[],album:[],artist:[]}}));
+    if(name==='search3'){
+      const query=u.searchParams.get('query');
+      if(received.romanizedCatalog&&query?.toLowerCase()==='gruppa krovi')
+        return json(res,ok({searchResult3:{song:[{id:'kino-song',title:'Gruppa Krovi',artist:'Kino'}],album:[],artist:[]}}));
+      return json(res,ok({searchResult3:{song:[],album:[],artist:[]}}));
+    }
     if(name==='startScan')return json(res,ok({scanStatus:{scanning:true}}));
     return json(res,ok());
   });
@@ -65,7 +70,9 @@ before(async()=>{
     if(req.url==='/api/search'){received.search=JSON.parse(chunks);return json(res,{results:[{username:'peer',files:[{filename:'Music/Track.flac',size:100000}]}]});}
     if(req.url==='/api/download'){
       received.download=JSON.parse(chunks);
-      if(received.duplicateOnNas)return json(res,{error:"Skipping this song: already in your Music folder"},409);
+      if(received.duplicateOnNas)return json(res,received.duplicateMessageField?
+        {message:"Skipping this song: already in your Music folder"}:
+        {error:"Skipping this song: already in your Music folder"},409);
       return json(res,{job_id:'job-1',state:'queued'},202);
     }
     return json(res,{error:'Not found'},404);
@@ -287,8 +294,60 @@ test('known NAS library duplicate is not treated as ambiguous download failure',
     const history=(await result.json()).items;
     const match=history.find(x=>x.title==='Группа крови');
     assert.equal(match?.stage,'existing');
-    assert.match(match.label,/NAS music index/);
+    assert.match(match.label,/Downloader index/);
   }finally{received.duplicateOnNas=false;}
+});
+test('old repeated rejected imports are grouped; archiving hides history but deletes no audio',async()=>{
+  if(!process.env.SOCIAL_TEST_DATABASE_URL)return;
+  received.duplicateOnNas=true;
+  received.duplicateMessageField=true;
+  const entry={artist:'Кино',title:'Группа крови',size:15000000};
+  try{
+    for(let i=0;i<2;i++){
+      const attempt=await fetch(base+'/api/music-imports',{
+        method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json',
+          'x-csrf-token':listenerCsrfToken},
+        body:JSON.stringify({...entry,username:'other-peer-'+i,
+          filename:'Kino/013. Kino - Gruppa Krovi '+i+'.flac'})
+      });
+      assert.equal(attempt.status,200);
+    }
+    const history=await get('/api/music-imports');
+    assert.equal(history.status,200);
+    const items=(await history.json()).items;
+    const kino=items.find(x=>x.title==='Группа крови');
+    assert.ok(kino);
+    assert.ok(kino.attemptCount>=3);
+    assert.ok(kino.archiveIds.length>=3);
+    assert.equal(kino.stage,'existing');
+    const archive=await post('/api/music-imports/archive',{ids:kino.archiveIds},listenerCookie);
+    // The post helper supplies the admin CSRF token, not the listener's.
+    // We test listener-scoped archiving with its own token below instead.
+    assert.equal(archive.status,403);
+    const allowed=await fetch(base+'/api/music-imports/archive',{
+      method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json',
+        'x-csrf-token':listenerCsrfToken},
+      body:JSON.stringify({ids:kino.archiveIds})
+    });
+    assert.equal(allowed.status,200);
+    const archived=await allowed.json();
+    assert.equal(archived.archived,kino.archiveIds.length);
+    assert.equal(archived.deletedFiles,0);
+    assert.equal(archived.canceledTransfers,0);
+    const refreshed=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
+    assert.ok(!(await refreshed.json()).items.some(x=>x.title==='Группа крови'));
+  }finally{received.duplicateOnNas=false;received.duplicateMessageField=false;}
+});
+test('Navidrome Cyrillic searches try Latin spelling without claiming unrelated tracks',async()=>{
+  received.romanizedCatalog=true;
+  try{
+    const response=await fetch(base+'/api/search?q='+encodeURIComponent('Группа крови'),
+      {headers:{cookie:listenerCookie}});
+    assert.equal(response.status,200);
+    const library=await response.json();
+    assert.ok(library.song.some(x=>x.id==='kino-song'));
+    assert.equal(received.lastSubsonic.params.query,'gruppa krovi');
+  }finally{received.romanizedCatalog=false;}
 });
 test('non-configured Invidious worker does not accept direct audio imports',async()=>{
   const result=await fetch(base+'/api/invidious/status',{headers:{cookie}});
