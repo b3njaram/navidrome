@@ -57,7 +57,15 @@ test('friend requests require recipient approval; private playlist visibility is
   assert.equal((await read(await req('/home',{user:'bob'}))).incoming.length,1);
   assert.equal((await post('/friends/alice/respond','bob',{accept:true})).status,200);
   assert.equal((await req('/playlists/'+id,{user:'bob'})).status,404,'Friendship alone must not share a private playlist');
-  assert.equal((await post('/playlists/'+id+'/members','alice',{username:'bob',canEdit:true})).status,200);
+  assert.equal((await post('/playlists/'+id+'/members','alice',{username:'bob',canEdit:true})).status,410);
+  const sent=await post('/playlists/'+id+'/invitations','alice',{username:'bob',canEdit:true});
+  assert.equal(sent.status,201);
+  const invitation=(await read(sent)).invitation;
+  assert.equal((await req('/playlists/'+id,{user:'bob'})).status,404,'Invitation alone must not disclose a private playlist');
+  assert.equal((await post('/invitations/'+invitation.id+'/respond','charlie',{accept:true})).status,404,'Other users cannot accept someone else\'s invitation');
+  const inbox=(await read(await req('/home',{user:'bob'}))).playlistInvitations;
+  assert.equal(inbox.filter(i=>i.id===invitation.id).length,1);
+  assert.equal((await post('/invitations/'+invitation.id+'/respond','bob',{accept:true})).status,200);
   assert.equal((await req('/playlists/'+id,{user:'bob'})).status,200);
   assert.equal((await req('/playlists/'+id,{user:'charlie'})).status,404);
   assert.equal((await post('/playlists/'+id+'/tracks','bob',{trackId:'bob-added'})).status,201);
@@ -76,6 +84,42 @@ test('friend requests require recipient approval; private playlist visibility is
   assert.equal((await req('/playlists/'+id,{user:'bob'})).status,404,'Unfriending revokes private playlist access');
   assert.equal((await del('/playlists/'+id,'bob')).status,404);
   assert.equal((await del('/playlists/'+id,'alice')).status,200);
+});
+test('playlist invitations work during creation, later, with opt-in editing and revocation', {skip:!enabled},async()=>{
+  const created=await post('/playlists','charlie',{
+    title:'Collaboration from start',visibility:'private',
+    invitees:[{username:'bob',canEdit:true}]
+  });
+  assert.equal(created.status,201);
+  const detail=await read(created),id=detail.playlist.id;
+  assert.equal(detail.invitationsSent,1);
+  assert.equal((await req('/playlists/'+id,{user:'bob'})).status,404);
+  assert.equal((await post('/playlists/'+id+'/invitations','alice',{username:'bob',canEdit:true})).status,404);
+  const bobHome=await read(await req('/home',{user:'bob'}));
+  const invitation=bobHome.playlistInvitations.find(i=>i.playlist_id===id);
+  assert.ok(invitation);
+  assert.equal(invitation.can_edit,true);
+  assert.equal((await post('/invitations/'+invitation.id+'/respond','bob',{accept:false})).status,200);
+  assert.equal((await req('/playlists/'+id,{user:'bob'})).status,404);
+  assert.equal((await post('/invitations/'+invitation.id+'/respond','bob',{accept:true})).status,404);
+  const reissued=await post('/playlists/'+id+'/invitations','charlie',{username:'bob',canEdit:true});
+  assert.equal(reissued.status,201);
+  const pending=(await read(reissued)).invitation;
+  const inDetail=await read(await req('/playlists/'+id,{user:'charlie'}));
+  assert.equal(inDetail.pendingInvitations.length,1);
+  assert.equal(inDetail.pendingInvitations[0].recipient,'bob');
+  assert.equal((await del('/playlists/'+id+'/invitations/bob','alice')).status,404);
+  assert.equal((await del('/playlists/'+id+'/invitations/bob','charlie')).status,200);
+  assert.equal((await post('/invitations/'+pending.id+'/respond','bob',{accept:true})).status,404);
+  const final=await post('/playlists/'+id+'/invitations','charlie',{username:'bob',canEdit:true});
+  assert.equal(final.status,201);
+  const accepted=await post('/invitations/'+(await read(final)).invitation.id+'/respond','bob',{accept:true});
+  assert.equal(accepted.status,200);
+  assert.equal((await req('/playlists/'+id,{user:'bob'})).status,200);
+  assert.equal((await post('/playlists/'+id+'/tracks','bob',{trackId:'collab-song'})).status,201);
+  const done=await read(await req('/playlists/'+id,{user:'charlie'}));
+  assert.equal(done.tracks.some(x=>x.added_by==='bob'),true);
+  assert.equal((await del('/playlists/'+id,'charlie')).status,200);
 });
 test('private profiles and avatar uploads do not expose arbitrary image types',{skip:!enabled},async()=>{
   assert.equal((await patch('/me','alice',{displayName:'Alice Music',bio:'Hello!'})).status,200);
