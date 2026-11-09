@@ -162,3 +162,47 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
 .mobile-more-sheet>button{display:flex;align-items:center;gap:13px;text-align:left;background:#392D3D;border-radius:12px;padding:15px;color:#F6E8F0;font-size:13px;font-weight:700}
 .mobile-more-sheet>button svg{color:#F0A0BC}
 @media(min-width:721px){.mobile-more-backdrop{display:none}}
+
+
+/* Motion system — intentional tactile feedback rather than constantly moving UI. */
+:root{--jobbi-spring:cubic-bezier(.2,.72,.21,1);--jobbi-press:cubic-bezier(.3,.85,.4,1)}
+@media(prefers-reduced-motion:no-preference){
+  button,select,a,[role=button]{-webkit-tap-highlight-color:transparent}
+  .primary,.ghost-button,.nav-item,.icon-button,.play-round,.mobile-nav button,
+  .mobile-more-sheet>button,.social-tabs button,.social-primary,.social-outline,
+  .social-me,.social-playlist-tile,.social-person,.album-card,.artist-strip button,
+  .track-row,.player-open,.header-avatar,.quality-control,.import-button,
+  .sidebar-playlists button{
+    transition:transform .24s var(--jobbi-spring),box-shadow .25s ease,
+      background-color .22s ease,color .2s ease,border-color .2s ease,opacity .2s ease;
+  }
+  @media(hover:hover){
+    .primary:hover,.ghost-button:hover,.social-primary:hover,.social-outline:hover,
+    .social-me:hover,.import-button:hover{transform:translateY(-2px);box-shadow:0 10px 22px #0003}
+    .album-card:hover,.social-playlist-tile:hover{transform:translateY(-4px)}
+    .album-card:hover img{transform:scale(1.035)}
+    .nav-item:hover,.social-tabs button:hover,.mobile-more-sheet>button:hover{transform:translateX(2px)}
+    .icon-button:hover,.header-avatar:hover{transform:scale(1.12)}
+    .play-round:hover{transform:scale(1.08);box-shadow:0 5px 24px rgba(245,137,184,.28)}
+  }
+  button:active,.primary:active,.ghost-button:active,.social-primary:active,
+  .social-outline:active,.mobile-nav button:active,.track-row:active,
+  .album-card:active,.social-playlist-tile:active{transform:scale(.96)}
+  .album-card img{transition:transform .45s var(--jobbi-spring)}
+  .content>section,.social-page,.admin-page,.detail-view,.page-title{
+    animation:jobbi-page-enter .35s var(--jobbi-spring) both;
+  }
+  .player.player-active{animation:jobbi-player-appear .38s var(--jobbi-spring) both}
+  .player-active .player-song .art.small{box-shadow:0 3px 17px rgba(255,151,196,.18)}
+  .icon-button.hearted svg{animation:jobbi-heart .42s var(--jobbi-spring)}
+  .loading-block svg,.spin{animation:jobbi-spin 1.15s linear infinite}
+  .social-alert,.social-good,.import-notice{animation:jobbi-page-enter .3s var(--jobbi-spring)}
+}
+@keyframes jobbi-page-enter{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+@keyframes jobbi-player-appear{from{opacity:.6;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes jobbi-heart{0%{transform:scale(.72)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+@keyframes jobbi-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
