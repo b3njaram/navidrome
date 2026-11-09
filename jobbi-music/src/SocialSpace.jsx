@@ -27,7 +27,7 @@ function CardTitle({icon:Icon,title,subtitle,action}){
   return <div className="social-card-title"><span className="social-title-icon"><Icon size={19}/></span>
     <div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action&&<span className="social-card-action">{action}</span>}</div>;
 }
-export default function SocialSpace({api,user,playTracks,nativePlaylists=[],initialPlaylistId,onProfileUpdate=()=>{}}){
+export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=[],initialPlaylistId,onProfileUpdate=()=>{}}){
   const [overview,setOverview]=useState(null),[tab,setTab]=useState('discover');
   const [profileName,setProfileName]=useState(''),[profile,setProfile]=useState(null),[profileDraft,setProfileDraft]=useState(null);
   const [currentId,setCurrentId]=useState(null),[playlist,setPlaylist]=useState(null);
@@ -289,7 +289,7 @@ export default function SocialSpace({api,user,playTracks,nativePlaylists=[],init
             {playlist.tracks.map((t,index)=><div className="social-track" key={t.id}>
               <button className="social-track-play" aria-label={'Play '+t.title} onClick={()=>playTracks(playlist.tracks.map(s=>({...s,id:s.track_id})),index)}><Play size={16}/></button>
               <div><strong>{t.title}</strong><small>{t.artist||'Unknown artist'} · added by @{t.added_by}</small></div>
-              {canEdit&&playlist.playlist.kind!=='blend'&&<button className="social-icon" disabled={busy} aria-label={'Remove '+t.title} onClick={()=>deleteTrack(t.id)}><Trash2 size={16}/></button>}
+              {onSave&&<button className="social-icon" title="Save on Android for offline playback" aria-label={'Download '+t.title} onClick={()=>onSave({...t,id:t.track_id})}><Upload size={16}/></button>}{canEdit&&playlist.playlist.kind!=='blend'&&<button className="social-icon" disabled={busy} aria-label={'Remove '+t.title} onClick={()=>deleteTrack(t.id)}><Trash2 size={16}/></button>}
             </div>)}
             {playlist.tracks.length===0&&<p className="social-empty">No songs yet.</p>}
             {canEdit&&playlist.playlist.kind!=='blend'&&<div className="social-addsong"><form className="social-inline" onSubmit={e=>{e.preventDefault();findTracks()}}>

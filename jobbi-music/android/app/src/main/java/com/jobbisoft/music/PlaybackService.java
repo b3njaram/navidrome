@@ -1,0 +1,29 @@
+package com.jobbisoft.music;
+
+import androidx.annotation.Nullable;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.session.MediaSession;
+import androidx.media3.session.MediaSessionService;
+
+/** Real Android MediaSession keeps downloaded music playing with the screen off. */
+public final class PlaybackService extends MediaSessionService {
+    private MediaSession mediaSession;
+
+    @Override public void onCreate(){
+        super.onCreate();
+        ExoPlayer player=new ExoPlayer.Builder(this).build();
+        player.setHandleAudioBecomingNoisy(true);
+        mediaSession=new MediaSession.Builder(this,player).build();
+    }
+    @Override public MediaSession onGetSession(MediaSession.ControllerInfo controllerInfo){
+        return mediaSession;
+    }
+    @Override public void onDestroy(){
+        if(mediaSession!=null){
+            mediaSession.getPlayer().release();
+            mediaSession.release();
+            mediaSession=null;
+        }
+        super.onDestroy();
+    }
+}

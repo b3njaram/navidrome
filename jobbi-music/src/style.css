@@ -97,3 +97,8 @@
 @media(max-width:650px){.admin-card{padding:19px}.admin-grid{gap:13px}.account-fields{grid-template-columns:1fr}.storage-stats{gap:12px 7px}.storage-figure,.stat-figure{flex-wrap:wrap}.admin-head .ghost-button{width:100%;justify-content:center}.user-row{gap:8px;flex-wrap:wrap}.user-delete{margin-left:45px}}
 
 @media(max-width:720px){.mobile-nav{grid-template-columns:repeat(4,minmax(0,1fr))}.mobile-nav.with-admin{grid-template-columns:repeat(5,minmax(0,1fr))}.mobile-nav button{min-width:0;font-size:9px}}
+
+/* Native Android offline library controls (hidden in normal desktop browsers). */
+.native-offline-link{display:inline-flex;align-items:center;gap:6px;background:rgba(240,136,178,.13);border:1px solid rgba(240,136,178,.3);border-radius:9px;padding:8px 10px;font-size:11px;font-weight:700;color:#F5A7C6;white-space:nowrap}
+.native-offline-link:hover{background:rgba(240,136,178,.22)}
+@media(max-width:720px){.native-offline-link{padding:7px;font-size:10px}.track-actions .icon-button{min-width:27px}}
