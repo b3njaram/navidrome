@@ -168,3 +168,48 @@ The **Community** tab now provides private social features backed by a separate 
 **Deployment:** Social data requires the `jobbi-social-db` service and `SOCIAL_DB_PASSWORD` in your NAS-only `.env` file. Use a randomly generated, long password. Never commit this secret. Start with `docker compose -f compose.yaml up -d --build`, and include the `jobbi-social-data` Docker volume in regular backups. Do not delete that volume during rebuilds. See `scripts/enable-social.sh` for a guided one-time setup.
 
 **Limits:** Social playlists are stored separately from Navidrome-native playlists. Sharing a playlist grants access to its song list, not direct access to someone else's Navidrome credentials. Actual playback is still subject to each listener's Navidrome permissions and library availability.
+
+
+## Now Playing: music-first fullscreen controls and lyrics
+
+Tap the mini-player artwork, song title or artist to open the immersive Now Playing screen. The design uses original glass, artwork-driven gradients, fast tactile transitions, and a motion-reduction fallback. Controls include seek, queue, shuffle, repeat, favorites, add-to-playlist, song detail sharing, and Android offline download.
+
+Use **Lyrics** to display embedded or sidecar lyrics from Navidrome. Synchronized lines highlight based on the current playback position; tapping a timestamped line seeks to that position. If only plain lyrics exist, they're displayed without fabricated timing. If no lyrics are present, the player explains how to add sidecar `.lrc` files beside music tracks. The frontend never scrapes copyrighted lyric sites or injects third-party ads.
+
+## Auto-updating the NAS preview (one-time opt-in)
+
+Only the *preview branch* `feature/jobbi-music-preview` is eligible. The production site `music.jobbisoft.com.mx` is **not** automatically replaced. The updater uses outbound GitHub access from Synology, no incoming webhook, no publicly exposed NAS SSH or Docker socket, and no GitHub access token. It refuses local changes and requires successful GitHub Actions **build** and **browser-smoke** checks at the exact target commit SHA before deploying. It keeps the previous image and restores it when the updated `/api/status` health check fails.
+
+First install the current preview normally and make sure its `/api/status` passes:
+
+```sh
+cd /volume1/docker/jobbi-music-source
+docker run --rm -v "$PWD:/repo" -w /repo alpine/git:latest -c safe.directory=/repo pull --ff-only origin feature/jobbi-music-preview
+cd jobbi-music
+docker compose -f compose.yaml up -d --build
+curl -fsS http://127.0.0.1:3131/api/status
+```
+
+Then, **on Synology DSM**, open **Control Panel → Task Scheduler → Create → Scheduled Task → User-defined script**. Run as a NAS administrator who can access Docker; schedule every 30 minutes (or daily, if preferred). Use exactly this script command:
+
+```sh
+sh /volume1/docker/jobbi-music-source/jobbi-music/scripts/nas-auto-deploy.sh
+```
+
+Run it once manually before enabling the schedule. Logs and state are held inside the existing Git checkout's `.git/` folder so they cannot make the working tree dirty. It updates **only** `jobbi-music`, not your music files, PostgreSQL volumes, Navidrome container, or Cloudflare DNS. For a production site, use a manual promotion gate with verified backups and real-device acceptance tests. Keep a branch protection rule requiring GitHub Actions checks; an admin with write access to the trusted branch can deploy code to the NAS.
+
+If the updater reports GitHub API rate limits or unavailable Docker images, it should **not** deploy; inspect `.git/jobbi-auto-deploy.log` and confirm the GitHub Actions results.
+
+## Android in-app update checker and signed releases
+
+Android v1.1.0 checks `/api/android/latest` at most once per 24 hours and offers a user-controlled link to the **official GitHub release page** when a newer *signed* APK exists. It never silently installs software. You can also check using the Android toolbar settings → **Check for updates**. The API only trusts public `android-vMAJOR.MINOR.PATCH` GitHub releases for `b3njaram/navidrome` and APK assets from that repository.
+
+**The debug APKs from normal CI are not automatically published as official releases** and may have a different signing identity. To publish stable updateable releases, create and safely back up your private Android keystore; add GitHub Actions repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Never put signing keys, passwords or keystores in GitHub commits, screenshots, logs, or chats. Then create an appropriately protected tag matching the Android `versionName`, e.g. `android-v1.1.0`. The `jobbi-android-release.yml` workflow fails closed if signing secrets are missing, builds a release APK, and publishes it with a SHA-256 digest as an official release asset.
+
+For real long-term updates, use the **same release signing key** and package identifier across releases. An existing preview debug build with application ID `com.jobbisoft.music.debug` is separate from the release app `com.jobbisoft.music`. Downloads from a debug app are not automatically migrated to a release installation.
+
+### Android Auto and CarPlay status
+
+- **Android Auto:** the Android app now advertises a driver-safe Media3 `MediaLibraryService` that browses **locally downloaded songs** by the currently selected Navidrome user. Android Auto supplies its own playback interface and transport controls; don't interact with the phone while driving. Car availability still requires validation on a compatible car or the Android Automotive Desktop Head Unit test tool. Debug/sideloaded apps might not automatically be shown by Android Auto, and store distribution requires Google's car-app checks. Live Navidrome streaming is not yet integrated with this native car library.
+- **Apple CarPlay:** Android APKs cannot run on iOS or CarPlay. Support requires a separately built, signed native iOS audio app with the relevant Apple CarPlay capability and testing, which is outside the Android project.
+
