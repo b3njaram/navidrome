@@ -96,6 +96,7 @@ public final class MainActivity extends Activity {
         ViewCompat.requestApplyInsets(root);
         createShell();
         loadServer();
+        checkUpdates(false);
     }
     private void createShell(){
         LinearLayout bar=new LinearLayout(this);
@@ -181,7 +182,7 @@ public final class MainActivity extends Activity {
             .setMessage("Use HTTPS for public access, or your private Tailscale/LAN NAS address.")
             .setView(container)
             .setNegativeButton("Cancel",null)
-            .setNeutralButton("Offline library",(d,w)->openOffline())
+            .setNeutralButton("Check for updates",(d,w)->checkUpdates(true))
             .setPositiveButton("Connect",(d,w)->{
                 String url=field.getText().toString().trim().replaceAll("/+$","");
                 if(!validServer(url)){toast("Use HTTPS, or http://nasjobbi:3131 for your private NAS.");return;}
@@ -340,6 +341,58 @@ public final class MainActivity extends Activity {
                 OfflineStore.create(this,user,trackId,title,artist,album,ext,quality,id,name);
                 toast("Saving "+title+" · Open Offline to see progress.");
             }catch(Exception e){toast("Download could not start: "+limited(e.getMessage(),100,"Please retry"));}
+        });
+    }
+    private static int[] versionNumbers(String input){
+        int[] v={0,0,0};
+        String[] parts=String.valueOf(input).split("\\.");
+        for(int i=0;i<Math.min(3,parts.length);i++){
+            if(!parts[i].matches("[0-9]{1,5}"))return null;
+            v[i]=Integer.parseInt(parts[i]);
+        }
+        return v;
+    }
+    private static boolean isNewerVersion(String candidate,String installed){
+        int[] a=versionNumbers(candidate),b=versionNumbers(installed);
+        if(a==null||b==null)return false;
+        for(int i=0;i<3;i++)if(a[i]!=b[i])return a[i]>b[i];
+        return false;
+    }
+    private void checkUpdates(boolean interactive){
+        final long now=System.currentTimeMillis();
+        long last=getPreferences(MODE_PRIVATE).getLong("last_update_check",0);
+        if(!interactive&&now-last<24L*60*60*1000)return;
+        getPreferences(MODE_PRIVATE).edit().putLong("last_update_check",now).apply();
+        io.execute(()->{
+            HttpURLConnection request=null;
+            try{
+                request=(HttpURLConnection)new URL(serverUrl+"/api/android/latest").openConnection();
+                request.setConnectTimeout(6000);request.setReadTimeout(7000);
+                request.setInstanceFollowRedirects(false);
+                if(request.getResponseCode()!=200)throw new Exception("No release data");
+                StringBuilder raw=new StringBuilder();
+                try(BufferedReader reader=new BufferedReader(new InputStreamReader(request.getInputStream(),StandardCharsets.UTF_8))){
+                    String line;
+                    while((line=reader.readLine())!=null&&raw.length()<10000)raw.append(line);
+                }
+                JSONObject response=new JSONObject(raw.toString());
+                final String version=response.optString("version","");
+                final String url=response.optString("notesUrl","");
+                final String suffix=version.matches("[0-9]+\\.[0-9]+\\.[0-9]+")?"android-v"+version:"";
+                final String allowed="https://github.com/b3njaram/navidrome/releases/tag/"+suffix;
+                if(response.optBoolean("available")&&isNewerVersion(version,BuildConfig.VERSION_NAME)&&
+                   !suffix.isEmpty()&&allowed.equals(url)){
+                    runOnUiThread(()->new AlertDialog.Builder(this)
+                        .setTitle("Jobbi Music "+version+" is available")
+                        .setMessage("A new Android app version is available. Open the official GitHub release to review the update and install the signed APK. Your music stays on your NAS.")
+                        .setNegativeButton("Later",null)
+                        .setPositiveButton("View release",(d,w)->{
+                            try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}
+                            catch(Exception ignored){toast("Could not open release");}
+                        }).show());
+                }else if(interactive)toast("No newer signed Android release is available.");
+            }catch(Exception e){if(interactive)toast("Could not check Android releases. Retry when connected to your NAS.");}
+            finally{if(request!=null)request.disconnect();}
         });
     }
     private void openOffline(){startActivity(new Intent(this,OfflineActivity.class));}
