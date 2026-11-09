@@ -140,3 +140,9 @@
   .social-invite-actions button{flex:1 1 auto}
   .social-invitation>div:first-child{flex-basis:100%}
 }
+
+
+.social-member-actions{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
+.social-member-actions .social-outline{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;min-height:37px;padding:8px 9px;font-size:11px}
+.social-playlist-inbox{margin-bottom:18px}
+@media(max-width:720px){.social-member-actions{width:100%;justify-content:flex-start}.social-member-actions .social-outline{flex:1}}
