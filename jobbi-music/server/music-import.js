@@ -44,14 +44,27 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
       // A peer's "complete" flag is not library availability. Verify the exact
       // song in this authenticated user's Navidrome catalog before declaring it playable.
       if(subsonic){
-        for(const item of items.filter(x=>x.stage==='imported'||x.stage==='indexing').slice(0,8)){
+        for(const item of items.filter(x=>
+          x.stage==='imported'||x.stage==='indexing'||
+          ((x.stage==='queued'||x.stage==='unconfirmed')&&
+            Date.now()-Date.parse(x.submittedAt)>120000)).slice(0,8)){
           try{
             const d=await subsonic(req.user,'search3',{query:item.title,songCount:30,albumCount:0,artistCount:0});
             const songs=d.searchResult3?.song||[];
             const norm=x=>String(x||'').normalize('NFKC').trim().toLowerCase();
             const match=songs.find(song=>norm(song.title)===norm(item.title) &&
               norm(song.artist)===norm(item.artist));
-            if(match?.id){item.stage='available';item.label='Available in your Navidrome library';item.progress=100;item.songId=match.id;}
+            // The downloader may erase finished jobs. In that case, only a
+            // newly indexed song dated on/after submission counts as evidence.
+            const indexed=Date.parse(match?.created||match?.createdAt||'');
+            const submitted=Date.parse(item.submittedAt);
+            const completed=item.stage==='imported'||item.stage==='indexing';
+            const newlyIndexed=Number.isFinite(indexed)&&Number.isFinite(submitted)&&
+              indexed>=submitted-60000;
+            if(match?.id&&(completed||newlyIndexed)){
+              item.stage='available';item.label='Available in your Navidrome library';
+              item.progress=100;item.songId=match.id;
+            }
           }catch{ /* keep indexing state until the library confirms this title */ }
         }
       }
