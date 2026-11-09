@@ -253,3 +253,19 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
  .review-actions button{flex:1 1 auto;min-height:40px}
  .search-bar>span{display:none}
 }
+
+
+.track-main{display:flex;align-items:center;min-width:0;gap:10px;text-align:left}
+.track-art-click{flex:none;display:block;padding:0;border-radius:7px}
+.track-meta{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:0}
+.track-song-title,.track-artist-link,.track-album-link{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;padding:0}
+.track-song-title{font-weight:700;font-size:12px;color:#f3eef2}
+.track-artist-link,.track-album-link{font-size:11px;color:#ad96ac}
+.track-artist-link:hover,.track-album-link:hover{color:#f4a2c1;text-decoration:underline;text-underline-offset:3px}
+.track-song-title:hover{color:#ffd7e7}
+.track-album{min-width:0;overflow:hidden}
+@media(max-width:720px){
+ .track-art-click{flex:none}
+ .track-song-title{font-size:12px}
+ .track-artist-link{font-size:10px}
+}
