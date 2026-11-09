@@ -213,3 +213,47 @@ For real long-term updates, use the **same release signing key** and package ide
 - **Android Auto:** the Android app now advertises a driver-safe Media3 `MediaLibraryService` that browses **locally downloaded songs** by the currently selected Navidrome user. Android Auto supplies its own playback interface and transport controls; don't interact with the phone while driving. Car availability still requires validation on a compatible car or the Android Automotive Desktop Head Unit test tool. Debug/sideloaded apps might not automatically be shown by Android Auto, and store distribution requires Google's car-app checks. Live Navidrome streaming is not yet integrated with this native car library.
 - **Apple CarPlay:** Android APKs cannot run on iOS or CarPlay. Support requires a separately built, signed native iOS audio app with the relevant Apple CarPlay capability and testing, which is outside the Android project.
 
+
+
+## Discover 2.0 — Soulseek + Invidious fallback
+
+**Discover → Soulseek · New music** now searches the configured slskd peers **and** a configured Invidious instance concurrently. If slskd returns zero peer responses, Invidious results are shown as a separate source, not disguised as Navidrome music. Artist and album names in Navidrome track lists open the matching local catalog pages. An artist page loads the first 18 albums' real track lists (up to 360 songs); long discographies may require opening additional albums.
+
+**All authenticated listeners can queue supported Soulseek audio files** directly to the existing NAS downloader without administrator approval. Imports are validated server-side, protected by CSRF and session authentication, and subject to a fresh read-only NAS capacity snapshot: at least 4 GiB free **plus** the recording's declared size, max 350 MiB per track, 20 tracks / 2 GiB per user per day, and 80 tracks / 10 GiB across the shared library per day. The importer rejects duplicates that have been queued recently. Status reads for normal users show only their own import metadata. These checks do not bypass licensing requirements; import only material you're authorized to retain.
+
+### Diagnose slskd reporting "connected" but zero search peers
+
+Connected to the central Soulseek server does not imply receiving peer search results. In the NAS terminal, check slskd's listening port and logs (no API key should be pasted publicly):
+
+```sh
+docker ps --filter name=slskd
+docker logs --tail=100 slskd
+```
+
+Review TCP **50300** forwarding and the NAS firewall, slskd Settings → Soulseek → distributed network, and test the same phrase in the native slskd web interface. slskd documents that a missing inbound listening port can limit discoverability and search results. Jobbi now polls the normal response endpoint and also tries embedded responses on the search state API to accommodate delayed result persistence. The search UI reports whether peers answered and offers Invidious results independently.
+
+### Configure Invidious discovery
+
+Defaults to your preferred **`https://yt.jobbisoft.com.mx`** instance, using only its Invidious JSON API `/api/v1/search`. No browser cookies or login tokens are forwarded to it. Optional fallback instances can be set as a comma-separated HTTPS list in the NAS-only `.env`:
+
+```ini
+INVIDIOUS_URL=https://yt.jobbisoft.com.mx
+INVIDIOUS_BACKUPS=https://inv.nadeko.net
+```
+
+Each Invidious result is labeled as a **video** and links to its original instance. Invidious APIs may be unavailable, throttled, or restricted: a configured instance is not evidence that its search works. You can check your own endpoint from the NAS with `curl -fS 'https://yt.jobbisoft.com.mx/api/v1/search?q=Luis%20Miguel&type=video'` (do not paste any private tokens). If you get HTML instead of a JSON array, fix the reverse proxy / Invidious API before relying on it.
+
+### Optional, direct Invidious audio imports
+
+The Invidious search fallback works without a new container. To also offer **Import audio** on those video cards, explicitly opt in to a separate small audio-worker service:
+
+```sh
+cd /volume1/docker/jobbi-music-source/jobbi-music
+sh scripts/enable-invidious-import.sh
+```
+
+The setup generates a random private worker token in `.env`, creates **only** `/volume1/music/Jobbi Imports` if necessary, checks write permissions for UID 1000 / GID 100, and starts `jobbi-invidious-worker`. It does **not** expose the worker's port, mount the Docker socket, or write outside the dedicated import folder. The worker receives only a validated video ID and downloads the corresponding audio through yt-dlp/ffmpeg, with one-video output, 15-minute maximum duration, 180 MiB size limit, 4 GiB free reserve, a bounded concurrent queue, and user confirmation that they have permission. The backend imposes an additional limit of 5 fallback imports per user per day and 40 across the library per day. Jobs persist in `/volume1/music/Jobbi Imports/.jobbi-state`, though downloads may fail when upstream video formats change or are restricted. The worker does not bypass DRM or paywalls. Do **not** use this feature to copy copyrighted recordings without permission.
+
+Post-deployment check (from the Jobbi Music container's logged-in browser): open Discover, enter an artist, press **Search music sources**, and verify either peer audio, alternative Invidious videos, or a clear source-specific error message. Once workers download a file, ask Navidrome to scan the library; administrators can use **Scan library** in the Discover transfer panel.
+
+Existing Navidrome, slskd, social PostgreSQL, and Android APK installations remain unchanged by web-only UI updates. If a Synology DSM auto-update task is installed, it updates only the Jobbi frontend; it does **not** automatically enable optional worker profiles.
