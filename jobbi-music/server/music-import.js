@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import {ensureSocialProfile,normalUsername,socialQuery,withSocialTransaction} from './social-db.js';
 import {ImportError,validateImportSelection,queueMusicImport} from './music-requests.js';
 import {latestTransferSnapshot,findTransfer,transferStage} from './import-progress.js';
+import {libraryQueries,matchingLibrarySong,groupMusicImports,musicKey} from './import-reconcile.js';
 
 const MIN_FREE_BYTES=4*1024**3;
 const MAX_FILE_BYTES=350*1024**2;
@@ -10,6 +11,8 @@ const MAX_DAY_BYTES=2*1024**3;
 const GLOBAL_DAY_BYTES=10*1024**3;
 const MAX_DAY_JOBS=20;
 const GLOBAL_DAY_JOBS=80;
+const CATALOG_CACHE_MS=45000;
+const catalogCache=new Map();
 function respondError(res,e){
   const known=e instanceof ImportError;
   res.status(known?e.status:503).json({error:known?e.message:'Music import temporarily unavailable. Please retry.'});
@@ -30,46 +33,79 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
   router.get('/',mustAuth,async(req,res)=>{
     try{
       const actor=normalUsername(req.user.username);
-      const rows=await socialQuery(`SELECT id,peer_username,downloader_job_id,already_on_nas,filename,size_bytes,artist,title,status,created_at
-        FROM music_import_requests WHERE requester=$1
+      const rows=await socialQuery(`SELECT id,peer_username,downloader_job_id,already_on_nas,
+        import_error,filename,size_bytes,artist,title,status,created_at
+        FROM music_import_requests WHERE requester=$1 AND archived_at IS NULL
         AND status IN ('queued','processing','needs_review')
         ORDER BY created_at DESC LIMIT 60`,[actor]);
       const snapshot=await latestTransferSnapshot(downloader);
       const items=rows.rows.map(row=>{
         const job=row.already_on_nas?null:findTransfer(row,snapshot.rows);
+        const stage=row.already_on_nas?
+          {stage:'existing',label:'Downloader index reports a duplicate · not yet verified in Navidrome',progress:null}:
+          transferStage(row,job,snapshot.healthy);
         return {id:row.id,filename:row.filename,size:Number(row.size_bytes),
           artist:row.artist,title:row.title,submittedAt:row.created_at,
-          ...(row.already_on_nas?{stage:'existing',label:'Already in NAS music index · checking library',progress:100}:transferStage(row,job,snapshot.healthy))};
+          ...stage,archivable:!['downloading','indexing','imported','available'].includes(stage.stage),
+          // Historical import failures had no stored error. Do not infer
+          // from a missing active transfer that a specific download succeeded.
+          reason:row.import_error?String(row.import_error).slice(0,200):null
+        };
       });
-      // A peer's "complete" flag is not library availability. Verify the exact
-      // song in this authenticated user's Navidrome catalog before declaring it playable.
+      // Repeated imports for the same artist/title are one visible item,
+      // while history remains unchanged in the social database.
+      const groups=groupMusicImports(items);
+      const needsCatalog=groups.filter(x=>['imported','indexing','existing','unconfirmed','queued'].includes(x.stage))
+        .slice(0,6);
       if(subsonic){
-        for(const item of items.filter(x=>
-          x.stage==='imported'||x.stage==='indexing'||x.stage==='existing'||
-          ((x.stage==='queued'||x.stage==='unconfirmed')&&
-            Date.now()-Date.parse(x.submittedAt)>120000)).slice(0,8)){
-          try{
-            const d=await subsonic(req.user,'search3',{query:item.title,songCount:30,albumCount:0,artistCount:0});
-            const songs=d.searchResult3?.song||[];
-            const norm=x=>String(x||'').normalize('NFKC').trim().toLowerCase();
-            const match=songs.find(song=>norm(song.title)===norm(item.title) &&
-              norm(song.artist)===norm(item.artist));
-            // The downloader may erase finished jobs. In that case, only a
-            // newly indexed song dated on/after submission counts as evidence.
-            const indexed=Date.parse(match?.created||match?.createdAt||'');
-            const submitted=Date.parse(item.submittedAt);
-            const completed=item.stage==='imported'||item.stage==='indexing'||item.stage==='existing';
-            const newlyIndexed=Number.isFinite(indexed)&&Number.isFinite(submitted)&&
-              indexed>=submitted-60000;
-            if(match?.id&&(completed||newlyIndexed)){
-              item.stage='available';item.label='Available in your Navidrome library';
-              item.progress=100;item.songId=match.id;
+        for(const item of needsCatalog){
+          const key=actor+'|'+musicKey(item.artist)+'|'+musicKey(item.title);
+          const hit=catalogCache.get(key);
+          let match=hit&&Date.now()-hit.at<CATALOG_CACHE_MS?hit.song:undefined;
+          if(match===undefined){
+            match=null;
+            for(const query of libraryQueries(item)){
+              try{
+                const d=await subsonic(req.user,'search3',{query,
+                  songCount:80,albumCount:0,artistCount:0});
+                match=matchingLibrarySong(item,d.searchResult3?.song||[]);
+                if(match)break;
+              }catch{ /* Keep the original stage; don't report a false success. */ }
             }
-          }catch{ /* keep indexing state until the library confirms this title */ }
+            catalogCache.set(key,{at:Date.now(),song:match});
+            if(catalogCache.size>500){
+              const oldest=catalogCache.keys().next().value;
+              catalogCache.delete(oldest);
+            }
+          }
+          if(match?.id){
+            item.stage='available';
+            item.label='Available in your Navidrome library';
+            item.progress=100;
+            item.songId=match.id;
+            item.archiveIds=[];
+          }
         }
       }
       res.setHeader('Cache-Control','private, no-store');
-      res.json({items,downloaderConnected:snapshot.healthy,checkedAt:new Date().toISOString()});
+      res.json({items:groups,downloaderConnected:snapshot.healthy,
+        checkedAt:new Date().toISOString()});
+    }catch(e){respondError(res,e)}
+  });
+  router.post('/archive',mustAuth,async(req,res)=>{
+    try{
+      const ids=req.body?.ids;
+      if(!Array.isArray(ids)||ids.length<1||ids.length>60||
+        ids.some(x=>typeof x!=='string'||!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(x)||x.length>40))
+        return res.status(400).json({error:'Select valid import entries to hide'});
+      const actor=normalUsername(req.user.username);
+      const result=await socialQuery(`UPDATE music_import_requests
+        SET archived_at=now(),updated_at=now()
+        WHERE requester=$1 AND id=ANY($2::uuid[]) AND archived_at IS NULL
+        RETURNING id`,[actor,[...new Set(ids)]]);
+      // No Soulseek API call: archiving hides history only and does not cancel
+      // or delete any transfer, file, or Navidrome song.
+      res.json({archived:result.rowCount,deletedFiles:0,canceledTransfers:0});
     }catch(e){respondError(res,e)}
   });
   router.post('/',mustAuth,async(req,res)=>{
@@ -123,12 +159,15 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
         if(e instanceof ImportError&&e.status===409&&
           /already (?:in|present|exist)|music folder|already indexed|duplicate (?:song|track)/i.test(e.message)){
           await socialQuery(`UPDATE music_import_requests
-            SET status='needs_review',already_on_nas=TRUE,updated_at=now() WHERE id=$1`,[id]);
+            SET status='needs_review',already_on_nas=TRUE,
+              import_error='Downloader index reports recording already in Music folder',
+              updated_at=now() WHERE id=$1`,[id]);
           return res.status(200).json({existing:true,importId:id,
             message:'Already in your NAS music collection. Check the library for this track.'});
         }
         await socialQuery(`UPDATE music_import_requests
-          SET status='needs_review',updated_at=now() WHERE id=$1`,[id]).catch(()=>{});
+          SET status='needs_review',import_error=$2,updated_at=now() WHERE id=$1`,
+          [id,String(e?.message||'Transfer status unknown').slice(0,200)]).catch(()=>{});
         throw e;
       }
     }catch(e){respondError(res,e)}
