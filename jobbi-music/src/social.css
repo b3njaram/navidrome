@@ -118,3 +118,25 @@
   .social-playlist-grid{grid-template-columns:minmax(0,1fr)}
   .social-card{padding:13px}
 }
+
+
+/* Explicit collaborative playlist invitations */
+.social-collaborator-compose{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid #654861;border-radius:13px;background:#ffffff08;min-width:0}
+.social-collaborator-compose label,.social-collaborator-compose input{max-width:100%;min-width:0}
+.social-collaborator-compose .social-outline{display:inline-flex;align-items:center;gap:7px;justify-content:center;min-height:44px}
+.social-pending-invites{display:flex;flex-wrap:wrap;gap:8px}
+.social-invite-chip{display:inline-flex;align-items:center;gap:9px;border:1px solid #85536f;border-radius:25px;padding:5px 7px 5px 12px;background:#56314b;color:#fce7f1;font-size:11px;max-width:100%;overflow-wrap:anywhere}
+.social-invite-chip button{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#ffffff20}
+.social-invitation{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between;padding:13px 10px;border-bottom:1px solid #ffffff19;min-width:0}
+.social-invitation>div:first-child{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1 1 150px}
+.social-invitation strong{color:#fff0f7;font-size:13px;overflow-wrap:anywhere}
+.social-invitation small{color:#c1a8bc;font-size:11px;line-height:1.5}
+.social-invite-actions{display:flex;flex-wrap:wrap;gap:8px;flex:1 1 auto;justify-content:flex-end}
+.social-invite-actions button,.social-invitation>.social-outline{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px}
+.social-pending-section{padding-top:16px;max-width:100%;min-width:0}
+@media(max-width:720px){
+  .social-collaborator-compose{padding:12px}
+  .social-invite-actions{justify-content:flex-start;width:100%}
+  .social-invite-actions button{flex:1 1 auto}
+  .social-invitation>div:first-child{flex-basis:100%}
+}
