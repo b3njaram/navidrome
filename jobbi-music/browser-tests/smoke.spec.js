@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 async function setupMocks(page){
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],musicRequests:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -23,6 +23,20 @@ async function setupMocks(page){
     if(pathname==='/api/albums/a1')return reply({id:'a1',name:'Test Album',artist:'Test Artist',song:[{id:'s1',title:'Kino',artist:'Test Artist',duration:180}]});
     if(pathname==='/api/playlists'&&method==='GET')return reply(state.playlists);
     if(pathname==='/api/playlists'&&method==='POST'){state.playlists.push({id:'p2',name:body.name,songCount:0});return reply({playlist:state.playlists.at(-1)},201);}
+
+    if(pathname==='/api/music-requests'&&method==='GET')return reply({requests:state.musicRequests.filter(x=>x.requester===state.session?.username)});
+    if(pathname==='/api/music-requests/admin'&&method==='GET')return reply({requests:state.musicRequests});
+    if(pathname==='/api/music-requests'&&method==='POST'){
+      const item={...body,id:'request-'+(state.musicRequests.length+1),requester:state.session?.username,status:'pending'};
+      state.musicRequests.unshift(item);
+      return reply({requested:true,request:item},201);
+    }
+    if(pathname.startsWith('/api/music-requests/')&&pathname.endsWith('/decision')&&method==='POST'){
+      const id=pathname.split('/')[3],item=state.musicRequests.find(x=>x.id===id);
+      if(!item)return reply({error:'Request not found'},404);
+      item.status=body.decision==='approve'?'queued':'rejected';
+      return reply({status:item.status,request:item},body.decision==='approve'?202:200);
+    }
     if(pathname==='/api/soulseek/status')return reply({mode:'slskd',configured:true,serverConnected:true});
     if(pathname==='/api/soulseek/search')return reply({source:'slskd',results:[{username:'peer1',filename:'Kino/Кино - Группа крови.flac',size:28000000,format:'FLAC',bitrate:950,freeUploadSlot:true,relevanceScore:290}],total:1,peerCount:1,elapsedMs:2300});
     if(pathname==='/api/soulseek/downloads')return reply({jobs:[]});
@@ -53,7 +67,7 @@ test('listener can sign in, browse, search and manage own playlist without admin
   const errors=[];page.on('pageerror',err=>errors.push(err.message));
   await setupMocks(page);await login(page,'listener');
   await expect(page.getByRole('button',{name:/Admin console/})).toHaveCount(0);
-  await navigate(page,'Search');
+  await navigate(page,'Discover');
   await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
   await expect(page.getByText('Kino',{exact:true}).first()).toBeVisible();
   await navigate(page,'Your Library');
@@ -80,9 +94,9 @@ test('administrator sees volume stats and restricted user management',async({pag
 test('Soulseek search presents peer results instead of raw JSON',async({page})=>{
   const errors=[];page.on('pageerror',err=>errors.push(err.message));
   await setupMocks(page);await login(page,'testadmin');
-  await navigate(page,'Search');
+  await navigate(page,'Discover');
   await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
-  await page.getByRole('button',{name:/Find more music/}).click();
+  await page.getByRole('button',{name:/Soulseek · New music/}).click();
   await page.getByRole('button',{name:'Search Soulseek'}).click();
   await expect(page.getByText('Music from Soulseek')).toBeVisible();
   await expect(page.getByText('Кино - Группа крови.flac')).toBeVisible();
@@ -259,4 +273,36 @@ test('immersive player fits phone and respects reduced motion',async({page})=>{
   });
   expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.width+1);
   expect(viewport.animation).toBe('none');
+});
+
+test('listener finds Soulseek music and sends request for admin review',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await login(page,'listener');
+  await navigate(page,'Discover');
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
+  await page.getByRole('button',{name:/Soulseek · New music/}).click();
+  await expect(page.getByRole('button',{name:'Search Soulseek'})).toBeVisible();
+  await page.getByRole('button',{name:'Search Soulseek'}).click();
+  await expect(page.getByText('Кино - Группа крови.flac')).toBeVisible();
+  await page.getByRole('button',{name:'Request song'}).click();
+  await expect(page.getByRole('heading',{name:'Request a song'})).toBeVisible();
+  await page.getByLabel('Artist').fill('Кино');
+  await page.getByLabel('Track title').fill('Группа крови');
+  await page.getByRole('button',{name:'Send request'}).click();
+  await expect(page.getByText(/Request sent/)).toBeVisible();
+  await expect(page.getByText('Awaiting approval')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test('admin sees direct Soulseek import and listener request approvals',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await login(page,'testadmin');
+  await navigate(page,'Discover');
+  await page.getByRole('button',{name:/Soulseek · New music/}).click();
+  await expect(page.getByRole('button',{name:'Search Soulseek'})).toBeVisible();
+  await expect(page.getByText('Listener requests')).toBeVisible();
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
+  await page.getByRole('button',{name:'Search Soulseek'}).click();
+  await page.getByRole('button',{name:'Add to library'}).click();
+  await expect(page.getByRole('heading',{name:'Add to your library'})).toBeVisible();
+  expect(errors).toEqual([]);
 });
