@@ -2,8 +2,11 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
+import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-let navServer, downloadServer, appProcess, base, cookie, csrfToken, listenerCookie, listenerCsrfToken;
+let navServer, downloadServer, appProcess, base, cookie, csrfToken, listenerCookie, listenerCsrfToken, testDir;
 const received={};
 const nativeUsers=[{id:'admin-id',userName:'testadmin',name:'Admin',isAdmin:true},{id:'listener-id',userName:'listener',name:'Listener',isAdmin:false}];
 const json=(res,body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
@@ -16,6 +19,11 @@ const patch=(url,body)=>fetch(base+url,{method:'PATCH',headers:{'content-type':'
 const get=url=>fetch(base+url,{headers:{cookie}});
 
 before(async()=>{
+  testDir=await mkdtemp(path.join(os.tmpdir(),'jobbi-storage-test-'));
+  await writeFile(path.join(testDir,'storage.json'),JSON.stringify({
+    status:'ready',checkedAt:new Date().toISOString(),
+    freeBytes:25*1024**3,totalBytes:50*1024**3,usedBytes:25*1024**3
+  }));
   navServer=createServer(async(req,res)=>{
     const u=new URL(req.url,'http://localhost');
     if(u.pathname==='/auth/login'){
@@ -63,7 +71,7 @@ before(async()=>{
   appProcess=spawn(process.execPath,['server/index.js'],{
     cwd:process.cwd(),stdio:['ignore','pipe','pipe'],
     env:{...process.env,PORT:String(appPort),PUBLIC_HTTPS:'false',NAVIDROME_URL:'http://127.0.0.1:'+navPort,
-      DOWNLOADER_URL:'http://127.0.0.1:'+dlPort,ADMIN_USERS:'testadmin',ENABLE_ACCOUNT_MANAGEMENT:'true',SOCIAL_DATABASE_URL:process.env.SOCIAL_TEST_DATABASE_URL||''}
+      DOWNLOADER_URL:'http://127.0.0.1:'+dlPort,ADMIN_USERS:'testadmin',ENABLE_ACCOUNT_MANAGEMENT:'true',SOCIAL_DATABASE_URL:process.env.SOCIAL_TEST_DATABASE_URL||'',STORAGE_STATS_PATH:path.join(testDir,'storage.json')}
   });
   let error='';appProcess.stderr.on('data',d=>error+=d.toString());
   let ready=false;
@@ -77,6 +85,7 @@ before(async()=>{
 after(async()=>{
   if(appProcess){appProcess.kill('SIGTERM');await new Promise(resolve=>appProcess.once('exit',resolve));}
   await Promise.all([new Promise(resolve=>navServer?.close(resolve)),new Promise(resolve=>downloadServer?.close(resolve))]);
+  if(testDir)await rm(testDir,{force:true,recursive:true});
 });
 
 test('health endpoint and access control',async()=>{
@@ -222,6 +231,39 @@ test('listener can discover Soulseek tracks and request imports without directly
     body:JSON.stringify({...item,filename:'../malware.exe'})
   });
   assert.equal(invalid.status,400);
+});
+test('regular user imports Soulseek audio immediately with no approval flow',async()=>{
+  if(!process.env.SOCIAL_TEST_DATABASE_URL)return;
+  const track={username:'peer-instant',filename:'Audio/Luis Miguel.flac',size:25000000,artist:'Luis Miguel',title:'Test Song'};
+  const response=await fetch(base+'/api/music-imports',{
+    method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify(track)
+  });
+  assert.equal(response.status,202);
+  assert.equal((await response.json()).queued,true);
+  assert.deepEqual(received.download,track);
+  const history=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
+  assert.equal(history.status,200);
+  assert.ok((await history.json()).items.some(x=>x.title==='Test Song'&&x.status==='queued'));
+  const duplicate=await fetch(base+'/api/music-imports',{
+    method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify(track)
+  });
+  assert.equal(duplicate.status,409);
+  const invalid=await fetch(base+'/api/music-imports',{
+    method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify({...track,filename:'../payload.exe'})
+  });
+  assert.equal(invalid.status,400);
+});
+test('non-configured Invidious worker does not accept direct audio imports',async()=>{
+  const result=await fetch(base+'/api/invidious/status',{headers:{cookie}});
+  assert.equal(result.status,200);
+  assert.equal((await result.json()).importEnabled,false);
+  const attempted=await post('/api/invidious/import',{
+    videoId:'dQw4w9WgXcQ',artist:'Example',title:'Test',authorized:true
+  });
+  assert.equal(attempted.status,503);
 });
 test('Soulseek fallback explains an empty response instead of exposing []',async()=>{
   const status=await get('/api/soulseek/status');
