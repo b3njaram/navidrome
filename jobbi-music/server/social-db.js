@@ -85,6 +85,88 @@ CREATE TABLE IF NOT EXISTS music_import_requests (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS invidious_imports (
+  id UUID PRIMARY KEY,
+  requester TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  video_id TEXT NOT NULL CHECK(video_id ~ '^[A-Za-z0-9_-]{11}
+  ON music_import_requests(requester,peer_username,filename) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS music_requests_status_created
+  ON music_import_requests(status,created_at DESC);
+CREATE INDEX IF NOT EXISTS music_requests_user
+  ON music_import_requests(requester,created_at DESC);
+CREATE INDEX IF NOT EXISTS social_playlists_public_idx ON social_playlists(updated_at DESC) WHERE visibility='public';
+CREATE INDEX IF NOT EXISTS social_playlists_owner_idx ON social_playlists(owner);
+CREATE INDEX IF NOT EXISTS social_members_username_idx ON social_members(username);
+CREATE INDEX IF NOT EXISTS social_tracks_playlist_idx ON social_tracks(playlist_id,id);
+CREATE INDEX IF NOT EXISTS social_tracks_added_by_idx ON social_tracks(added_by);
+CREATE INDEX IF NOT EXISTS social_requests_incoming_idx ON social_friend_requests(recipient,status);
+`;
+
+export function socialPool() {
+  if(!pool){
+    const connectionString=process.env.SOCIAL_DATABASE_URL;
+    if(!connectionString)throw new Error('SOCIAL_DATABASE_URL is not configured');
+    pool=new Pool({connectionString,max:8,connectionTimeoutMillis:4000,idleTimeoutMillis:30000,
+      statement_timeout:8000,query_timeout:10000,application_name:'jobbi_social'});
+    pool.on('error',err=>console.error('Social database connection error:',err.code||err.name));
+  }
+  return pool;
+}
+export function socialReady(){
+  if(!ready)ready=(async()=>{
+    const p=socialPool(),client=await p.connect();
+    try{
+      // Serialize schema creation across application processes. Concurrent
+      // CREATE TABLE IF NOT EXISTS can otherwise conflict in pg_class/pg_type.
+      await client.query('SELECT pg_advisory_lock(90280643)');
+      await client.query(schema);
+      return p;
+    }finally{
+      try{await client.query('SELECT pg_advisory_unlock(90280643)')}catch{}
+      client.release();
+    }
+  })().catch(err=>{if(process.env.CI)console.error('Social schema test diagnostic:',err.code||err.name,String(err.message||'').slice(0,300));ready=null;throw err});
+  return ready;
+}
+export async function withSocialTransaction(fn){
+  const p=await socialReady();
+  const client=await p.connect();
+  try{
+    await client.query('BEGIN');
+    const output=await fn(client);
+    await client.query('COMMIT');
+    return output;
+  }catch(err){
+    try{await client.query('ROLLBACK')}catch{}
+    throw err;
+  }finally{client.release()}
+}
+export async function socialQuery(sql,params=[]){
+  const p=await socialReady();
+  return p.query(sql,params);
+}
+export function normalUsername(username){
+  if(typeof username!=='string')return null;
+  const clean=username.trim().toLowerCase();
+  return /^[\p{L}\p{M}\p{N}_.@-]{1,80}$/u.test(clean)?clean:null;
+}
+export async function ensureSocialProfile(username){
+  const name=normalUsername(username);
+  if(!name)throw new Error('Account name is not supported by social features');
+  await socialQuery(`INSERT INTO social_profiles(username,display_name) VALUES($1,$2)
+    ON CONFLICT(username) DO NOTHING`,[name,username.trim().slice(0,80)]);
+  return name;
+}
+),
+  title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 200),
+  artist TEXT NOT NULL CHECK(length(artist) BETWEEN 1 AND 140),
+  status TEXT NOT NULL DEFAULT 'processing'
+    CHECK(status IN ('processing','queued','needs_review','failed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS invidious_imports_user_idx
+  ON invidious_imports(requester,created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS music_requests_unique_pending
   ON music_import_requests(requester,peer_username,filename) WHERE status='pending';
 CREATE INDEX IF NOT EXISTS music_requests_status_created
