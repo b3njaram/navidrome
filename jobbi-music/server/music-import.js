@@ -45,6 +45,7 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile}){
       await checkStorageStats(statsFile,song.size);
       const actor=await ensureSocialProfile(req.user.username);
       const row=await withSocialTransaction(async client=>{
+        await client.query('SELECT pg_advisory_xact_lock(90280913)');
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['jobbi-import:'+actor]);
         const duplicate=await client.query(`SELECT 1 FROM music_import_requests
           WHERE requester=$1 AND peer_username=$2 AND filename=$3
