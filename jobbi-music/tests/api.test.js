@@ -312,7 +312,7 @@ test('old repeated rejected imports are grouped; archiving hides history but del
       });
       assert.equal(attempt.status,200);
     }
-    const history=await get('/api/music-imports');
+    const history=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
     assert.equal(history.status,200);
     const items=(await history.json()).items;
     const kino=items.find(x=>x.title==='Группа крови');
