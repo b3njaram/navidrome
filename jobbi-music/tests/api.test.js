@@ -59,7 +59,9 @@ before(async()=>{
   downloadServer=createServer(async(req,res)=>{
     let chunks='';for await(const chunk of req)chunks+=chunk;
     if(req.url==='/api/health')return json(res,{ok:true});
-    if(req.url==='/api/downloads')return json(res,{jobs:[{filename:'Track.flac',state:'queued'}]});
+    if(req.url==='/api/downloads')return json(res,{jobs:[{filename:'Track.flac',state:'queued'},
+      ...(received.download?[{...received.download,job_id:'job-1',
+        state:received.downloadState||'queued',percentage:received.downloadPercentage??0}]:[])]});
     if(req.url==='/api/search'){received.search=JSON.parse(chunks);return json(res,{results:[{username:'peer',files:[{filename:'Music/Track.flac',size:100000}]}]});}
     if(req.url==='/api/download'){received.download=JSON.parse(chunks);return json(res,{job_id:'job-1',state:'queued'},202);}
     return json(res,{error:'Not found'},404);
@@ -245,6 +247,16 @@ test('regular user imports Soulseek audio immediately with no approval flow',asy
   const history=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
   assert.equal(history.status,200);
   assert.ok((await history.json()).items.some(x=>x.title==='Test Song'&&x.stage==='queued'&&x.label.startsWith('Queued')));
+  received.downloadState='downloading';received.downloadPercentage=45;
+  const active=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
+  assert.equal(active.status,200);
+  const current=(await active.json()).items.find(x=>x.title==='Test Song');
+  assert.equal(current.stage,'downloading');
+  assert.equal(current.progress,45);
+  received.downloadState='completed';received.downloadPercentage=100;
+  const completed=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
+  assert.equal((await completed.json()).items.find(x=>x.title==='Test Song').stage,'indexing');
+  received.downloadState=null;received.downloadPercentage=null;
   const duplicate=await fetch(base+'/api/music-imports',{
     method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
     body:JSON.stringify(track)
