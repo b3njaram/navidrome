@@ -117,7 +117,7 @@ test('Soulseek search presents peer results instead of raw JSON',async({page})=>
   await expect(page.getByText('Music from Soulseek')).toBeVisible();
   await expect(page.getByText('Кино - Группа крови.flac')).toBeVisible();
   await page.getByRole('button',{name:'Import song'}).click();
-  await expect(page.getByText('Add to your library')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Import song to NAS'})).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -319,7 +319,7 @@ test('listener can import permitted Invidious fallback audio using optional work
   await page.getByRole('checkbox',{name:/I confirm I have permission/}).check();
   await page.getByRole('button',{name:'Import audio to NAS'}).click();
   await expect(page.getByText('Alternate-source imports')).toBeVisible();
-  await expect(page.getByText('Queued', {exact:true}).last()).toBeVisible();
+  await expect(page.locator('.request-status.queued').last()).toBeVisible();
 });
 test('artist and album names in song list open Navidrome catalog pages',async({page})=>{
   await setupMocks(page);await login(page,'listener');
@@ -328,7 +328,7 @@ test('artist and album names in song list open Navidrome catalog pages',async({p
   await page.getByRole('button',{name:'Test Artist',exact:true}).last().click();
   await expect(page.getByRole('heading',{name:'Test Artist'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Tracks'})).toBeVisible();
-  await page.getByRole('button',{name:'Test Album',exact:true}).last().click();
+  await page.locator('.album-card').filter({hasText:'Test Album'}).first().click();
   await expect(page.getByRole('heading',{name:'Test Album'})).toBeVisible();
 });
 test('admin sees direct Soulseek import and listener request approvals',async({page})=>{
@@ -337,7 +337,7 @@ test('admin sees direct Soulseek import and listener request approvals',async({p
   await navigate(page,'Discover');
   await page.getByRole('button',{name:/Soulseek · New music/}).click();
   await expect(page.getByRole('button',{name:'Search music sources'})).toBeVisible();
-  await expect(page.getByText('Listener requests')).toBeVisible();
+  await expect(page.getByText('My NAS imports')).toBeVisible();
   await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
   await page.getByRole('button',{name:'Search music sources'}).click();
   await page.getByRole('button',{name:'Import song'}).click();
