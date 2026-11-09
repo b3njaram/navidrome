@@ -36,7 +36,16 @@ export function findTransfer(importRow,raw){
 }
 export function transferStage(row,found,upstreamHealthy){
   if(!found){
-    if(row.status==='needs_review')return {stage:'unconfirmed',label:'Import not confirmed · check NAS transfers',progress:null};
+    if(row.status==='needs_review')return {
+      stage:'unconfirmed',
+      label:upstreamHealthy?
+        'No active transfer found · this attempt was not confirmed':
+        'No transfer confirmed · downloader status unavailable',
+      progress:null
+    };
+    const age=Date.now()-Date.parse(row.created_at||row.submittedAt||'');
+    if(upstreamHealthy&&row.status==='queued'&&Number.isFinite(age)&&age>10*60*1000)
+      return {stage:'unconfirmed',label:'Queue entry not found after 10 minutes · check NAS',progress:null};
     return upstreamHealthy?
       {stage:'queued',label:'Queued · waiting for peer / transfer',progress:null}:
       {stage:'unconfirmed',label:'Transfer service unavailable · retry status check',progress:null};
