@@ -152,3 +152,19 @@ For a failure, check `docker compose -f compose.yaml logs --tail=100 jobbi-music
 Navidrome: `/api/home`, `/api/search`, `/api/star`, `/api/playlists` (GET/POST), `/api/playlists/:id` (PATCH/DELETE), `/api/stream/:id`, `/api/cover/:id`, `/api/lyrics/:id`, `/api/scrobble`.
 
 Authorized administrators only: `/api/soulseek/search`, `/api/soulseek/download`, `/api/soulseek/downloads`, `/api/library/scan`. No slskd secrets or downloader tokens are stored in browser code. A `jobbi_session` cookie is HTTP-only; application sessions are stored in process memory and signing in again is required after container restart.
+
+## Social listening (friends, blends and shared playlists)
+
+The **Community** tab now provides private social features backed by a separate PostgreSQL database. Navidrome remains the music library and account identity provider; this database stores only profile pictures, profile details, friend requests, sharing permissions, playlist metadata, song references, and explicit blend picks. There is no public registration.
+
+- Search discoverable users, send and approve friend requests, remove friends, and choose whether your profile appears in search.
+- Upload a PNG/JPEG/WebP profile picture (up to 1 MB), change your display name and biography, and browse other users' visible profiles.
+- View playlists created by each user and the number of tracks they contributed to playlists **you are allowed to see**. Private playlist titles and contribution totals are not leaked to unauthorized viewers.
+- Create social playlists with **private** (default) or **public** visibility. Public means visible to **signed-in Jobbi Music users**, not anonymous visitors or the entire internet. Only owners can change visibility or delete playlists.
+- Invite accepted friends to private playlists, give them read-only or editing permission, and revoke access at any time. Friends can collaborate by adding tracks from the shared Navidrome library. Friendship alone never grants private-playlist access.
+- Import an existing Navidrome playlist as a separate social copy. The original playlist is not modified by collaboration.
+- Create a private blend with a friend after **both** explicitly opt in to sharing a snapshot of their favorites. Either person can opt out, which deletes their shared blends. Listening history is not exposed.
+
+**Deployment:** Social data requires the `jobbi-social-db` service and `SOCIAL_DB_PASSWORD` in your NAS-only `.env` file. Use a randomly generated, long password. Never commit this secret. Start with `docker compose -f compose.yaml up -d --build`, and include the `jobbi-social-data` Docker volume in regular backups. Do not delete that volume during rebuilds. See `scripts/enable-social.sh` for a guided one-time setup.
+
+**Limits:** Social playlists are stored separately from Navidrome-native playlists. Sharing a playlist grants access to its song list, not direct access to someone else's Navidrome credentials. Actual playback is still subject to each listener's Navidrome permissions and library availability.
