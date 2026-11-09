@@ -63,7 +63,11 @@ before(async()=>{
       ...(received.download?[{...received.download,job_id:'job-1',
         state:received.downloadState||'queued',percentage:received.downloadPercentage??0}]:[])]});
     if(req.url==='/api/search'){received.search=JSON.parse(chunks);return json(res,{results:[{username:'peer',files:[{filename:'Music/Track.flac',size:100000}]}]});}
-    if(req.url==='/api/download'){received.download=JSON.parse(chunks);return json(res,{job_id:'job-1',state:'queued'},202);}
+    if(req.url==='/api/download'){
+      received.download=JSON.parse(chunks);
+      if(received.duplicateOnNas)return json(res,{error:"Skipping this song: already in your Music folder"},409);
+      return json(res,{job_id:'job-1',state:'queued'},202);
+    }
     return json(res,{error:'Not found'},404);
   });
   const navPort=await listen(navServer);
@@ -267,6 +271,24 @@ test('regular user imports Soulseek audio immediately with no approval flow',asy
     body:JSON.stringify({...track,filename:'../payload.exe'})
   });
   assert.equal(invalid.status,400);
+});
+test('known NAS library duplicate is not treated as ambiguous download failure',async()=>{
+  if(!process.env.SOCIAL_TEST_DATABASE_URL)return;
+  received.duplicateOnNas=true;
+  try{
+    const song={username:'peer-existing',filename:'Kino/01 - Gruppa Krovi.flac',size:2000000,artist:'Кино',title:'Группа крови'};
+    const response=await fetch(base+'/api/music-imports',{
+      method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+      body:JSON.stringify(song)
+    });
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).existing,true);
+    const result=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
+    const history=(await result.json()).items;
+    const match=history.find(x=>x.title==='Группа крови');
+    assert.equal(match?.stage,'existing');
+    assert.match(match.label,/NAS music index/);
+  }finally{received.duplicateOnNas=false;}
 });
 test('non-configured Invidious worker does not accept direct audio imports',async()=>{
   const result=await fetch(base+'/api/invidious/status',{headers:{cookie}});
