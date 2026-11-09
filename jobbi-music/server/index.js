@@ -27,7 +27,7 @@ const INVIDIOUS_WORKER_URL=(process.env.INVIDIOUS_WORKER_URL||'').replace(/\/$/,
 const INVIDIOUS_WORKER_SECRET=process.env.INVIDIOUS_WORKER_SECRET||'';
 const SECURE_COOKIE = process.env.PUBLIC_HTTPS === 'true';
 const ACCOUNT_MANAGEMENT_ENABLED=process.env.ENABLE_ACCOUNT_MANAGEMENT==='true';
-const STORAGE_STATS_PATH='/run/jobbi-stats/storage.json';
+const STORAGE_STATS_PATH=process.env.STORAGE_STATS_PATH||'/run/jobbi-stats/storage.json';
 const ADMIN_USERS = new Set((process.env.ADMIN_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
 const sessions = new Map();
 const sessionEncryptionKey=crypto.randomBytes(32);
