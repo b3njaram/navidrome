@@ -301,3 +301,28 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   .invidious-actions a,.invidious-actions button{font-size:10px;padding:9px 6px}
 }
 @media(max-width:360px){.invidious-grid{grid-template-columns:minmax(0,1fr)}}
+
+
+/* Live Soulseek-to-Navidrome import tracker. Each stage requires real evidence. */
+.music-import-entry{padding:15px;border:1px solid #655065;border-radius:14px;background:linear-gradient(135deg,#35283a,#26202e);display:flex;flex-direction:column;gap:12px;min-width:0}
+.music-import-heading{display:flex;align-items:center;flex-wrap:wrap;gap:12px;justify-content:space-between}
+.music-import-heading>div{display:flex;flex:1 1 160px;min-width:0;flex-direction:column;gap:6px}
+.music-import-heading strong{color:#fff4f8;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.music-import-heading small{color:#c0a9ba;font-size:11px;overflow-wrap:anywhere}
+.music-import-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.music-import-step{display:flex;align-items:center;gap:5px;min-width:0;color:#8b7c8e;position:relative}
+.music-import-step-dot{width:9px;height:9px;border-radius:50%;background:#5e4d60;flex:none;transition:background .3s,box-shadow .3s}
+.music-import-step.complete .music-import-step-dot{background:#e78dae}
+.music-import-step.current .music-import-step-dot{box-shadow:0 0 0 4px #f092b626}
+.music-import-step small{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.music-import-step.complete{color:#ffdae8}
+.music-import-progress{height:7px;width:100%;background:#1c1721;border-radius:20px;overflow:hidden}
+.music-import-progress span{display:block;height:100%;background:linear-gradient(90deg,#dd6f9e,#ffa8c9);border-radius:20px;transition:width .5s ease}
+.music-import-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.music-import-message{font-size:11px;color:#d5bdd1;line-height:1.5;overflow-wrap:anywhere}
+.music-import-message.warn{color:#fac4ae}
+.request-status.available{color:#c0f8da;background:#274e40;border-color:#417d63}
+.request-status.downloading{color:#d8d9ff;background:#33304f;border-color:#635cab}
+.request-status.unconfirmed,.request-status.failed{color:#ffe0c5;background:#5d403e;border-color:#8d6256}
+.music-import-play{display:inline-flex;align-items:center;gap:6px;border-radius:9px;background:#f69fc3;color:#301c2b;font-size:11px;font-weight:800;padding:8px 13px}
+@media(max-width:720px){.music-import-entry{padding:12px}.music-import-step{flex-direction:column;align-items:flex-start;gap:5px}.music-import-step small{font-size:9px}.music-import-heading strong{font-size:12px}}
