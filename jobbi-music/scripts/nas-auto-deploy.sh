@@ -4,7 +4,14 @@
 set -eu
 ROOT=/volume1/docker/jobbi-music-source
 APP="$ROOT/jobbi-music"
-BRANCH=feature/jobbi-music-preview
+BRANCH=main
+# Production updates require explicit enablement after go-live. An existing DSM
+# scheduled task running this script becomes a no-op by default, never reverting
+# a release to the former preview branch.
+if [ "${JOBBI_AUTO_DEPLOY_PRODUCTION:-0}" != '1' ];then
+  echo 'Jobbi Music production auto-update is disabled (manual reviewed releases).'
+  exit 0
+fi
 LOCK="$ROOT/.git/jobbi-auto-deploy.lock"
 LOG="$ROOT/.git/jobbi-auto-deploy.log"
 STATE="$ROOT/.git/jobbi-auto-deployed"
