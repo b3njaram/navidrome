@@ -206,3 +206,50 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
     transition-duration:.001ms!important;scroll-behavior:auto!important}
 }
+
+
+/* Soulseek discovery and supervised shared-library imports */
+.discover-peer-cta{display:inline-flex;align-items:center;justify-content:center;gap:10px;border:1px solid #87546f;background:linear-gradient(130deg,#493048,#302438);color:#ffd1e3;border-radius:12px;padding:14px 20px;font-size:13px;font-weight:750;margin-top:20px;min-height:46px;max-width:100%;transition:transform .2s,background .2s,box-shadow .2s}
+.discover-peer-cta:hover{background:#51334b;box-shadow:0 8px 25px #0003}
+.discover-peer-cta:active{transform:scale(.97)}
+.segmented{flex-wrap:wrap;align-items:stretch;gap:8px;border-bottom:1px solid #352a37}
+.segmented button{border:1px solid transparent;border-bottom:2px solid transparent;border-radius:10px 10px 2px 2px;min-height:48px;min-width:0;white-space:normal;line-height:1.35;justify-content:center;text-align:center}
+.segmented button.selected{border-color:#664153;border-bottom-color:#ff96b9;background:rgba(245,133,181,.09)}
+.segmented button svg{flex-shrink:0}
+.remote-search{width:100%;min-width:0}
+.remote-results,.remote-head,.search-actions,.transfer-section{min-width:0;max-width:100%}
+.remote-item{min-width:0;flex-wrap:wrap}
+.remote-item>div{flex:1 1 170px;min-width:0}
+.remote-item .import-button{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.request-section{margin:29px 0 10px;padding:22px;border-radius:16px;background:linear-gradient(130deg,#221b29,#191820);border:1px solid #493346}
+.request-section .shelf-title{display:flex;align-items:flex-start;justify-content:space-between;gap:13px;flex-wrap:wrap;margin-bottom:15px}
+.request-section .shelf-title h2{margin-bottom:5px}
+.request-section .shelf-title p{margin:0;font-size:12px}
+.request-section .ghost-button{display:flex;align-items:center;gap:6px}
+.music-request-list{display:flex;flex-direction:column;gap:7px}
+.music-request-row{display:flex;align-items:center;flex-wrap:wrap;gap:12px;border-radius:10px;padding:14px 12px;background:#ffffff09;border:1px solid #ffffff0d;max-width:100%;min-width:0}
+.music-request-row>div:first-child{flex:1 1 180px;min-width:0;display:flex;flex-direction:column;gap:5px}
+.music-request-row strong{color:#fff4f8;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.music-request-row small{font-size:11px;color:#ab9bac;overflow-wrap:anywhere}
+.request-status{font-size:10px;border:1px solid #65516c;border-radius:40px;padding:7px 10px;font-weight:750;white-space:nowrap;color:#e4c5de;background:#4a3453}
+.request-status.queued{color:#b8f6dd;border-color:#477662;background:#204c40}
+.request-status.rejected,.request-status.needs_review{color:#ffd1be;border-color:#814e49;background:#583633}
+.request-status.processing{color:#d5d7ff;border-color:#5554a0;background:#303152}
+.review-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.review-actions button{display:flex;align-items:center;justify-content:center;gap:6px;background:#50344e;color:#fce7f1;border-radius:9px;border:1px solid #845570;padding:10px 12px;font-size:11px;font-weight:700}
+.review-actions button:first-child{background:#6e3659;color:#fff1f8}
+.review-actions button:hover{filter:brightness(1.18)}
+.request-empty{font-size:12px;color:#b7a6b8;padding:10px 0;line-height:1.65;margin:0}
+@media(max-width:720px){
+ .segmented{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-bottom:21px}
+ .segmented button{padding:12px 8px;gap:6px;font-size:11px;min-height:52px}
+ .segmented .experimental{font-size:8px;padding:2px 3px;white-space:nowrap}
+ .remote-notice{padding:15px;gap:12px}
+ .remote-item{padding:14px 0}
+ .remote-item .import-button{flex:1 1 100%;min-height:43px;max-width:100%}
+ .request-section{padding:16px}
+ .music-request-row{padding:13px 11px}
+ .review-actions{width:100%}
+ .review-actions button{flex:1 1 auto;min-height:40px}
+ .search-bar>span{display:none}
+}
