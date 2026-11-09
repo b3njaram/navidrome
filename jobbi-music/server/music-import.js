@@ -30,22 +30,22 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
   router.get('/',mustAuth,async(req,res)=>{
     try{
       const actor=normalUsername(req.user.username);
-      const rows=await socialQuery(`SELECT id,peer_username,downloader_job_id,filename,size_bytes,artist,title,status,created_at
+      const rows=await socialQuery(`SELECT id,peer_username,downloader_job_id,already_on_nas,filename,size_bytes,artist,title,status,created_at
         FROM music_import_requests WHERE requester=$1
         AND status IN ('queued','processing','needs_review')
         ORDER BY created_at DESC LIMIT 60`,[actor]);
       const snapshot=await latestTransferSnapshot(downloader);
       const items=rows.rows.map(row=>{
-        const job=findTransfer(row,snapshot.rows);
+        const job=row.already_on_nas?null:findTransfer(row,snapshot.rows);
         return {id:row.id,filename:row.filename,size:Number(row.size_bytes),
           artist:row.artist,title:row.title,submittedAt:row.created_at,
-          ...transferStage(row,job,snapshot.healthy)};
+          ...(row.already_on_nas?{stage:'existing',label:'Already in NAS music index · checking library',progress:100}:transferStage(row,job,snapshot.healthy))};
       });
       // A peer's "complete" flag is not library availability. Verify the exact
       // song in this authenticated user's Navidrome catalog before declaring it playable.
       if(subsonic){
         for(const item of items.filter(x=>
-          x.stage==='imported'||x.stage==='indexing'||
+          x.stage==='imported'||x.stage==='indexing'||x.stage==='existing'||
           ((x.stage==='queued'||x.stage==='unconfirmed')&&
             Date.now()-Date.parse(x.submittedAt)>120000)).slice(0,8)){
           try{
@@ -58,7 +58,7 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
             // newly indexed song dated on/after submission counts as evidence.
             const indexed=Date.parse(match?.created||match?.createdAt||'');
             const submitted=Date.parse(item.submittedAt);
-            const completed=item.stage==='imported'||item.stage==='indexing';
+            const completed=item.stage==='imported'||item.stage==='indexing'||item.stage==='existing';
             const newlyIndexed=Number.isFinite(indexed)&&Number.isFinite(submitted)&&
               indexed>=submitted-60000;
             if(match?.id&&(completed||newlyIndexed)){
@@ -117,6 +117,16 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
         return res.status(202).json({queued:true,importId:id,message:'Import queued for the shared NAS library.',
           details:imported.details});
       }catch(e){
+        // The NAS downloader reports HTTP 409 when its tag-based library index
+        // already recognizes a recording. This is NOT an ambiguous transfer,
+        // and must not be displayed as a failed download.
+        if(e instanceof ImportError&&e.status===409&&
+          /already (?:in|present|exist)|music folder|already indexed|duplicate (?:song|track)/i.test(e.message)){
+          await socialQuery(`UPDATE music_import_requests
+            SET status='needs_review',already_on_nas=TRUE,updated_at=now() WHERE id=$1`,[id]);
+          return res.status(200).json({existing:true,importId:id,
+            message:'Already in your NAS music collection. Check the library for this track.'});
+        }
         await socialQuery(`UPDATE music_import_requests
           SET status='needs_review',updated_at=now() WHERE id=$1`,[id]).catch(()=>{});
         throw e;
