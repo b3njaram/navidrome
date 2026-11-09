@@ -71,6 +71,26 @@ CREATE TABLE IF NOT EXISTS social_blend_picks (
   duration INTEGER NOT NULL DEFAULT 0 CHECK(duration BETWEEN 0 AND 100000),
   PRIMARY KEY(username,track_id)
 );
+CREATE TABLE IF NOT EXISTS music_import_requests (
+  id UUID PRIMARY KEY,
+  requester TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  peer_username TEXT NOT NULL CHECK(length(peer_username) BETWEEN 1 AND 100),
+  filename TEXT NOT NULL CHECK(length(filename) BETWEEN 1 AND 900),
+  size_bytes BIGINT NOT NULL CHECK(size_bytes BETWEEN 1024 AND 2147483648),
+  artist TEXT NOT NULL CHECK(length(artist) BETWEEN 1 AND 180),
+  title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 180),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending','processing','queued','rejected','needs_review')),
+  reviewed_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS music_requests_unique_pending
+  ON music_import_requests(requester,peer_username,filename) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS music_requests_status_created
+  ON music_import_requests(status,created_at DESC);
+CREATE INDEX IF NOT EXISTS music_requests_user
+  ON music_import_requests(requester,created_at DESC);
 CREATE INDEX IF NOT EXISTS social_playlists_public_idx ON social_playlists(updated_at DESC) WHERE visibility='public';
 CREATE INDEX IF NOT EXISTS social_playlists_owner_idx ON social_playlists(owner);
 CREATE INDEX IF NOT EXISTS social_members_username_idx ON social_members(username);
