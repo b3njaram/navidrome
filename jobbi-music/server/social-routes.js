@@ -19,12 +19,27 @@ async function friends(a,b){
   const r=await socialQuery('SELECT 1 FROM social_friends WHERE a=$1 AND b=$2',[x,y]);
   return r.rowCount>0;
 }
+async function invitePlaylist(client,playlistId,actor,username,canEdit){
+  const recipient=key(username);
+  if(!recipient||recipient===actor||typeof canEdit!=='boolean')fail(400,'Choose a valid collaborator and permission');
+  const user=await client.query('SELECT username FROM social_profiles WHERE username=$1',[recipient]);
+  if(!user.rowCount)fail(404,'That account has not joined Jobbi Music yet');
+  const member=await client.query('SELECT 1 FROM social_members WHERE playlist_id=$1 AND username=$2',[playlistId,recipient]);
+  if(member.rowCount)fail(409,'This user already collaborates on this playlist');
+  const pending=await client.query(`SELECT id FROM social_playlist_invitations
+    WHERE playlist_id=$1 AND recipient=$2 AND status='pending'`,[playlistId,recipient]);
+  if(pending.rowCount)fail(409,'Invitation already pending for this user');
+  const id=crypto.randomUUID();
+  await client.query(`INSERT INTO social_playlist_invitations
+    (id,playlist_id,sender,recipient,can_edit) VALUES($1,$2,$3,$4,$5)`,
+    [id,playlistId,actor,recipient,canEdit]);
+  return {id,username:recipient,canEdit};
+}
 async function loadPlaylist(id,viewer){
   if(!validId(id))fail(404,'Playlist not found');
   const {rows}=await socialQuery(`SELECT p.*,m.can_edit, (m.username IS NOT NULL) AS is_member,
       (SELECT COUNT(*)::int FROM social_tracks t WHERE t.playlist_id=p.id) AS song_count
     FROM social_playlists p LEFT JOIN social_members m ON m.playlist_id=p.id AND m.username=$2
-      AND EXISTS(SELECT 1 FROM social_friends f WHERE f.a=LEAST(p.owner,$2) AND f.b=GREATEST(p.owner,$2))
     WHERE p.id=$1 AND (p.owner=$2 OR p.visibility='public' OR m.username IS NOT NULL)`,[id,viewer]);
   if(!rows.length)fail(404,'Playlist not found');
   return rows[0];
@@ -113,8 +128,11 @@ export function createSocialRouter({mustAuth,subsonic}){
         (SELECT COUNT(*)::int FROM social_tracks t WHERE t.playlist_id=p.id) AS song_count
         FROM social_playlists p WHERE p.visibility='public' ORDER BY p.updated_at DESC LIMIT 40`)
     ]);
+    const invitations=await socialQuery(`SELECT i.id::text,i.playlist_id::text,i.sender,i.can_edit,i.created_at,
+      p.title,p.owner FROM social_playlist_invitations i JOIN social_playlists p ON p.id=i.playlist_id
+      WHERE i.recipient=$1 AND i.status='pending' ORDER BY i.created_at DESC LIMIT 70`,[me]);
     res.json({me:profile.rows[0],friends:connections.rows,incoming:incoming.rows,outgoing:outgoing.rows,
-      playlists:mine.rows,discover:publics.rows});
+      playlists:mine.rows,discover:publics.rows,playlistInvitations:invitations.rows});
   }));
   r.get('/people',respond(async(req,res)=>{
     const q=short(req.query.q,60).trim().toLowerCase();
@@ -230,12 +248,22 @@ export function createSocialRouter({mustAuth,subsonic}){
   }));
   r.post('/playlists',respond(async(req,res)=>{
     const title=req.body?.title,description=req.body?.description??'',vis=req.body?.visibility??'private';
+    const invitations=req.body?.invitees??[];
     if(!safeText(title,100)||typeof description!=='string'||description.length>300||!visibility(vis))
       fail(400,'Invalid playlist details');
+    if(!Array.isArray(invitations)||invitations.length>12||
+      invitations.some(x=>!x||typeof x.username!=='string'||typeof x.canEdit!=='boolean')||
+      new Set(invitations.map(x=>key(x.username))).size!==invitations.length)
+      fail(400,'Choose up to 12 unique collaborators');
     const id=crypto.randomUUID();
-    const result=await socialQuery(`INSERT INTO social_playlists(id,owner,title,description,visibility)
-      VALUES($1,$2,$3,$4,$5) RETURNING *`,[id,req.socialName,title.trim(),description.trim(),vis]);
-    res.status(201).json({playlist:result.rows[0]});
+    const created=await withSocialTransaction(async client=>{
+      const result=await client.query(`INSERT INTO social_playlists(id,owner,title,description,visibility)
+        VALUES($1,$2,$3,$4,$5) RETURNING *`,[id,req.socialName,title.trim(),description.trim(),vis]);
+      for(const invite of invitations)
+        await invitePlaylist(client,id,req.socialName,invite.username,invite.canEdit);
+      return result.rows[0];
+    });
+    res.status(201).json({playlist:created,invitationsSent:invitations.length});
   }));
   r.post('/playlists/import',respond(async(req,res)=>{
     const id=req.body?.navidromePlaylistId,vis=req.body?.visibility??'private';
@@ -256,12 +284,16 @@ export function createSocialRouter({mustAuth,subsonic}){
   }));
   r.get('/playlists/:id',respond(async(req,res)=>{
     const p=await loadPlaylist(req.params.id,req.socialName);
-    const [tracks,members]=await Promise.all([
+    const [tracks,members,pending]=await Promise.all([
       socialQuery(`SELECT id::text AS id,track_id,title,artist,album,cover_art AS "coverArt",duration,added_by,added_at
         FROM social_tracks WHERE playlist_id=$1 ORDER BY id LIMIT 1000`,[p.id]),
-      socialQuery(`SELECT username,can_edit,joined_at FROM social_members WHERE playlist_id=$1 ORDER BY joined_at`,[p.id])
+      socialQuery(`SELECT username,can_edit,joined_at FROM social_members WHERE playlist_id=$1 ORDER BY joined_at`,[p.id]),
+      p.owner===req.socialName?socialQuery(`SELECT id::text,recipient,can_edit,created_at
+        FROM social_playlist_invitations WHERE playlist_id=$1 AND status='pending' ORDER BY created_at DESC`,[p.id]):Promise.resolve({rows:[]})
     ]);
-    res.json({playlist:p,tracks:tracks.rows,members:p.owner===req.socialName||p.is_member?members.rows:[]});
+    res.json({playlist:p,tracks:tracks.rows,
+      members:p.owner===req.socialName||p.is_member?members.rows:[],
+      pendingInvitations:pending.rows});
   }));
   r.patch('/playlists/:id',respond(async(req,res)=>{
     const p=await loadPlaylist(req.params.id,req.socialName),body=req.body||{};
@@ -280,17 +312,49 @@ export function createSocialRouter({mustAuth,subsonic}){
     await socialQuery('DELETE FROM social_playlists WHERE id=$1',[p.id]);
     res.json({deleted:true});
   }));
-  r.post('/playlists/:id/members',respond(async(req,res)=>{
+  // Collaborators opt in; merely receiving an invitation never exposes a private playlist.
+  r.post('/playlists/:id/invitations',respond(async(req,res)=>{
     const p=await loadPlaylist(req.params.id,req.socialName);
-    if(p.owner!==req.socialName)fail(403,'Only the owner can share this playlist');
+    if(p.owner!==req.socialName)fail(403,'Only the owner can invite collaborators');
     if(p.kind==='blend')fail(403,'Blend membership is fixed');
-    const other=key(req.body?.username),canEdit=req.body?.canEdit;
-    if(!other||other===req.socialName||typeof canEdit!=='boolean')fail(400,'Invalid collaborator');
-    if(!await friends(req.socialName,other))fail(403,'Share playlists with accepted friends');
-    await socialQuery(`INSERT INTO social_members(playlist_id,username,can_edit) VALUES($1,$2,$3)
-      ON CONFLICT(playlist_id,username) DO UPDATE SET can_edit=EXCLUDED.can_edit`,
-      [p.id,other,canEdit]);
-    res.json({shared:true,username:other,canEdit});
+    const invitation=await withSocialTransaction(client=>
+      invitePlaylist(client,p.id,req.socialName,req.body?.username,req.body?.canEdit??true));
+    res.status(201).json({invited:true,invitation});
+  }));
+  r.post('/invitations/:id/respond',respond(async(req,res)=>{
+    const id=req.params.id,accept=req.body?.accept;
+    if(!validId(id)||typeof accept!=='boolean')fail(400,'Invalid invitation response');
+    const answer=await withSocialTransaction(async client=>{
+      const selected=await client.query(`SELECT i.*,p.owner,p.kind
+        FROM social_playlist_invitations i JOIN social_playlists p ON p.id=i.playlist_id
+        WHERE i.id=$1 AND i.recipient=$2 AND i.status='pending' FOR UPDATE OF i`,[id,req.socialName]);
+      if(!selected.rowCount)fail(404,'Pending invitation not found');
+      const invitation=selected.rows[0];
+      if(accept){
+        if(invitation.kind==='blend')fail(403,'Blend invitations are not available');
+        await client.query(`INSERT INTO social_members(playlist_id,username,can_edit)
+          VALUES($1,$2,$3) ON CONFLICT(playlist_id,username) DO UPDATE SET can_edit=EXCLUDED.can_edit`,
+          [invitation.playlist_id,req.socialName,invitation.can_edit]);
+      }
+      await client.query(`UPDATE social_playlist_invitations SET status=$2,updated_at=now() WHERE id=$1`,
+        [id,accept?'accepted':'declined']);
+      return {accepted:accept,playlistId:invitation.playlist_id,canEdit:invitation.can_edit};
+    });
+    res.json(answer);
+  }));
+  r.delete('/playlists/:id/invitations/:username',respond(async(req,res)=>{
+    const p=await loadPlaylist(req.params.id,req.socialName);
+    if(p.owner!==req.socialName)fail(403,'Only the owner can revoke invitations');
+    const target=key(req.params.username);
+    if(!target)fail(400,'Invalid recipient');
+    const result=await socialQuery(`UPDATE social_playlist_invitations SET status='revoked',updated_at=now()
+      WHERE playlist_id=$1 AND recipient=$2 AND status='pending' RETURNING id`,[p.id,target]);
+    if(!result.rowCount)fail(404,'Pending invitation not found');
+    res.json({revoked:true});
+  }));
+  // Legacy sharing route cannot silently grant membership; guide older clients to invitations.
+  r.post('/playlists/:id/members',respond(async(req,res)=>{
+    fail(410,'Update Jobbi Music and send a collaborator invitation instead');
   }));
   r.delete('/playlists/:id/members/:username',respond(async(req,res)=>{
     const p=await loadPlaylist(req.params.id,req.socialName);
