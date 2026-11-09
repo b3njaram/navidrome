@@ -326,3 +326,78 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
 .request-status.unconfirmed,.request-status.failed{color:#ffe0c5;background:#5d403e;border-color:#8d6256}
 .music-import-play{display:inline-flex;align-items:center;gap:6px;border-radius:9px;background:#f69fc3;color:#301c2b;font-size:11px;font-weight:800;padding:8px 13px}
 @media(max-width:720px){.music-import-entry{padding:12px}.music-import-step{flex-direction:column;align-items:flex-start;gap:5px}.music-import-step small{font-size:9px}.music-import-heading strong{font-size:12px}}
+
+
+/* Jobbi Music motion system: fast feedback, expressive playback, low layout cost.
+   All continuous animations use compositor-friendly transforms/opacity. */
+@keyframes jobbi-vinyl-spin{to{transform:rotate(360deg)}}
+@keyframes jobbi-album-breathe{0%,100%{transform:scale(.985)}50%{transform:scale(1)}}
+@keyframes jobbi-play-spring{0%{transform:scale(.9)}55%{transform:scale(1.12)}80%{transform:scale(.98)}100%{transform:scale(1)}}
+@keyframes jobbi-equalize{0%,100%{transform:scaleY(.22)}35%{transform:scaleY(1)}65%{transform:scaleY(.53)}}
+@keyframes jobbi-live-glow{0%,100%{box-shadow:0 0 0 0 #ff77914f}50%{box-shadow:0 0 0 8px #ff779100}}
+@keyframes jobbi-shimmer{from{background-position:220% 0}to{background-position:-220% 0}}
+@keyframes jobbi-fade-up{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+@keyframes jobbi-notice-pop{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes jobbi-playing-ring{0%,100%{box-shadow:0 0 0 0 #ee719728,0 9px 22px #0005}55%{box-shadow:0 0 0 7px #ee719700,0 15px 28px #0006}}
+.app-shell{--spring:cubic-bezier(.22,.82,.18,1)}
+.app-shell button,.immersive-player button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.app-shell :where(.primary,.ghost-button,.icon-button,.album-card,.album-play,.play-round,
+  .nav-item,.mobile-nav button,.mobile-more-sheet button,.topbar-search,.queue-item,
+  .remote-item .import-button,.invidious-actions a,.invidious-actions button,
+  .music-import-play,.social-primary,.social-outline,.social-playlist-tile,
+  .track-art-click,.track-song-title,.discover-peer-cta){
+  transition-property:transform,background-color,box-shadow,color,opacity,filter;
+  transition-duration:220ms;transition-timing-function:var(--spring)
+}
+.app-shell :where(.primary,.ghost-button,.icon-button,.album-card,.play-round,
+  .nav-item,.mobile-nav button,.mobile-more-sheet button,.topbar-search,.queue-item,
+  .remote-item .import-button,.music-import-play,.social-primary,.social-outline,
+  .social-playlist-tile,.track-art-click,.discover-peer-cta):active:not(:disabled){
+  transform:scale(.955);filter:brightness(1.15)
+}
+.app-shell :where(.primary,.social-primary,.music-import-play):hover:not(:disabled){
+  box-shadow:0 10px 24px #e75f8c3c;filter:brightness(1.07)
+}
+.app-shell .nav-item.active,.app-shell .mobile-nav .selected{
+  animation:jobbi-notice-pop .32s var(--spring) both
+}
+.app-shell .album-card .art{transition:transform .35s var(--spring),filter .3s,box-shadow .35s}
+.app-shell .album-card:hover .art{transform:translateY(-4px) scale(1.022);box-shadow:0 15px 27px #0007}
+.app-shell .album-card:active .art{transform:scale(.97)}
+.app-shell .album-card:hover .album-play{transform:translateY(0) scale(1.05)}
+.app-shell .track-row{transition:background-color .22s,box-shadow .22s}
+.app-shell .track-row:has(.track-art-click:active){background:rgba(249,111,151,.14)}
+.app-shell .player-playing .play-round{animation:jobbi-play-spring .5s var(--spring),jobbi-playing-ring 3s ease-in-out infinite 600ms}
+.app-shell .player-playing .player-open .art{animation:jobbi-album-breathe 3s ease-in-out infinite;box-shadow:0 0 0 2px #ed9aba50,0 0 18px #f08ca22a}
+.app-shell .music-is-playing .hero-record{animation:jobbi-vinyl-spin 19s linear infinite}
+.app-shell .music-is-paused .hero-record{transition:transform .8s var(--spring)}
+.jobbi-mini-viz{display:inline-flex;align-items:center;gap:2px;height:20px;width:19px;margin:0 5px 0 0;flex:none}
+.jobbi-mini-viz i{height:16px;width:3px;border-radius:4px;background:linear-gradient(#ffb7cb,#fa6d9b);transform:scaleY(.18);opacity:.7;transform-origin:50% 50%}
+.player-playing .jobbi-mini-viz i{animation:jobbi-equalize .88s ease-in-out infinite}
+.player-playing .jobbi-mini-viz i:nth-child(2){animation-delay:-.39s}
+.player-playing .jobbi-mini-viz i:nth-child(3){animation-delay:-.68s}
+.player-playing .jobbi-mini-viz i:nth-child(4){animation-delay:-.17s}
+.app-shell .import-notice,.app-shell .social-good,.app-shell .social-alert{
+  animation:jobbi-notice-pop .36s var(--spring) both
+}
+.app-shell .search-suggestion,.app-shell .remote-empty{
+  animation:jobbi-fade-up .38s var(--spring) both
+}
+.app-shell .music-import-entry{animation:jobbi-fade-up .4s var(--spring) both}
+.app-shell .server-dot{animation:jobbi-live-glow 3.5s ease-in-out infinite}
+.app-shell .player-playing .seek input[type=range]{accent-color:#ff99bd}
+@media(hover:none){
+  .app-shell .album-card .album-play{opacity:1;transform:none}
+  .app-shell .album-card:hover .art{transform:none;filter:none;box-shadow:none}
+}
+@media(max-width:480px){
+  .jobbi-mini-viz{width:13px;gap:1px;margin-right:2px}
+  .jobbi-mini-viz i{width:2px}
+}
+@media(prefers-reduced-motion:reduce){
+  .app-shell *, .app-shell *::before,.app-shell *::after,
+  .immersive-player *, .immersive-player *::before,.immersive-player *::after{
+    animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important
+  }
+}
