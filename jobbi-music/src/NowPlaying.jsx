@@ -15,7 +15,7 @@ export default function NowPlaying({
   track,queue=[],currentIndex=0,playing,position=0,length=0,
   lyrics,lyricsLoading=false,mode,setMode,onClose,onToggle,onNext,onPrev,
   onSeek,onSelect,onFavorite,favorited,onAdd,onDownload,
-  shuffle,repeat,onShuffle,onRepeat,onShare
+  shuffle,repeat,onShuffle,onRepeat,onShare,onArtist,onAlbum
 }){
   const lines=lyrics?.lines||[];
   const lineIndex=useMemo(()=>activeLineAt(lines,position),[lines,position]);
@@ -41,7 +41,7 @@ export default function NowPlaying({
     <div className="immersive-shell">
       <header className="immersive-top">
         <button className="immersive-top-button" aria-label="Close now playing" onClick={onClose}><ChevronDown size={25}/></button>
-        <div className="immersive-heading"><span>NOW PLAYING</span><strong>{track.album||'Jobbi Music'}</strong></div>
+        <div className="immersive-heading"><span>NOW PLAYING</span><button className="immersive-album-link" onClick={onAlbum} title="See album songs">{track.album||'Jobbi Music'}</button></div>
         <button className="immersive-top-button" aria-label="Track options" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}><MoreHorizontal size={25}/></button>
       </header>
       {menuOpen&&<div className="immersive-actions-menu">
@@ -57,7 +57,7 @@ export default function NowPlaying({
             <div className="immersive-art-glow"/>
           </div>
           <div className="immersive-track-head">
-            <div className="immersive-title"><h2 title={track.title}>{track.title||'Unknown track'}</h2><p>{track.artist||'Unknown artist'}</p></div>
+            <div className="immersive-title"><h2 title={track.title}>{track.title||'Unknown track'}</h2><button className="immersive-artist-link" title="More songs by this artist" onClick={onArtist}>{track.artist||'Unknown artist'}</button></div>
             <button className={`immersive-like ${favorited?'hearted':''}`} aria-label={favorited?'Remove favorite':'Add favorite'} onClick={onFavorite}><Heart size={24} fill={favorited?'currentColor':'none'}/></button>
           </div>
           <div className="immersive-seek"><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={Math.min(position,length||0)} onChange={e=>onSeek(Number(e.target.value))}/><div><span>{duration(position)}</span><span>-{duration(Math.max(0,length-position))}</span></div></div>
