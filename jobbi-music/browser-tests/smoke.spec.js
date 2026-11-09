@@ -326,7 +326,7 @@ test('listener discovers Soulseek and imports directly without admin approval',a
   await page.getByLabel('Artist').fill('Luis Miguel');
   await page.getByLabel('Track title').fill('Test song');
   await page.getByRole('button',{name:'Queue import'}).click();
-  await expect(page.getByText('Queued at NAS')).toBeVisible();
+  await expect(page.getByText('Queued · waiting for Soulseek peer')).toBeVisible();
   await expect(page.getByText('My NAS imports')).toBeVisible();
   await expect(page.getByText('From Invidious')).toBeVisible();
   expect(errors).toEqual([]);
