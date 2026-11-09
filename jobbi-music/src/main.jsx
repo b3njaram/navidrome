@@ -415,6 +415,10 @@ function App() {
                 try{const song=await api('/api/songs/'+encodeURIComponent(item.songId));playTracks([song],0)}
                 catch(e){setError(e.message)}
               }}><Play size={14} fill="currentColor"/> Play</button>}
+              {item.stage==='available'&&item.songId&&<button className="music-import-play" onClick={async()=>{
+                try{const song=await api('/api/songs/'+encodeURIComponent(item.songId));setPickerSong(song)}
+                catch(e){setError(e.message)}
+              }}><Plus size={14}/> Add to playlist</button>}
             </div>
           </div>
         }):<p className="request-empty">No imported tracks yet. Choose a Soulseek recording and tap Import song.</p>}</div>
