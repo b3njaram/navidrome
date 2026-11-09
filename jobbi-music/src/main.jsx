@@ -51,7 +51,7 @@ function Login({onLogin}) {
     <form className="login-card" onSubmit={submit}><div className="login-icon"><Headphones size={25}/></div><h2>Welcome back</h2><p>Sign in using your existing Navidrome account.</p><label>Username<input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} placeholder="Your username" required/></label><label>Password<input autoComplete="current-password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Your password" required/></label>{error&&<div className="error-note">{error}</div>}<button className="primary wide" disabled={busy} type="submit">{busy?<LoaderCircle className="spin" size={18}/>:<Play size={17} fill="currentColor"/>} Sign in to Jobbi Music</button><small>Secure connection to your personal music library.</small></form></main>
   </div>;
 }
-const navs=[{id:'home',label:'Listen Now',icon:Home},{id:'search',label:'Search',icon:Search},{id:'library',label:'Your Library',icon:Library},{id:'social',label:'Community',icon:Heart}];
+const navs=[{id:'home',label:'Listen Now',icon:Home},{id:'search',label:'Discover',icon:Search},{id:'library',label:'Your Library',icon:Library},{id:'social',label:'Community',icon:Heart}];
 function Sidebar({page,setPage,user,logout,playlists}) {
   return <aside className="sidebar"><button className="brand" onClick={()=>setPage({id:'home'})}><span className="brand-symbol"><Waves size={19}/></span><span>jobbi<span className="brand-soft">music</span></span></button>
     <div className="sidebar-section"><span className="sidebar-heading">DISCOVER</span>{navs.map(n=><button key={n.id} onClick={()=>setPage({id:n.id})} className={`nav-item ${page.id===n.id?'active':''}`}><n.icon size={19} strokeWidth={1.8}/><span>{n.label}</span></button>)}</div>
@@ -104,6 +104,7 @@ function App() {
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const audio=useRef(null);
   const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false),[importSong,setImportSong]=useState(null),[importArtist,setImportArtist]=useState(''),[importTitle,setImportTitle]=useState(''),[importBusy,setImportBusy]=useState(false),[importNotice,setImportNotice]=useState('');
+  const [musicRequests,setMusicRequests]=useState([]),[adminMusicRequests,setAdminMusicRequests]=useState([]),[requestBusy,setRequestBusy]=useState('');
   const [libraryAlbums,setLibraryAlbums]=useState([]),[libraryArtists,setLibraryArtists]=useState([]),[libraryOffset,setLibraryOffset]=useState(0),[libraryMore,setLibraryMore]=useState(true),[libraryLoading,setLibraryLoading]=useState(false);
   const [adminOverview,setAdminOverview]=useState(null),[adminUsers,setAdminUsers]=useState(null),[adminLoading,setAdminLoading]=useState(false),[adminBusy,setAdminBusy]=useState(false);
   const [accountForm,setAccountForm]=useState({username:'',name:'',email:'',password:''}),[adminNotice,setAdminNotice]=useState('');
@@ -277,12 +278,18 @@ function App() {
     e.preventDefault();if(!importSong||!importArtist.trim()||!importTitle.trim())return;
     setImportBusy(true);setError('');
     try{
-      await post('/api/soulseek/download',{
-        username:importSong.username,filename:importSong.filename,size:Number(importSong.size),
-        artist:importArtist.trim(),title:importTitle.trim()
-      });
-      setImportSong(null);setImportNotice('Transfer queued on your NAS. It will appear in Navidrome after importing and indexing.');
-      await refreshDownloads();
+      const details={username:importSong.username,filename:importSong.filename,size:Number(importSong.size),
+        artist:importArtist.trim(),title:importTitle.trim()};
+      if(user.admin){
+        await post('/api/soulseek/download',details);
+        setImportNotice('Transfer queued on your NAS. It will appear after importing and indexing.');
+        await refreshDownloads();
+      }else{
+        await post('/api/music-requests',details);
+        setImportNotice('Request sent. An administrator must approve the NAS import before the song becomes available.');
+        await refreshMusicRequests();
+      }
+      setImportSong(null);
     }catch(e){setError(e.message)}finally{setImportBusy(false)}
   };
   const scanLibrary=async()=>{
@@ -290,14 +297,44 @@ function App() {
     try{await post('/api/library/scan',{});setImportNotice('Library scan requested. New songs may take a moment to appear.');}
     catch(e){setError(e.message)}
   };
+  const refreshMusicRequests=async()=>{
+    try{
+      if(user?.admin){
+        const result=await api('/api/music-requests/admin');
+        setAdminMusicRequests(result.requests||[]);
+      }else{
+        const result=await api('/api/music-requests');
+        setMusicRequests(result.requests||[]);
+      }
+    }catch(e){setError(e.message)}
+  };
+  const reviewMusicRequest=async(id,decision)=>{
+    setRequestBusy(id+decision);setError('');
+    try{
+      await post(`/api/music-requests/${encodeURIComponent(id)}/decision`,{decision});
+      setImportNotice(decision==='approve'?'Music import queued on the NAS.':'Request declined.');
+      await refreshMusicRequests();
+      if(decision==='approve')await refreshDownloads();
+    }catch(e){setError(e.message);await refreshMusicRequests()}
+    finally{setRequestBusy('')}
+  };
   useEffect(()=>{
-    if(!user?.admin||page.id!=='search'||searchTab!=='soulseek')return;
-    api('/api/soulseek/downloads').then(setDownloads).catch(()=>{});
-    api('/api/soulseek/status').then(setRemoteStatus).catch(()=>setRemoteStatus({configured:false,message:'Unable to reach the Soulseek service'}));
-    const timer=setInterval(()=>api('/api/soulseek/downloads').then(setDownloads).catch(()=>{}),30000);
-    return()=>clearInterval(timer);
-  },[user?.admin,page.id,searchTab]);
-
+    if(!user?.username||page.id!=='search'||searchTab!=='soulseek')return;
+    let active=true;
+    api('/api/soulseek/status').then(d=>{if(active)setRemoteStatus(d)})
+      .catch(()=>{if(active)setRemoteStatus({configured:false,message:'Soulseek status unavailable'})});
+    const update=()=>{
+      if(user.admin){
+        api('/api/soulseek/downloads').then(d=>{if(active)setDownloads(d)}).catch(()=>{});
+        api('/api/music-requests/admin').then(d=>{if(active)setAdminMusicRequests(d.requests||[])}).catch(()=>{});
+      }else{
+        api('/api/music-requests').then(d=>{if(active)setMusicRequests(d.requests||[])}).catch(()=>{});
+      }
+    };
+    update();
+    const timer=setInterval(update,30000);
+    return()=>{active=false;clearInterval(timer)};
+  },[user?.username,user?.admin,page.id,searchTab]);
 
   async function remoteSearch(){if(!q.trim())return;setRemoteBusy(true);setRemote(null);setError('');try{setRemote(await post('/api/soulseek/search',{query:q}));}catch(e){setError(e.message)}finally{setRemoteBusy(false)}}
   if(user===undefined)return <div className="loading-page"><div className="brand-symbol"><Waves/></div><span>Loading your music...</span></div>;
