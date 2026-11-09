@@ -1,6 +1,6 @@
 # Jobbi Music — Production security and acceptance gate
 
-> Status: **preview candidate; no production cutover authorized until the checks below pass.**
+> Status: **main-source candidate; Cloudflare production cutover is separate and requires passing live NAS checks below.**
 > The current Navidrome service (port 4533) remains the music database, Subsonic API,
 > and instant rollback destination.
 
@@ -8,7 +8,7 @@
 
 - `jobbi-music`: Node application, runs as unprivileged `node`, read-only root filesystem, dropped Linux capabilities, no Docker socket, no direct read or write access to music files.
 - `jobbi-storage-agent`: single-purpose container running as UID 0 **without capabilities and without networking** because the Synology music folder is root-owned and mode 0700. It mounts `/volume1/music` read-only and only writes a nonsensitive aggregate JSON snapshot into a separate Docker volume; it cannot modify music or use the Docker API. The main app mounts that JSON cache read-only.
-- Existing Navidrome, slskd and Soulseek downloader containers remain unchanged. Navidrome user-scoped authentication keeps each listener's favorites and playlists separate. Soulseek search and downloads are only available to verified, explicitly allowlisted Navidrome admins.
+- Existing Navidrome, slskd and Soulseek downloader containers remain unchanged. Navidrome user-scoped authentication keeps each listener's favorites and playlists separate. Authenticated listeners may search Soulseek and import audio through quota-limited, validated API endpoints. Direct unrestricted downloader controls remain administrator-only.
 - Passwords are never committed to GitHub. Application sessions are process-memory-only, with randomly generated cookie IDs, HTTP-only SameSite cookies and AES-GCM encrypted password storage in the in-memory session map. Session keys are rotated on restart, which signs everyone out. State-changing endpoints require per-session CSRF tokens and origin checks.
 
 ## Release blockers that must be addressed on the actual NAS
@@ -29,7 +29,7 @@
 - [ ] Back up the persistent `jobbi-social-data` PostgreSQL volume and securely retain the `SOCIAL_DB_PASSWORD` value in the NAS-only `.env`. Never use `docker compose down -v` during upgrades.
 - [ ] Create two disposable regular Navidrome users. Test friend request approval, friend removal, discoverable/private profiles, avatar upload/removal and mobile layout.
 - [ ] Create a private social playlist. Verify an unrelated logged-in user receives HTTP 404 for its details, even with a direct link. A friend should also be denied until explicitly invited.
-- [ ] Invite a friend with read-only access, confirm they cannot edit; upgrade to edit permission, confirm their additions are attributed to them, then revoke access and confirm immediate denial.
+- [ ] Send a playlist invitation (at creation and afterward), verify it does not grant access until accepted; test decline, revoke, edit/listen permission changes, attribution and removal.
 - [ ] Switch a playlist public and verify only authenticated users can view it; switch it back to private and verify access is revoked for uninvited users.
 - [ ] Verify profile statistics show created playlists and songs added without exposing private playlists or hidden contributions to unauthorized viewers.
 - [ ] Confirm both friends must opt into blend creation; refreshing works, and opting out removes shared blend data.
@@ -48,7 +48,7 @@
 | Audio profiles | Original/lossless when playable, 320 kbps, 128 kbps | same |
 | Songs | cover art, lyrics, stars, scrobbles, queue, artwork fallback | same |
 | Playlists | Create, rename, add/remove, delete with confirmation | own playlists |
-| Soulseek | Search, no matches, wrong key, peer delay, progress and authorized import | all routes 403; no UI controls |
+| Soulseek | Search, peer delay, imports and downstream transfer diagnostics | bounded search and direct imports, own progress only; unrestricted downloader controls denied |
 | Admin panel | User list, user role, volume usage, filesystem available space | all routes 403; no UI controls |
 | Account lifecycle | Create disposable listener, login as it, verify admin denied, delete only that listener | cannot create, elevate or delete users |
 | Security | Tampered CSRF, cross-origin, unauthorized cookie, disabled account feature flag, session expiry, rate limits | same |
@@ -73,7 +73,7 @@ This upgrade introduces one **additional** persistent database, `jobbi-social-db
 - [ ] Back up `jobbi-social-db` using `pg_dump` and verify its restore to an isolated throwaway database. Keep an off-NAS copy.
 - [ ] Sign in with **two real non-admin Navidrome accounts**, ensuring both can access Community but neither can access `/api/admin/*` or Soulseek administrative routes.
 - [ ] Verify pending, accepted, declined, and revoked friend requests. Ensure an unsolicited request does not reveal private playlists.
-- [ ] Create a private social playlist with user A; verify user B receives 404 before invitation, even if they're friends. Invite B as viewer and verify view-only; change to editor and verify B can add/remove tracks. Revoke access; B must get 404 again.
+- [ ] Create a private social playlist with user A; verify user B receives 404 before invitation, even if they're friends. Invite B as viewer and confirm B receives a pending invitation, not immediate access. Have B accept; verify view-only, change to editor and verify B can add/remove tracks. Revoke access; B must get 404 again.
 - [ ] Change an A-owned social playlist to public; verify another signed-in user can view but cannot edit. Switch back to private; verify an uninvited user loses access. Test direct `?community=<id>` links through the Cloudflare hostname.
 - [ ] Import a personal Navidrome playlist into social sharing; confirm the original Navidrome playlist is unchanged. Contributors must be credited for social playlist additions.
 - [ ] Verify user profiles show created playlist counts and contributed-song counts **only for social playlists the viewer is authorized to see**. Hidden profiles and avatars must not be accessible to nonfriends.
