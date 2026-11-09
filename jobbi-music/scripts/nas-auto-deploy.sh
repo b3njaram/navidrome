@@ -5,9 +5,9 @@ set -eu
 ROOT=/volume1/docker/jobbi-music-source
 APP="$ROOT/jobbi-music"
 BRANCH=feature/jobbi-music-preview
-LOCK="$ROOT/.jobbi-auto-deploy.lock"
-LOG="$ROOT/jobbi-auto-deploy.log"
-STATE="$ROOT/.jobbi-auto-deployed"
+LOCK="$ROOT/.git/jobbi-auto-deploy.lock"
+LOG="$ROOT/.git/jobbi-auto-deploy.log"
+STATE="$ROOT/.git/jobbi-auto-deployed"
 mkdir -p "$ROOT"
 if ! mkdir "$LOCK" 2>/dev/null; then
   echo "Another Jobbi Music update is already in progress."
@@ -26,7 +26,7 @@ HEAD="$(gitclient rev-parse HEAD)"
 if [ -f "$STATE" ] && [ "$(cat "$STATE")" = "$SHA" ];then exit 0;fi
 # GitHub checks are public. Require BOTH CI jobs at the exact commit SHA.
 # "All checks passed" must not be inferred from a commit's mere existence.
-CHECKS="$(mktemp "$ROOT/.checks.XXXXXX")"
+CHECKS="$(mktemp "$ROOT/.git/checks.XXXXXX")"
 trap 'rm -f "$CHECKS"; rmdir "$LOCK" 2>/dev/null || true' EXIT HUP INT TERM
 curl --fail --silent --show-error --max-time 15   -H 'Accept: application/vnd.github+json'   -H 'User-Agent: JobbiMusic-NAS-Updater'   "https://api.github.com/repos/b3njaram/navidrome/commits/$SHA/check-runs?per_page=100" > "$CHECKS"
 if ! docker run --rm -i node:22-alpine node -e '
