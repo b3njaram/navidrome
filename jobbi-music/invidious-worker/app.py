@@ -12,7 +12,7 @@ TOKEN = os.getenv('WORKER_SECRET', '')
 VIDEO = re.compile(r'^[A-Za-z0-9_-]{11}$')
 USER = re.compile(r'^[a-zA-Z0-9_.@-]{1,80}$')
 FOLDER=Path('/imports')
-STATE=Path('/state/jobs.json')
+STATE=Path('/imports/.jobbi-state/jobs.json')
 LOCK=Lock()
 EXECUTOR=ThreadPoolExecutor(max_workers=2)
 MAX_ACTIVE=8
