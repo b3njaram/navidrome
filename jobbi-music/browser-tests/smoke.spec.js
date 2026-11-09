@@ -39,7 +39,7 @@ async function setupMocks(page){
       item.status=body.decision==='approve'?'queued':'rejected';
       return reply({status:item.status,request:item},body.decision==='approve'?202:200);
     }
-    if(pathname==='/api/music-imports'&&method==='GET')return reply({items:state.imports});
+    if(pathname==='/api/music-imports'&&method==='GET')return reply({items:state.imports.map(item=>({...item,stage:item.stage||'queued',progress:item.progress??null,label:item.label||'Queued · waiting for Soulseek peer'})),downloaderConnected:true,checkedAt:new Date().toISOString()});
     if(pathname==='/api/music-imports'&&method==='POST'){
       const item={...body,id:'import-'+(state.imports.length+1),status:'queued'};
       state.imports.unshift(item);return reply({queued:true,importId:item.id},202);
@@ -122,12 +122,13 @@ test('Soulseek search presents peer results instead of raw JSON',async({page})=>
 });
 
 
-async function mockSocial(page){
+async function mockSocial(page,{initialInvite=false}={}){
   const state={
     me:{username:'listener',display_name:'Listener',bio:'',discoverable:true,blend_opt_in:false,has_avatar:false},
     friends:[{username:'bob',display_name:'Bob',blend_opt_in:true,has_avatar:false}],
     incoming:[{username:'cathy',display_name:'Cathy'}],outgoing:[],
-    playlists:[],discover:[{id:'00000000-0000-0000-0000-000000000111',title:'Public jams',description:'Come listen',owner:'bob',visibility:'public',kind:'manual',song_count:2}],
+    playlists:[],playlistInvitations:initialInvite?[{id:'00000000-0000-0000-0000-000000000777',playlist_id:'00000000-0000-0000-0000-000000000778',title:'Shared with Listener',sender:'bob',can_edit:true}]:[],
+    discover:[{id:'00000000-0000-0000-0000-000000000111',title:'Public jams',description:'Come listen',owner:'bob',visibility:'public',kind:'manual',song_count:2}],
     details:{},status:{}
   };
   await page.route('**/api/social/**',async route=>{
@@ -152,9 +153,31 @@ async function mockSocial(page){
       return reply({accepted:body.accept});
     }
     if(path.startsWith('/friends/')&&method==='DELETE'){state.friends=state.friends.filter(p=>p.username!==path.split('/')[2]);return reply({unfriended:true});}
+    if(path.startsWith('/invitations/')&&path.endsWith('/respond')&&method==='POST'){
+      const id=path.split('/')[2],invite=state.playlistInvitations.find(x=>x.id===id);
+      if(!invite)return reply({error:'Not found'},404);
+      state.playlistInvitations=state.playlistInvitations.filter(x=>x.id!==id);
+      if(body.accept){
+        const p={id:invite.playlist_id,title:invite.title,description:'',visibility:'private',kind:'manual',owner:invite.sender,song_count:0};
+        state.playlists.push(p);
+        state.details[p.id]={playlist:p,tracks:[],members:[{username:'listener',can_edit:invite.can_edit}]};
+      }
+      return reply({accepted:body.accept,playlistId:invite.playlist_id,canEdit:invite.can_edit});
+    }
+    if(path.startsWith('/playlists/')&&path.endsWith('/invitations')&&method==='POST'){
+      const id=path.split('/')[2],invitation={id:'invite-'+Date.now(),recipient:body.username,can_edit:body.canEdit};
+      state.details[id]?.pendingInvitations.push(invitation);
+      return reply({invited:true,invitation:{id:invitation.id,username:body.username,canEdit:body.canEdit}},201);
+    }
+    if(path.startsWith('/playlists/')&&path.includes('/invitations/')&&method==='DELETE'){
+      const id=path.split('/')[2],user=path.split('/')[4];
+      if(state.details[id])state.details[id].pendingInvitations=state.details[id].pendingInvitations.filter(i=>i.recipient!==user);
+      return reply({revoked:true});
+    }
+
     if(path==='/playlists'&&method==='POST'){
       const p={id:'00000000-0000-0000-0000-000000000123',title:body.title,description:body.description||'',visibility:body.visibility,kind:'manual',owner:'listener',song_count:0};
-      state.playlists.unshift(p);state.details[p.id]={playlist:p,tracks:[],members:[]};return reply({playlist:p},201);
+      state.playlists.unshift(p);state.details[p.id]={playlist:p,tracks:[],members:[],pendingInvitations:(body.invitees||[]).map((i,n)=>({id:'invite-'+n,recipient:i.username,can_edit:i.canEdit}))};return reply({playlist:p,invitationsSent:body.invitees?.length||0},201);
     }
     if(path==='/playlists/import'&&method==='POST'){
       const p={id:'00000000-0000-0000-0000-000000000124',title:'My imported mix',description:'Imported',visibility:'private',kind:'manual',owner:'listener',song_count:1};
@@ -343,4 +366,52 @@ test('admin sees direct Soulseek import and listener request approvals',async({p
   await page.getByRole('button',{name:'Import song'}).click();
   await expect(page.getByRole('heading',{name:'Import song to NAS'})).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test('playlist collaborators can be invited at creation and to an existing playlist',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await mockSocial(page);await login(page,'listener');
+  await navigate(page,'Community');
+  await page.locator('.social-tabs').getByRole('button',{name:/^Playlists/}).click();
+  await page.getByPlaceholder('Our favorite songs').fill('Road trip together');
+  await page.getByLabel('Invite collaborator username').fill('bob');
+  await page.getByRole('button',{name:'Add to invitation list'}).click();
+  await expect(page.getByText('@bob · Can edit')).toBeVisible();
+  await page.getByRole('button',{name:'Create playlist & send invitations'}).click();
+  await expect(page.getByRole('heading',{name:'Road trip together'})).toBeVisible();
+  await expect(page.getByText('Pending invitations')).toBeVisible();
+  await expect(page.getByText('Waiting for response')).toBeVisible();
+  await page.getByLabel('Existing playlist invite username').fill('cathy');
+  await page.getByRole('button',{name:'Send invitation'}).click();
+  await expect(page.getByText('@cathy')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test('recipient accepts playlist invite from the playlists tab on a narrow phone',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await mockSocial(page,{initialInvite:true});
+  await page.setViewportSize({width:320,height:690});
+  await login(page,'listener');await navigate(page,'Community');
+  await page.locator('.social-tabs').getByRole('button',{name:/^Playlists/}).click();
+  await expect(page.getByText("You're invited to collaborate")).toBeVisible();
+  await expect(page.getByText('Shared with Listener')).toBeVisible();
+  await page.locator('.social-playlist-inbox').getByRole('button',{name:'Accept'}).click();
+  await expect(page.getByRole('heading',{name:'Shared with Listener'})).toBeVisible();
+  await expect(page.getByText('Can add and remove')).toHaveCount(0);
+  const overflow=await page.evaluate(()=>({width:window.innerWidth,scroll:document.documentElement.scrollWidth}));
+  expect(overflow.scroll).toBeLessThanOrEqual(overflow.width+1);
+  expect(errors).toEqual([]);
+});
+test('import tracker displays real download percentage without marking a transfer playable',async({page})=>{
+  await setupMocks(page);await login(page,'listener');
+  await navigate(page,'Discover');
+  await page.getByRole('button',{name:/Soulseek · New music/}).click();
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
+  await page.getByRole('button',{name:'Search music sources'}).click();
+  await page.getByRole('button',{name:'Import song'}).click();
+  await page.getByLabel('Artist').fill('Kino');
+  await page.getByLabel('Track title').fill('Gruppa Krovi');
+  await page.getByRole('button',{name:'Queue import'}).click();
+  await expect(page.getByText('Queued · waiting for Soulseek peer')).toBeVisible();
+  await expect(page.getByLabel('Import progress: Queued · waiting for Soulseek peer')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Play',exact:true})).toHaveCount(0);
 });
