@@ -254,6 +254,12 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
       </div>
     </div>}
     {tab==='playlists'&&overview&&<div>
+      {!!overview.playlistInvitations?.length&&<section className="social-card social-playlist-inbox"><CardTitle icon={UserPlus} title="You're invited to collaborate" subtitle="Accept to start creating playlists together"/>
+        {overview.playlistInvitations.map(invite=><div className="social-invitation" key={invite.id}>
+          <div><strong>{invite.title}</strong><small>From @{invite.sender} · {invite.can_edit?'Can add/remove songs':'Listen only'}</small></div>
+          <div className="social-invite-actions"><button className="social-outline" disabled={busy} onClick={()=>respondInvite(invite.id,false)}><X size={15}/> Decline</button><button className="social-primary" disabled={busy} onClick={()=>respondInvite(invite.id,true)}><Check size={15}/> Accept</button></div>
+        </div>)}
+      </section>}
       <div className="social-columns">
         <div className="social-card"><CardTitle icon={Plus} title="Create shared playlist" subtitle="Invite people while creating — they choose whether to join"/>
           <form className="social-form" onSubmit={e=>{e.preventDefault();createPlaylist()}}>
