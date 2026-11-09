@@ -257,3 +257,28 @@ The setup generates a random private worker token in `.env`, creates **only** `/
 Post-deployment check (from the Jobbi Music container's logged-in browser): open Discover, enter an artist, press **Search music sources**, and verify either peer audio, alternative Invidious videos, or a clear source-specific error message. Once workers download a file, ask Navidrome to scan the library; administrators can use **Scan library** in the Discover transfer panel.
 
 Existing Navidrome, slskd, social PostgreSQL, and Android APK installations remain unchanged by web-only UI updates. If a Synology DSM auto-update task is installed, it updates only the Jobbi frontend; it does **not** automatically enable optional worker profiles.
+
+
+## Import progress and collaborative playlist invitations
+
+### Soulseek import tracker
+
+Discover → Soulseek → **My NAS imports** now displays per-user stages: **Queued → Downloading → Indexing → In library**. It queries the existing NAS downloader's `/api/downloads` endpoint and matches its job identifier or an unambiguous peer/filename. When the downloader provides percentages, Jobbi shows a progress bar. A completed transfer alone is **not** proof that the song has entered Navidrome; the server verifies title/artist through the user's authenticated Navidrome catalog before showing **Ready to play**. Unknown or missing downstream statuses remain explicit, e.g. **Transfer not confirmed**, instead of suggesting success. Jobbi checks every 12 seconds while Discover is open.
+
+If a transfer displays **Needs attention**, inspect the NAS-only custom downloader and slskd logs:
+
+```sh
+curl -fsS http://127.0.0.1:8383/api/health
+curl -fsS http://127.0.0.1:8383/api/downloads
+docker logs --tail=70 soulseek-downloader
+```
+
+Do not retry a `needs_review` import blindly: the original transfer may already have been accepted despite a timeout. The tracker never exposes other users' entire downloader queue through the normal listener API.
+
+### Invite collaborators
+
+Go to **Friends → Playlists → Create shared playlist**. Enter the playlist name, optional description, and public/private visibility. Enter up to 12 registered Jobbi Music usernames to invite, choose whether they can add and remove songs, and create the playlist. Invitations are stored in PostgreSQL and require each recipient's **acceptance** before granting access.
+
+Recipients can accept or decline under **Friends → Playlist invitations** or **Playlists → You're invited to collaborate**. Existing playlists have **Invite someone to this playlist** and **Pending invitations** sections. Owners can revoke pending invitations, remove collaborators, and switch between editing and listen-only permissions. Only the playlist owner can send invitations or modify access. Friends are convenient suggestions, but you may invite another registered user by exact username; they need to have visited Community at least once so their social profile exists.
+
+Private playlists remain private while invitations are pending. The social PostgreSQL schema migrates additively: existing members and tracks are preserved.
