@@ -269,3 +269,35 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
  .track-song-title{font-size:12px}
  .track-artist-link{font-size:10px}
 }
+
+
+/* Concurrent Soulseek + Invidious discovery, responsive on small phones */
+.invidious-fallback{margin:31px 0;padding:20px;border-radius:18px;background:linear-gradient(145deg,#241c2d,#181720);border:1px solid #64475f}
+.invidious-fallback .remote-head{align-items:center}
+.invidious-fallback h2{font-size:23px;color:#fbeaf4;margin:8px 0}
+.invidious-note{font-size:12px;line-height:1.55;color:#b7a7b5;margin:14px 0 18px}
+.invidious-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px}
+.invidious-result{min-width:0;background:#302632;border-radius:13px;border:1px solid #5d4358;overflow:hidden;display:flex;flex-direction:column;transition:transform .25s,box-shadow .25s}
+.invidious-result:hover{transform:translateY(-3px);box-shadow:0 14px 30px #0003}
+.invidious-cover{aspect-ratio:16/9;position:relative;background:linear-gradient(130deg,#3d293e,#251c2c);overflow:hidden}
+.invidious-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.invidious-play{position:absolute;right:10px;bottom:10px;width:32px;height:32px;display:grid;place-items:center;border-radius:50%;background:#241726aa;color:#f4d3e2}
+.invidious-result-info{padding:13px 12px 6px;display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.invidious-result-info strong{font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.invidious-result-info small{font-size:11px;color:#b6a4b4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.invidious-actions{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 13px}
+.invidious-actions a,.invidious-actions button{display:inline-flex;gap:5px;align-items:center;justify-content:center;border-radius:9px;font-weight:700;font-size:11px;padding:10px 11px;min-height:38px;flex:1 1 auto;white-space:nowrap;color:#ffdaeb;background:#533a52;transition:transform .2s,background .2s}
+.invidious-actions button{background:#bc527c;color:#fff}
+.invidious-actions a:hover,.invidious-actions button:hover{background:#a6527a;transform:translateY(-2px)}
+.invidious-consent{display:flex;align-items:flex-start;gap:12px;line-height:1.6;cursor:pointer}
+.invidious-consent input{width:19px;height:19px;flex:none;margin-top:3px;accent-color:#f69ac1}
+@media(max-width:720px){
+  .invidious-fallback{padding:14px;margin:22px 0;border-radius:14px}
+  .invidious-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .invidious-result-info{padding:10px 9px 5px}
+  .invidious-result-info strong{font-size:11px}
+  .invidious-result-info small{font-size:10px}
+  .invidious-actions{padding:8px;gap:6px}
+  .invidious-actions a,.invidious-actions button{font-size:10px;padding:9px 6px}
+}
+@media(max-width:360px){.invidious-grid{grid-template-columns:minmax(0,1fr)}}
