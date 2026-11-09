@@ -421,6 +421,9 @@ function App() {
                 try{const song=await api('/api/songs/'+encodeURIComponent(item.songId));setPickerSong(song)}
                 catch(e){setError(e.message)}
               }}><Plus size={14}/> Add to playlist</button>}
+              {['existing','unconfirmed'].includes(item.stage)&&<button className="music-import-play music-import-search" onClick={()=>{
+                setQ(item.title);setSearchTab('library');setPage({id:'search'});
+              }}><Search size={14}/> Search library</button>}
             </div>
           </div>
         }):<p className="request-empty">No imported tracks yet. Choose a Soulseek recording and tap Import song.</p>}</div>
