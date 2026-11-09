@@ -9,16 +9,16 @@ function attrNumber(attrs, type) {
 }
 
 export function normalizeSlskdResponses(raw, query='', limit=180) {
-  const peers=Array.isArray(raw)?raw:Array.isArray(raw?.responses)?raw.responses:Array.isArray(raw?.items)?raw.items:[];
+  const peers=Array.isArray(raw)?raw:Array.isArray(raw?.responses)?raw.responses:Array.isArray(raw?.items)?raw.items:Array.isArray(raw?.searchResponses)?raw.searchResponses:[];
   const rows=[],seen=new Set();
   const tokens=lower(query).trim().split(/\s+/).filter(Boolean);
   for(const response of peers){
-    const username=first(response.username,response.user?.username,response.user,response.peer);
+    const username=first(response.username,response.userName,response.user?.username,response.user,response.peer);
     if(typeof username!=='string'||!username)continue;
-    const files=first(response.files,response.fileList,response.items,[]);
+    const files=first(response.files,response.fileList,response.items,response.results,[]);
     if(!Array.isArray(files))continue;
     for(const file of files){
-      const filename=first(file.filename,file.fileName,file.name);
+      const filename=first(file.filename,file.fileName,file.name,file.path);
       if(typeof filename!=='string'||!AUDIO_EXTENSION.test(filename))continue;
       const size=Number(first(file.size,file.fileSize,0));
       if(!Number.isSafeInteger(size)||size<1024)continue;
@@ -65,23 +65,47 @@ export async function searchSlskd({url,key,query,searchTimeoutMs=18000,onProgres
   if(typeof id!=='string'||!/^[a-zA-Z0-9-]{10,80}$/.test(id))throw new Error('slskd did not return a valid search identifier');
   const startedAt=Date.now();
   const responses=new Map();
-  let state=started,attempts=0;
+  let state=started,attempts=0,rawPeerCount=0,completeEmptyPasses=0;
   try {
     while(attempts<18 && Date.now()-startedAt<26000){
       attempts++;
       await wait(attempts===1?1200:1100);
       const returned=await jsonRequest(`${base}/api/v0/searches/${encodeURIComponent(id)}/responses`,{key,timeout:8000});
-      const batch=Array.isArray(returned)?returned:returned?.responses||[];
-      if(Array.isArray(batch))for(const peer of batch){const name=first(peer.username,peer.user?.username,peer.user);if(name)responses.set(String(name),peer);}
-      if(attempts%3===0){
-        try{state=await jsonRequest(`${base}/api/v0/searches/${encodeURIComponent(id)}`,{key,timeout:5000});}catch(e){if(e.httpStatus!==404)throw e;}
+      const batch=Array.isArray(returned)?returned:
+        Array.isArray(returned?.responses)?returned.responses:
+        Array.isArray(returned?.items)?returned.items:[];
+      if(Array.isArray(batch))for(const peer of batch){
+        rawPeerCount++;
+        const name=first(peer.username,peer.userName,peer.user?.username,peer.user);
+        if(name)responses.set(String(name),peer);
+      }
+      if(attempts%3===0||(!responses.size&&attempts>=12)){
+        try{
+          const extra=await jsonRequest(`${base}/api/v0/searches/${encodeURIComponent(id)}?includeResponses=true`,{key,timeout:5000});
+          state=extra;
+          const embedded=Array.isArray(extra.responses)?extra.responses:[];
+          for(const peer of embedded){
+            rawPeerCount++;
+            const name=first(peer.username,peer.userName,peer.user?.username,peer.user);
+            if(name)responses.set(String(name),peer);
+          }
+        }catch(e){if(e.httpStatus!==404)throw e;}
       }
       onProgress?.({attempts,peers:responses.size});
-      if(complete(state))break;
+      // Older slskd versions can finalize a search before all peer responses
+      // are flushed to the API database. Allow two extra polls if empty.
+      if(complete(state)){
+        if(responses.size||++completeEmptyPasses>=3)break;
+      }
     }
     const normalized=normalizeSlskdResponses([...responses.values()],query);
     return {...normalized,source:'slskd',searchId:id,elapsedMs:Date.now()-startedAt,
-      message:normalized.total?'':"No audio files were returned by Soulseek peers. Try a broader query, alternate spelling, or check your slskd connection."};
+      diagnostics:{peersResponded:responses.size,rawPeerResponses:rawPeerCount,
+        connectionNote:responses.size?'Peer responses received':
+          'Connected to the Soulseek server does not guarantee responding peers; check slskd distributed network and TCP listen port (usually 50300).'},
+      message:normalized.total?'':responses.size?
+        "Peers answered, but none returned supported audio files. Try a different query.":
+        "No Soulseek peers answered this search. Check the NAS slskd listening port 50300 and distributed network settings; Invidious results appear below when available."};
   } finally {
     // Remove only the transient search started by this request.
     jsonRequest(`${base}/api/v0/searches/${encodeURIComponent(id)}`,{method:'DELETE',key,timeout:3000}).catch(()=>{});
