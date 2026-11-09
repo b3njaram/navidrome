@@ -104,5 +104,4 @@ services:
 volumes:
   jobbi-storage-stats: {}
   jobbi-social-data: {}
-  jobbi-invidious-state: {}
 
