@@ -26,7 +26,7 @@ jobs:
       - name: Install Android 36 using the runner SDK
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
-          ${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          ${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0'
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
