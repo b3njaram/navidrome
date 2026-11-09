@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS music_import_requests (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE music_import_requests ADD COLUMN IF NOT EXISTS downloader_job_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS music_requests_unique_pending
   ON music_import_requests(requester,peer_username,filename) WHERE status='pending';
 CREATE INDEX IF NOT EXISTS music_requests_status_created
