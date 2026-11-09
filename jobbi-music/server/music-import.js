@@ -2,6 +2,7 @@ import express from 'express';
 import { promises as fs } from 'node:fs';
 import {ensureSocialProfile,normalUsername,socialQuery,withSocialTransaction} from './social-db.js';
 import {ImportError,validateImportSelection,queueMusicImport} from './music-requests.js';
+import {latestTransferSnapshot,findTransfer,transferStage} from './import-progress.js';
 
 const MIN_FREE_BYTES=4*1024**3;
 const MAX_FILE_BYTES=350*1024**2;
@@ -24,16 +25,38 @@ export async function checkStorageStats(file,bytes,{now=Date.now()}={}){
     throw new ImportError('NAS storage is too low for new imports (4 GB reserve).',507);
   return data;
 }
-export function createMusicImportRouter({mustAuth,downloader,statsFile}){
+export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}){
   const router=express.Router();
   router.get('/',mustAuth,async(req,res)=>{
     try{
       const actor=normalUsername(req.user.username);
-      const rows=await socialQuery(`SELECT id,peer_username AS username,filename,size_bytes,artist,title,status,created_at
+      const rows=await socialQuery(`SELECT id,peer_username,downloader_job_id,filename,size_bytes,artist,title,status,created_at
         FROM music_import_requests WHERE requester=$1
         AND status IN ('queued','processing','needs_review')
         ORDER BY created_at DESC LIMIT 60`,[actor]);
-      res.json({items:rows.rows.map(x=>({...x,size:Number(x.size_bytes)}))});
+      const snapshot=await latestTransferSnapshot(downloader);
+      const items=rows.rows.map(row=>{
+        const job=findTransfer(row,snapshot.rows);
+        return {id:row.id,filename:row.filename,size:Number(row.size_bytes),
+          artist:row.artist,title:row.title,submittedAt:row.created_at,
+          ...transferStage(row,job,snapshot.healthy)};
+      });
+      // A peer's "complete" flag is not library availability. Verify the exact
+      // song in this authenticated user's Navidrome catalog before declaring it playable.
+      if(subsonic){
+        for(const item of items.filter(x=>x.stage==='imported'||x.stage==='indexing').slice(0,8)){
+          try{
+            const d=await subsonic(req.user,'search3',{query:item.title,songCount:30,albumCount:0,artistCount:0});
+            const songs=d.searchResult3?.song||[];
+            const norm=x=>String(x||'').normalize('NFKC').trim().toLowerCase();
+            const match=songs.find(song=>norm(song.title)===norm(item.title) &&
+              norm(song.artist)===norm(item.artist));
+            if(match?.id){item.stage='available';item.label='Available in your Navidrome library';item.progress=100;item.songId=match.id;}
+          }catch{ /* keep indexing state until the library confirms this title */ }
+        }
+      }
+      res.setHeader('Cache-Control','private, no-store');
+      res.json({items,downloaderConnected:snapshot.healthy,checkedAt:new Date().toISOString()});
     }catch(e){respondError(res,e)}
   });
   router.post('/',mustAuth,async(req,res)=>{
@@ -74,8 +97,10 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile}){
       id=row.id;
       try{
         const imported=await queueMusicImport(downloader,song);
+        const ref=imported.details?.job_id||imported.details?.jobId||imported.details?.id;
+        const jobId=typeof ref==='string'&&ref.length<=200?ref:null;
         await socialQuery(`UPDATE music_import_requests
-          SET status='queued',updated_at=now() WHERE id=$1`,[id]);
+          SET status='queued',downloader_job_id=$2,updated_at=now() WHERE id=$1`,[id,jobId]);
         return res.status(202).json({queued:true,importId:id,message:'Import queued for the shared NAS library.',
           details:imported.details});
       }catch(e){
