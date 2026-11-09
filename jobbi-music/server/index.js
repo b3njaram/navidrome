@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { searchSlskd, slskdConnection } from './slskd.js';
 import { nativeAccounts, NativeAdminError, validateNewAccount } from './admin-native.js';
 import { subsonicProxy } from './navidrome-proxy.js';
+import { normalizeLyrics } from './lyrics-normalize.js';
 import { createSocialRouter } from './social-routes.js';
 import { promises as fs } from 'node:fs';
 
@@ -144,7 +145,20 @@ app.get('/api/playlists/:id',mustAuth,route(async(req,res)=>{const d=await subso
 app.get('/api/starred',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getStarred2');res.json(d.starred2||{});}));
 app.post('/api/star',mustAuth,route(async(req,res)=>{const {id,starred}=req.body ||{};if(!validId(id)||typeof starred!=='boolean')return res.status(400).json({error:'Invalid favorite request'});await subsonic(req.user,starred?'star':'unstar',{id});res.json({ok:true});}));
 app.post('/api/scrobble',mustAuth,route(async(req,res)=>{const {id}=req.body ||{};if(!validId(id))return res.status(400).json({error:'Invalid id'});await subsonic(req.user,'scrobble',{id,submission:true});res.json({ok:true});}));
-app.get('/api/lyrics/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getLyricsBySongId',{id:req.params.id});res.json(d.lyricsList||{});}));
+app.get('/api/lyrics/:id',mustAuth,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid song'});
+  let structured=null,legacy=null;
+  try {const d=await subsonic(req.user,'getLyricsBySongId',{id:req.params.id});structured=d.lyricsList||{};}catch{}
+  // Older Navidrome installations may only have the legacy getLyrics endpoint.
+  if(!structured?.structuredLyrics?.some(group=>group.line?.length)){
+    try {const d=await subsonic(req.user,'getSong',{id:req.params.id});
+      const artist=String(d.song?.artist||'').slice(0,200);
+      const title=String(d.song?.title||'').slice(0,200);
+      if(artist&&title){const fallback=await subsonic(req.user,'getLyrics',{artist,title});legacy=fallback.lyrics||null;}
+    }catch{}
+  }
+  res.json(normalizeLyrics(structured,legacy));
+}));
 async function binaryProxy(req,res,name){
   const quality=['original','balanced','saver'].includes(req.query.quality)?req.query.quality:'balanced';
   const streamSettings=quality==='original'?{format:'raw'}:quality==='saver'?{format:'mp3',maxBitRate:128}:{format:'mp3',maxBitRate:320};
