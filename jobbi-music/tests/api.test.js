@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 
-let navServer, downloadServer, appProcess, base, cookie, csrfToken;
+let navServer, downloadServer, appProcess, base, cookie, csrfToken, listenerCookie, listenerCsrfToken;
 const received={};
 const nativeUsers=[{id:'admin-id',userName:'testadmin',name:'Admin',isAdmin:true},{id:'listener-id',userName:'listener',name:'Listener',isAdmin:false}];
 const json=(res,body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
@@ -107,9 +107,15 @@ test('non-admin sessions never inherit administrator privileges',async()=>{
   assert.equal(r.status,200);
   const info=await r.json();
   assert.equal(info.admin,false);
-  const regularCookie=r.headers.get('set-cookie')?.split(';')[0];
-  const denied=await fetch(base+'/api/soulseek/status',{headers:{cookie:regularCookie}});
-  assert.equal(denied.status,403);
+  listenerCookie=r.headers.get('set-cookie')?.split(';')[0];
+  listenerCsrfToken=info.csrfToken;
+  const status=await fetch(base+'/api/soulseek/status',{headers:{cookie:listenerCookie}});
+  assert.equal(status.status,200);
+  const direct=await fetch(base+'/api/soulseek/download',{
+    method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify({username:'peer',filename:'Music/test.flac',size:250000,artist:'A',title:'Test'})
+  });
+  assert.equal(direct.status,403);
 });
 test('complete album and artist library APIs',async()=>{
   const albums=await get('/api/library/albums?offset=0&size=48');
@@ -169,6 +175,53 @@ test('Soulseek search, transfer status and safe import',async()=>{
   assert.equal(queued.status,202);
   assert.equal((await queued.json()).queued,true);
   assert.deepEqual(received.download,entry);
+});
+test('listener can discover Soulseek tracks and request imports without directly downloading',async()=>{
+  const query=await fetch(base+'/api/soulseek/search',{
+    method:'POST',
+    headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify({query:'Kino'})
+  });
+  assert.equal(query.status,200);
+  assert.equal(received.search.query,'Kino');
+  const item={username:'peer',filename:'Music/Another.flac',size:230000,artist:'Another Artist',title:'Another Song'};
+  const req=await fetch(base+'/api/music-requests',{
+    method:'POST',
+    headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify(item)
+  });
+  assert.equal(req.status,201);
+  const created=await req.json();
+  assert.equal(created.request.status,'pending');
+  assert.equal(created.request.requester,'listener');
+  const duplicate=await fetch(base+'/api/music-requests',{
+    method:'POST',
+    headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify(item)
+  });
+  assert.equal(duplicate.status,409);
+  const own=await fetch(base+'/api/music-requests',{headers:{cookie:listenerCookie}});
+  assert.equal(own.status,200);
+  assert.ok((await own.json()).requests.some(x=>x.id===created.request.id));
+  const adminPending=await get('/api/music-requests/admin');
+  assert.equal(adminPending.status,200);
+  assert.ok((await adminPending.json()).requests.some(x=>x.id===created.request.id));
+  const listenerCantApprove=await fetch(base+`/api/music-requests/${created.request.id}/decision`,{
+    method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify({decision:'approve'})
+  });
+  assert.equal(listenerCantApprove.status,403);
+  const approved=await post(`/api/music-requests/${created.request.id}/decision`,{decision:'approve'});
+  assert.equal(approved.status,202);
+  assert.equal((await approved.json()).request.status,'queued');
+  assert.deepEqual(received.download,item);
+  const again=await post(`/api/music-requests/${created.request.id}/decision`,{decision:'approve'});
+  assert.equal(again.status,409);
+  const invalid=await fetch(base+'/api/music-requests',{
+    method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify({...item,filename:'../malware.exe'})
+  });
+  assert.equal(invalid.status,400);
 });
 test('Soulseek fallback explains an empty response instead of exposing []',async()=>{
   const status=await get('/api/soulseek/status');
