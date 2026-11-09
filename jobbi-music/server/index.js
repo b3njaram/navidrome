@@ -13,6 +13,7 @@ import { androidLatest } from './android-update.js';
 import { createSocialRouter } from './social-routes.js';
 import { createMusicRequestsRouter } from './music-requests.js';
 import {createMusicImportRouter,checkStorageStats} from './music-import.js';
+import {transliterateMusic} from './import-reconcile.js';
 import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
 import {createInvidiousImportRouter} from './invidious-import.js';
 import { promises as fs } from 'node:fs';
@@ -143,7 +144,24 @@ app.get('/api/home',mustAuth,route(async(req,res)=>{
   const entries=await Promise.all(endpoints.map(async([key,name,params])=> { try { const d=await subsonic(req.user,name,params); return [key, key==='songs' ? (d.randomSongs?.song||[]) : key==='playlists' ? (d.playlists?.playlist||[]) : (d.albumList2?.album||[])]; } catch { return [key,[]]; } }));
   res.json(Object.fromEntries(entries));
 }));
-app.get('/api/search',mustAuth,route(async(req,res)=>{const q=String(req.query.q||'').slice(0,150).trim();if(!q)return res.json({artist:[],album:[],song:[]});const data=await subsonic(req.user,'search3',{query:q,artistCount:15,albumCount:25,songCount:40});res.json(data.searchResult3||{artist:[],album:[],song:[]});}));
+app.get('/api/search',mustAuth,route(async(req,res)=>{
+  const q=String(req.query.q||'').slice(0,150).trim();
+  if(!q)return res.json({artist:[],album:[],song:[]});
+  const params={artistCount:15,albumCount:25,songCount:40};
+  const primary=await subsonic(req.user,'search3',{...params,query:q});
+  const found=primary.searchResult3||{artist:[],album:[],song:[]};
+  // A Cyrillic search may be for music tagged with Latin transliteration
+  // (e.g. Кино / Kino, Группа крови / Gruppa Krovi).
+  const latin=transliterateMusic(q);
+  if((found.artist?.length||0)+(found.album?.length||0)+(found.song?.length||0)===0 &&
+    latin!==q.toLowerCase()&&latin.length>=2){
+    try{
+      const alt=await subsonic(req.user,'search3',{...params,query:latin});
+      return res.json(alt.searchResult3||found);
+    }catch{ /* preserve the first search result */ }
+  }
+  res.json(found);
+}));
 
 app.get('/api/library/albums',mustAuth,route(async(req,res)=>{
   const offset=Math.max(0,Math.min(1000000,Math.trunc(Number(req.query.offset)||0)));

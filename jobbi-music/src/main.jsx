@@ -303,6 +303,15 @@ function App() {
       setMusicImports(result.items||[]);
     }catch(e){setError(e.message)}
   };
+  const hideImportAttempts=async ids=>{
+    if(!Array.isArray(ids)||!ids.length)return;
+    setError('');
+    try{
+      await post('/api/music-imports/archive',{ids});
+      setImportNotice('Previous attempts hidden. Music files and active transfers were not deleted.');
+      await refreshMusicImports();
+    }catch(e){setError(e.message)}
+  };
   const refreshInvidiousJobs=async()=>{
     try{
       const result=await api('/api/invidious/jobs');
@@ -401,14 +410,14 @@ function App() {
         {invidious?.results?.length>0&&!importWorker.importEnabled&&<p className="invidious-note">Video imports are currently unavailable. You can still open results.</p>}
       </section>}
       {importNotice&&<div className="import-notice"><Check size={17}/>{importNotice}</div>}
-      <section className="request-section"><div className="shelf-title"><div><h2>My NAS imports</h2><p>Live stages from the NAS downloader, refreshed every 12 seconds. A song is only marked ready when Navidrome finds it.</p></div><button className="ghost-button" onClick={refreshMusicImports}><RefreshCw size={15}/> Refresh</button></div>
+      <section className="request-section"><div className="shelf-title"><div><h2>My NAS imports</h2><p>Live transfer progress and confirmed library matches. Repeated attempts for the same song appear together.</p></div><button className="ghost-button" onClick={refreshMusicImports}><RefreshCw size={15}/> Refresh</button></div>
         <div className="music-request-list">{musicImports.length?musicImports.map(item=>{
           const steps=['queued','downloading','indexing','available'];
-          const stepIndex=item.stage==='existing'?2:item.stage==='imported'?2:steps.indexOf(item.stage);
+          const stepIndex=item.stage==='imported'?2:steps.indexOf(item.stage);
           return <div className="music-import-entry" key={item.id}>
             <div className="music-import-heading">
-              <div><strong>{item.title}</strong><small>{item.artist} · {item.filename?.split(/[\\/]/).pop()}</small></div>
-              <span className={'request-status '+item.stage}>{item.stage==='available'?'Ready to play':item.stage==='existing'?'On NAS · verifying':item.stage==='failed'?'Failed':item.stage==='unconfirmed'?'Needs attention':item.stage==='downloading'?'In progress':item.stage==='indexing'||item.stage==='imported'?'Indexing':'Queued'}</span>
+              <div><strong>{item.title}</strong><small>{item.artist} · {item.filename?.split(/[\\/]/).pop()}{item.attemptCount>1?' · '+item.attemptCount+' attempts':''}</small></div>
+              <span className={'request-status '+item.stage}>{item.stage==='available'?'Ready to play':item.stage==='existing'?'Indexed elsewhere':item.stage==='failed'?'Failed':item.stage==='unconfirmed'?'Needs attention':item.stage==='downloading'?'In progress':item.stage==='indexing'||item.stage==='imported'?'Indexing':'Queued'}</span>
             </div>
             <div className="music-import-steps" aria-label={'Import progress: '+item.label}>{steps.map((step,i)=><div className={'music-import-step '+(stepIndex>=i?'complete':'')+(item.stage===step?' current':'')} key={step}><span className="music-import-step-dot"/><small>{step==='queued'?'Queued':step==='downloading'?'Downloading':step==='indexing'?'Indexing':'In library'}</small></div>)}</div>
             {item.stage==='downloading'&&item.progress!=null&&<div className="music-import-progress" role="progressbar" aria-label={'Downloading '+item.title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.progress}><span style={{width:item.progress+'%'}}/></div>}
@@ -424,6 +433,8 @@ function App() {
               {['existing','unconfirmed'].includes(item.stage)&&<button className="music-import-play music-import-search" onClick={()=>{
                 setQ(item.title);setSearchTab('library');setPage({id:'search'});
               }}><Search size={14}/> Search library</button>}
+              {user.admin&&['existing','unconfirmed'].includes(item.stage)&&<button className="music-import-aux" onClick={scanLibrary}><RefreshCw size={14}/> Scan library</button>}
+              {item.archiveIds?.length>0&&<button className="music-import-aux" onClick={()=>hideImportAttempts(item.archiveIds)} title="Hide previous attempts only; no transfer or song is removed"><X size={14}/> Hide attempts</button>}
             </div>
           </div>
         }):<p className="request-empty">No imported tracks yet. Choose a Soulseek recording and tap Import song.</p>}</div>

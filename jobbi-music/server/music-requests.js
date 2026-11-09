@@ -37,7 +37,9 @@ export async function queueMusicImport(downloader,details){
   if(raw.length>30000)throw new ImportError('Downloader response too large',502);
   let json;try{json=JSON.parse(raw)}catch{throw new ImportError('Downloader returned an unexpected response',502)}
   if(!upstream.ok){
-    throw new ImportError(typeof json.error==='string'?json.error.slice(0,250):'Downloader refused the import',
+    const explanation=[json.error,json.message,json.detail,json.reason,json.statusMessage]
+      .find(x=>typeof x==='string'&&x.trim());
+    throw new ImportError(explanation?explanation.slice(0,250):'Downloader refused the import',
       upstream.status>=400&&upstream.status<500?upstream.status:502);
   }
   return {queued:true,details:json};

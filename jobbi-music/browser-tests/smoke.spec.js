@@ -1,7 +1,10 @@
 import {test,expect} from '@playwright/test';
 
-async function setupMocks(page){
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],musicRequests:[],imports:[],fallbackJobs:[]};
+async function setupMocks(page,{staleImports=false}={}){
+  const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
+    stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
+    attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],musicRequests:[],imports:old,fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -40,6 +43,12 @@ async function setupMocks(page){
       return reply({status:item.status,request:item},body.decision==='approve'?202:200);
     }
     if(pathname==='/api/music-imports'&&method==='GET')return reply({items:state.imports.map(item=>({...item,stage:item.stage||'queued',progress:item.progress??null,label:item.label||'Queued · waiting for Soulseek peer'})),downloaderConnected:true,checkedAt:new Date().toISOString()});
+    if(pathname==='/api/music-imports/archive'&&method==='POST'){
+      const before=state.imports.length;
+      state.imports=state.imports.filter(item=>
+        ![item.id,...(item.archiveIds||[])].some(id=>(body.ids||[]).includes(id)));
+      return reply({archived:before-state.imports.length,deletedFiles:0,canceledTransfers:0});
+    }
     if(pathname==='/api/music-imports'&&method==='POST'){
       const item={...body,id:'import-'+(state.imports.length+1),status:'queued'};
       state.imports.unshift(item);return reply({queued:true,importId:item.id},202);
@@ -413,4 +422,19 @@ test('import tracker displays real download percentage without marking a transfe
   await expect(page.getByText('Queued · waiting for Soulseek peer')).toBeVisible();
   await expect(page.getByLabel('Import progress: Queued · waiting for Soulseek peer')).toBeVisible();
   await expect(page.getByRole('button',{name:'Play',exact:true})).toHaveCount(0);
+});
+
+
+test('older Kino import attempts are grouped, can be hidden, and do not claim the song downloaded',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page,{staleImports:true});
+  await login(page,'listener');
+  await navigate(page,'Discover');
+  await page.getByRole('button',{name:/Soulseek · New music/}).click();
+  await expect(page.getByText('3 attempts')).toBeVisible();
+  await expect(page.getByText(/No active transfer found/)).toBeVisible();
+  await page.getByRole('button',{name:'Hide attempts'}).click();
+  await expect(page.getByText('3 attempts')).toHaveCount(0);
+  await expect(page.getByText(/Previous attempts hidden/)).toBeVisible();
+  expect(errors).toEqual([]);
 });

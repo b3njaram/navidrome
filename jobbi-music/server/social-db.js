@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS music_import_requests (
 );
 ALTER TABLE music_import_requests ADD COLUMN IF NOT EXISTS downloader_job_id TEXT;
 ALTER TABLE music_import_requests ADD COLUMN IF NOT EXISTS already_on_nas BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE music_import_requests ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE music_import_requests ADD COLUMN IF NOT EXISTS import_error TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS music_requests_unique_pending
   ON music_import_requests(requester,peer_username,filename) WHERE status='pending';
 CREATE INDEX IF NOT EXISTS music_requests_status_created
