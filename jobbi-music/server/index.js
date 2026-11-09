@@ -12,6 +12,9 @@ import { normalizeLyrics } from './lyrics-normalize.js';
 import { androidLatest } from './android-update.js';
 import { createSocialRouter } from './social-routes.js';
 import { createMusicRequestsRouter } from './music-requests.js';
+import {createMusicImportRouter,checkStorageStats} from './music-import.js';
+import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
+import {ensureSocialProfile,withSocialTransaction,socialQuery} from './social-db.js';
 import { promises as fs } from 'node:fs';
 
 const app = express();
@@ -20,6 +23,9 @@ const NAVIDROME = (process.env.NAVIDROME_URL || 'http://127.0.0.1:4533').replace
 const DOWNLOADER = (process.env.DOWNLOADER_URL || '').replace(/\/$/, '');
 const SLSKD = (process.env.SLSKD_URL || '').replace(/\/$/, '');
 const SLSKD_KEY = process.env.SLSKD_API_KEY || '';
+const INVIDIOUS_WORKER_URL=(process.env.INVIDIOUS_WORKER_URL||'').replace(/\/$/,'');
+const INVIDIOUS_WORKER_SECRET=process.env.INVIDIOUS_WORKER_SECRET||'';
+const INVIDIOUS_IMPORT_ENABLED=INVIDIOUS_WORKER_URL.startsWith('http://jobbi-invidious-worker:')&&INVIDIOUS_WORKER_SECRET.length>=32;
 const SECURE_COOKIE = process.env.PUBLIC_HTTPS === 'true';
 const ACCOUNT_MANAGEMENT_ENABLED=process.env.ENABLE_ACCOUNT_MANAGEMENT==='true';
 const STORAGE_STATS_PATH='/run/jobbi-stats/storage.json';
@@ -194,6 +200,15 @@ app.get('/api/stream/:id',mustAuth,route(async(req,res)=>binaryProxy(req,res,'st
 // Existing downloader is intentionally only accessible via authenticated, admin-only server routes.
 // Its /api/search JSON contract has not yet been inspected. This transparently returns its JSON
 // so the UI can display results; no download/import action is exposed in this safe starter.
+app.get('/api/invidious/status',mustAuth,(req,res)=>res.json({
+  configured:configuredInvidious().length>0,importEnabled:INVIDIOUS_IMPORT_ENABLED
+}));
+app.get('/api/invidious/search',mustAuth,mustLimitPeerSearch,route(async(req,res)=>{
+  const query=String(req.query.q||'').trim().slice(0,150);
+  if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
+  const result=await searchInvidious(query);
+  res.json(result);
+}));
 app.get('/api/soulseek/health',mustAuth,mustAdmin,route(async(req,res)=>{
   if(!DOWNLOADER)return res.status(503).json({error:'Downloader is not configured'});
   const r=await fetch(`${DOWNLOADER}/api/health`,{signal:AbortSignal.timeout(6000)});
@@ -332,6 +347,9 @@ app.delete('/api/admin/accounts/:id',mustAuth,mustAdmin,mustBeLimited,route(asyn
 // friendship relationships in an isolated, persistent private PostgreSQL database.
 app.use('/api/social',createSocialRouter({mustAuth,subsonic}));
 app.use('/api/music-requests',createMusicRequestsRouter({mustAuth,mustAdmin,downloader:DOWNLOADER}));
+app.use('/api/music-imports',createMusicImportRouter({
+  mustAuth,downloader:DOWNLOADER,statsFile:STORAGE_STATS_PATH
+}));
 
 // Available to the designated music admin only. No direct browser access to
 // downloader/slskd. This uses the existing /api/downloads route read-only.
