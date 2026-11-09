@@ -352,7 +352,7 @@ function App() {
       if(user.admin)api('/api/soulseek/downloads').then(d=>{if(active)setDownloads(d)}).catch(()=>{});
     };
     update();
-    const timer=setInterval(update,30000);
+    const timer=setInterval(update,12000);
     return()=>{active=false;clearInterval(timer)};
   },[user?.username,user?.admin,page.id,searchTab]);
 
@@ -399,8 +399,25 @@ function App() {
         {invidious?.results?.length>0&&!importWorker.importEnabled&&<p className="invidious-note">Audio import from Invidious is optional and not running on this NAS. You can still open the source; enable the isolated import worker to save audio you have rights to use.</p>}
       </section>}
       {importNotice&&<div className="import-notice"><Check size={17}/>{importNotice}</div>}
-      <section className="request-section"><div className="shelf-title"><div><h2>My NAS imports</h2><p>Tracks you submitted for the shared Navidrome library. No administrator approval needed.</p></div><button className="ghost-button" onClick={refreshMusicImports}><RefreshCw size={15}/> Refresh</button></div>
-        <div className="music-request-list">{musicImports.length?musicImports.map(item=><div className="music-request-row" key={item.id}><div><strong>{item.title}</strong><small>{item.artist} · {item.filename?.split(/[\\/]/).pop()}</small></div><span className={'request-status '+item.status}>{item.status==='queued'?'Queued at NAS':item.status==='processing'?'Importing':'Check NAS transfers'}</span></div>):<p className="request-empty">Nothing imported yet. Choose a Soulseek track and tap Import song.</p>}</div>
+      <section className="request-section"><div className="shelf-title"><div><h2>My NAS imports</h2><p>Live stages from the NAS downloader, refreshed every 12 seconds. A song is only marked ready when Navidrome finds it.</p></div><button className="ghost-button" onClick={refreshMusicImports}><RefreshCw size={15}/> Refresh</button></div>
+        <div className="music-request-list">{musicImports.length?musicImports.map(item=>{
+          const steps=['queued','downloading','indexing','available'];
+          const stepIndex=item.stage==='imported'?2:steps.indexOf(item.stage);
+          return <div className="music-import-entry" key={item.id}>
+            <div className="music-import-heading">
+              <div><strong>{item.title}</strong><small>{item.artist} · {item.filename?.split(/[\\/]/).pop()}</small></div>
+              <span className={'request-status '+item.stage}>{item.stage==='available'?'Ready to play':item.stage==='failed'?'Failed':item.stage==='unconfirmed'?'Needs attention':item.stage==='downloading'?'In progress':item.stage==='indexing'||item.stage==='imported'?'Indexing':'Queued'}</span>
+            </div>
+            <div className="music-import-steps" aria-label={'Import progress: '+item.label}>{steps.map((step,i)=><div className={'music-import-step '+(stepIndex>=i?'complete':'')+(item.stage===step?' current':'')} key={step}><span className="music-import-step-dot"/><small>{step==='queued'?'Queued':step==='downloading'?'Downloading':step==='indexing'?'Indexing':'In library'}</small></div>)}</div>
+            {item.stage==='downloading'&&item.progress!=null&&<div className="music-import-progress" role="progressbar" aria-label={'Downloading '+item.title} aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.progress}><span style={{width:item.progress+'%'}}/></div>}
+            <div className="music-import-footer"><span className={'music-import-message '+(item.stage==='failed'||item.stage==='unconfirmed'?'warn':'')}>{item.label||'Waiting for downloader update'}</span>
+              {item.stage==='available'&&item.songId&&<button className="music-import-play" onClick={async()=>{
+                try{const song=await api('/api/songs/'+encodeURIComponent(item.songId));playTracks([song],0)}
+                catch(e){setError(e.message)}
+              }}><Play size={14} fill="currentColor"/> Play</button>}
+            </div>
+          </div>
+        }):<p className="request-empty">No imported tracks yet. Choose a Soulseek recording and tap Import song.</p>}</div>
       </section>
       {user.admin&&<section className="transfer-section"><div className="shelf-title"><div><h2>Soulseek transfers</h2><p>Active and completed transfers handled by your NAS downloader.</p></div><button className="ghost-button" onClick={refreshDownloads} disabled={downloadBusy}><RefreshCw size={15}/> Refresh</button><button className="ghost-button" onClick={scanLibrary}><RefreshCw size={15}/> Scan library</button></div>
         {downloads&&<div className="remote-results">{extractRemote(downloads).length?extractRemote(downloads).map((item,i)=><div className="remote-item" key={i}><Music2 size={17}/><div><strong>{(item.filename||item.fileName||'Unknown').split(/[\\/]/).pop()}</strong><small>{item.state||item.status||'Transferring'} · {item.percentage||0}%</small></div></div>):<p className="request-empty">No active Soulseek transfers.</p>}</div>}
