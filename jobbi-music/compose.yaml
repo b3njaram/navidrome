@@ -13,6 +13,10 @@ services:
       DOWNLOADER_URL: ${DOWNLOADER_URL:?Set DOWNLOADER_URL in .env}
       SLSKD_URL: ${SLSKD_URL:-}
       SLSKD_API_KEY: ${SLSKD_API_KEY:-}
+      INVIDIOUS_URL: ${INVIDIOUS_URL:-https://yt.jobbisoft.com.mx}
+      INVIDIOUS_BACKUPS: ${INVIDIOUS_BACKUPS:-}
+      INVIDIOUS_WORKER_URL: ${INVIDIOUS_WORKER_URL:-}
+      INVIDIOUS_WORKER_SECRET: ${INVIDIOUS_WORKER_SECRET:-}
       ADMIN_USERS: ${ADMIN_USERS:?Set ADMIN_USERS in .env}
       ENABLE_ACCOUNT_MANAGEMENT: ${ENABLE_ACCOUNT_MANAGEMENT:-false}
       SOCIAL_DATABASE_URL: postgresql://jobbi_social:${SOCIAL_DB_PASSWORD:?Set SOCIAL_DB_PASSWORD in .env}@jobbi-social-db:5432/jobbi_social
@@ -51,6 +55,28 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  jobbi-invidious-worker:
+    profiles: ["invidious-import"]
+    build: ./invidious-worker
+    container_name: jobbi-invidious-worker
+    restart: unless-stopped
+    user: "${IMPORT_WORKER_UID:-1000}:${IMPORT_WORKER_GID:-100}"
+    environment:
+      WORKER_SECRET: ${INVIDIOUS_WORKER_SECRET:-}
+    volumes:
+      - /volume1/music/Jobbi Imports:/imports:rw
+      - jobbi-invidious-state:/state:rw
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=128m
+    mem_limit: 768m
+    pids_limit: 80
+    # No published ports. Only the Jobbi Music server can request imports.
+
   jobbi-storage-agent:
     image: node:22-alpine
     container_name: jobbi-storage-agent
@@ -79,4 +105,5 @@ services:
 volumes:
   jobbi-storage-stats: {}
   jobbi-social-data: {}
+  jobbi-invidious-state: {}
 
