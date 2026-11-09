@@ -34,6 +34,7 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
   const [query,setQuery]=useState(''),[people,setPeople]=useState([]),[searching,setSearching]=useState(false);
   const [libraryQ,setLibraryQ]=useState(''),[librarySongs,setLibrarySongs]=useState([]);
   const [createForm,setCreateForm]=useState(initialPlaylist),[importId,setImportId]=useState('');
+  const [createInviteName,setCreateInviteName]=useState(''),[createInviteEdit,setCreateInviteEdit]=useState(true),[createInvites,setCreateInvites]=useState([]);
   const [visibility,setVisibility]=useState('private'),[shareName,setShareName]=useState(''),[shareEdit,setShareEdit]=useState(true);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[avatarVersion,setAvatarVersion]=useState(0);
   const [blendFriend,setBlendFriend]=useState('');
@@ -87,9 +88,29 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
   const answer=(name,accept)=>act(async()=>{await post('/friends/'+encodeURIComponent(name)+'/respond',{accept});setNotice(accept?'Friend added':'Request declined')});
   const unfriend=name=>{if(!window.confirm('Remove this friend and revoke your shared playlist access?'))return;
     act(async()=>{await remove('/friends/'+encodeURIComponent(name));setNotice('Friend removed')})};
+  const addCreationInvite=()=>{
+    const name=createInviteName.trim().toLowerCase();
+    if(!/^[\p{L}\p{M}\p{N}_.@-]{1,80}$/u.test(name)||name===user.username.toLowerCase()){
+      setError('Enter a valid username other than your own.');return;
+    }
+    if(createInvites.some(x=>x.username===name)||createInvites.length>=12){
+      setError('Choose up to 12 different collaborators.');return;
+    }
+    setCreateInvites(old=>[...old,{username:name,canEdit:createInviteEdit}]);
+    setCreateInviteName('');setError('');
+  };
   const createPlaylist=()=>act(async()=>{
-    const r=await post('/playlists',{...createForm});
-    setCreateForm(initialPlaylist);await loadPlaylist(r.playlist.id);setNotice('Social playlist created');
+    const extra=createInviteName.trim().toLowerCase();
+    const invitees=[...createInvites];
+    if(extra&&!invitees.some(x=>x.username===extra)){
+      if(!/^[\p{L}\p{M}\p{N}_.@-]{1,80}$/u.test(extra)||extra===user.username.toLowerCase()||invitees.length>=12)
+        throw Error('Enter a valid collaborator username');
+      invitees.push({username:extra,canEdit:createInviteEdit});
+    }
+    const r=await post('/playlists',{...createForm,invitees});
+    setCreateForm(initialPlaylist);setCreateInviteName('');setCreateInvites([]);
+    await loadPlaylist(r.playlist.id);
+    setNotice(invitees.length?`Playlist created · ${invitees.length} invitation(s) sent. Collaborators can accept in Friends.`:'Social playlist created');
   });
   const importPlaylist=()=>act(async()=>{
     if(!importId)return;
@@ -105,9 +126,20 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
   const deletePlaylist=()=>{if(!playlist||!window.confirm('Delete this shared playlist? Your original songs are not deleted.'))return;
     act(async()=>{await remove('/playlists/'+playlist.playlist.id);setPlaylist(null);setCurrentId(null);setTab('playlists')})};
   const share=()=>act(async()=>{
-    if(!shareName||!playlist)return;
-    await post('/playlists/'+playlist.playlist.id+'/members',{username:shareName,canEdit:shareEdit});
-    await loadPlaylist(playlist.playlist.id);setNotice('Playlist access updated');
+    if(!shareName.trim()||!playlist)return;
+    await post('/playlists/'+playlist.playlist.id+'/invitations',{username:shareName.trim(),canEdit:shareEdit});
+    setShareName('');await loadPlaylist(playlist.playlist.id);
+    setNotice('Invitation sent. They can accept it in Friends → Playlist invitations.');
+  });
+  const respondInvite=(id,accept)=>act(async()=>{
+    const result=await post('/invitations/'+encodeURIComponent(id)+'/respond',{accept});
+    setNotice(accept?'Invitation accepted — you can now collaborate.':'Invitation declined.');
+    if(accept)await loadPlaylist(result.playlistId);
+  });
+  const cancelInvite=username=>act(async()=>{
+    await remove('/playlists/'+playlist.playlist.id+'/invitations/'+encodeURIComponent(username));
+    await loadPlaylist(playlist.playlist.id);
+    setNotice('Invitation canceled');
   });
   const revoke=username=>act(async()=>{
     await remove('/playlists/'+playlist.playlist.id+'/members/'+encodeURIComponent(username));
@@ -166,7 +198,7 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
     <div className="social-tabs" role="navigation" aria-label="Community pages">
       {[['discover','Discover',Globe2],['friends','Friends',Users],['playlists','Playlists',ListMusic],['blends','Blends',Sparkles],['profile','My profile',UserRound]].map(([id,label,Icon])=>
         <button key={id} className={tab===id||tab==='playlist'&&id==='playlists'?'active':''}
-          onClick={()=>id==='profile'?openProfile(user.username):(setTab(id),setCurrentId(null))}><Icon size={16}/>{label}{id==='friends'&&overview?.incoming?.length>0&&<span className="social-count">{overview.incoming.length}</span>}</button>)}
+          onClick={()=>id==='profile'?openProfile(user.username):(setTab(id),setCurrentId(null))}><Icon size={16}/>{label}{id==='friends'&&(overview?.incoming?.length||0)+(overview?.playlistInvitations?.length||0)>0&&<span className="social-count">{(overview?.incoming?.length||0)+(overview?.playlistInvitations?.length||0)}</span>}</button>)}
     </div>
     {error&&<div className="social-alert" role="alert"><X size={17}/>{error}<button onClick={()=>setError('')} aria-label="Dismiss"><X size={15}/></button></div>}
     {notice&&<div className="social-good" role="status"><Check size={17}/>{notice}</div>}
@@ -174,7 +206,7 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
 
     {tab==='discover'&&overview&&<div className="social-columns">
       <div className="social-card social-music-discovery"><CardTitle icon={Search} title="Find new music" subtitle="Search beyond your library using Soulseek"/>
-        <p>Explore new audio and bring your selections into your shared music library. Administrators can import directly; listeners request approval.</p>
+        <p>Find music beyond your library. Signed-in listeners can directly import permitted audio with fair-use limits.</p>
         <button className="social-primary" onClick={onDiscoverMusic}><Search size={16}/> Open music discovery</button>
       </div>
       <div className="social-section">
@@ -206,6 +238,13 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
         </div>)}
       </div>
       <div className="social-card">
+        <CardTitle icon={UserPlus} title="Playlist invitations" subtitle="Accept a collaboration invitation to start adding songs"/>
+        {overview.playlistInvitations?.length?overview.playlistInvitations.map(invite=><div className="social-invitation" key={invite.id}>
+          <div><strong>{invite.title}</strong><small>Invited by @{invite.sender} · {invite.can_edit?'Can add and remove tracks':'Listen-only access'}</small></div>
+          <div className="social-invite-actions"><button className="social-outline" disabled={busy} onClick={()=>respondInvite(invite.id,false)}><X size={15}/> Decline</button><button className="social-primary" disabled={busy} onClick={()=>respondInvite(invite.id,true)}><Check size={15}/> Accept</button></div>
+        </div>):<p className="social-empty">No playlist invitations yet.</p>}
+      </div>
+      <div className="social-card">
         <CardTitle icon={UserPlus} title="Friend requests" subtitle="Only accepted requests grant friendship"/>
         {overview.incoming?.length>0?overview.incoming.map(p=><div className="social-person" key={p.username}>{avatar(p)}<div><strong>{p.display_name}</strong><small>@{p.username} wants to connect</small></div>
           <button className="social-outline" onClick={()=>answer(p.username,false)} disabled={busy}>Decline</button>
@@ -216,12 +255,22 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
     </div>}
     {tab==='playlists'&&overview&&<div>
       <div className="social-columns">
-        <div className="social-card"><CardTitle icon={Plus} title="Create shared playlist" subtitle="Set visibility and invite friends to collaborate"/>
+        <div className="social-card"><CardTitle icon={Plus} title="Create shared playlist" subtitle="Invite people while creating — they choose whether to join"/>
           <form className="social-form" onSubmit={e=>{e.preventDefault();createPlaylist()}}>
             <label>Playlist name<input required maxLength={100} value={createForm.title} onChange={e=>setCreateForm(p=>({...p,title:e.target.value}))} placeholder="Our favorite songs"/></label>
             <label>Description<textarea rows={2} maxLength={300} value={createForm.description} onChange={e=>setCreateForm(p=>({...p,description:e.target.value}))} placeholder="A little something about this mix"/></label>
-            <label>Visibility<select value={createForm.visibility} onChange={e=>setCreateForm(p=>({...p,visibility:e.target.value}))}><option value="private">Private — me and invited friends</option><option value="public">Public — all signed-in users</option></select></label>
-            <button className="social-primary" disabled={busy} type="submit"><Plus size={17}/> Create playlist</button>
+            <label>Visibility<select value={createForm.visibility} onChange={e=>setCreateForm(p=>({...p,visibility:e.target.value}))}><option value="private">Private — only me and accepted collaborators</option><option value="public">Public — all signed-in users</option></select></label>
+            <div className="social-collaborator-compose">
+              <label>Invite a collaborator (optional)
+                <input list="jobbi-friend-suggestions" aria-label="Invite collaborator username" value={createInviteName} onChange={e=>setCreateInviteName(e.target.value)} placeholder="Their Jobbi Music username" maxLength={80}/>
+              </label>
+              <datalist id="jobbi-friend-suggestions">{friends.map(f=><option key={f.username} value={f.username}>{f.display_name}</option>)}</datalist>
+              <label className="social-checkbox"><input type="checkbox" checked={createInviteEdit} onChange={e=>setCreateInviteEdit(e.target.checked)}/> Allow this person to add and remove tracks</label>
+              <button className="social-outline" type="button" onClick={addCreationInvite} disabled={busy||!createInviteName.trim()}><UserPlus size={16}/> Add to invitation list</button>
+              {createInvites.length>0&&<div className="social-pending-invites" aria-label="People to invite">{createInvites.map(entry=><span className="social-invite-chip" key={entry.username}>@{entry.username} · {entry.canEdit?'Can edit':'Listen only'}<button type="button" aria-label={'Remove invitation for '+entry.username} onClick={()=>setCreateInvites(all=>all.filter(i=>i.username!==entry.username))}><X size={15}/></button></span>)}</div>}
+              <p className="social-secondary">You can invite multiple people. Invitations are private and require each person to accept before they join.</p>
+            </div>
+            <button className="social-primary" disabled={busy} type="submit"><Plus size={17}/> Create playlist{createInvites.length?' & send invitations':''}</button>
           </form>
         </div>
         <div className="social-card"><CardTitle icon={Upload} title="Share a Navidrome playlist" subtitle="Copy one of your personal playlists into the social collection"/>
@@ -318,11 +367,19 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
               {owner&&playlist.playlist.kind!=='blend'&&<button className="social-icon" title="Remove access" disabled={busy} onClick={()=>revoke(m.username)}><X size={16}/></button>}
             </div>)}
             {owner&&playlist.playlist.kind!=='blend'&&<form className="social-form" onSubmit={e=>{e.preventDefault();share()}}>
-              <label>Share with an accepted friend<select value={shareName} onChange={e=>setShareName(e.target.value)}><option value="">Choose a friend</option>
-                {friends.map(p=><option key={p.username} value={p.username}>{p.display_name} (@{p.username})</option>)}</select></label>
-              <label className="social-checkbox"><input type="checkbox" checked={shareEdit} onChange={e=>setShareEdit(e.target.checked)}/> Let this friend add and remove songs</label>
-              <button className="social-outline" type="submit" disabled={busy||!shareName}><Share2 size={16}/> Share playlist</button>
+              <label>Invite someone to this playlist<input list="jobbi-existing-friends" aria-label="Existing playlist invite username" maxLength={80} placeholder="Jobbi Music username" value={shareName} onChange={e=>setShareName(e.target.value)}/></label>
+              <datalist id="jobbi-existing-friends">{friends.map(f=><option key={f.username} value={f.username}>{f.display_name}</option>)}</datalist>
+              <label className="social-checkbox"><input type="checkbox" checked={shareEdit} onChange={e=>setShareEdit(e.target.checked)}/> Can add and remove songs</label>
+              <button className="social-outline" type="submit" disabled={busy||!shareName.trim()}><UserPlus size={16}/> Send invitation</button>
+              <p className="social-secondary">They'll receive an invitation under Friends → Playlist invitations. Access starts only after they accept.</p>
             </form>}
+            {owner&&!!playlist.pendingInvitations?.length&&<div className="social-pending-section">
+              <h3 className="social-subtitle">Pending invitations</h3>
+              {playlist.pendingInvitations.map(i=><div className="social-invitation" key={i.id}>
+                <div><strong>@{i.recipient}</strong><small>{i.can_edit?'Can edit':'Listen only'} · Waiting for response</small></div>
+                <button className="social-outline" disabled={busy} onClick={()=>cancelInvite(i.recipient)}><X size={15}/> Cancel</button>
+              </div>)}
+            </div>}
             {owner&&<button className="social-danger" onClick={deletePlaylist} disabled={busy}><Trash2 size={16}/> Delete playlist</button>}
           </div>
         </div>
