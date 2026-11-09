@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 async function setupMocks(page){
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],musicRequests:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],musicRequests:[],imports:[],fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -9,6 +9,7 @@ async function setupMocks(page){
     const pathname=url.pathname;
     const body=(()=>{try{return req.postDataJSON()||{}}catch{return {}}})();
     const reply=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
+    if(pathname.startsWith('/api/invidious/thumbnail/'))return route.fulfill({status:404,body:''});
     if(pathname.startsWith('/api/cover/'))return route.fulfill({status:404,body:''});
     if(pathname.startsWith('/api/stream/'))return route.fulfill({status:200,contentType:'audio/mpeg',body:''});
     if(pathname==='/api/session')return reply(state.session);
@@ -17,10 +18,11 @@ async function setupMocks(page){
     if(pathname==='/api/home')return reply({recent:[{id:'a1',name:'Test Album',artist:'Test Artist'}],featured:[],played:[],songs:[{id:'s1',title:'Kino',artist:'Test Artist',duration:180}],playlists:state.playlists});
     if(pathname==='/api/starred')return reply({song:[],album:[]});
     if(pathname==='/api/lyrics/s1')return reply({available:true,synced:true,source:'Navidrome',lines:[{at:0,text:'First line of the song'},{at:4500,text:'Second line of the song'}]});
-    if(pathname==='/api/search')return reply({artist:[],album:[{id:'a1',name:'Test Album',artist:'Test Artist'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',album:'Test Album',duration:180}]});
+    if(pathname==='/api/search')return reply({artist:[{id:'artist1',name:'Test Artist'}],album:[{id:'a1',name:'Test Album',artist:'Test Artist'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
     if(pathname==='/api/library/albums')return reply({albums:[{id:'a1',name:'Test Album',artist:'Test Artist'}],offset:0,size:48});
     if(pathname==='/api/library/artists')return reply({artists:[{id:'artist1',name:'Test Artist'}],count:1});
-    if(pathname==='/api/albums/a1')return reply({id:'a1',name:'Test Album',artist:'Test Artist',song:[{id:'s1',title:'Kino',artist:'Test Artist',duration:180}]});
+    if(pathname==='/api/albums/a1')return reply({id:'a1',name:'Test Album',artist:'Test Artist',song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
+    if(pathname==='/api/artists/artist1')return reply({id:'artist1',name:'Test Artist',album:[{id:'a1',name:'Test Album'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
     if(pathname==='/api/playlists'&&method==='GET')return reply(state.playlists);
     if(pathname==='/api/playlists'&&method==='POST'){state.playlists.push({id:'p2',name:body.name,songCount:0});return reply({playlist:state.playlists.at(-1)},201);}
 
@@ -36,6 +38,20 @@ async function setupMocks(page){
       if(!item)return reply({error:'Request not found'},404);
       item.status=body.decision==='approve'?'queued':'rejected';
       return reply({status:item.status,request:item},body.decision==='approve'?202:200);
+    }
+    if(pathname==='/api/music-imports'&&method==='GET')return reply({items:state.imports});
+    if(pathname==='/api/music-imports'&&method==='POST'){
+      const item={...body,id:'import-'+(state.imports.length+1),status:'queued'};
+      state.imports.unshift(item);return reply({queued:true,importId:item.id},202);
+    }
+    if(pathname==='/api/invidious/status')return reply({configured:true,importEnabled:true});
+    if(pathname==='/api/invidious/jobs')return reply({jobs:state.fallbackJobs});
+    if(pathname==='/api/invidious/search')return reply({source:'invidious',available:true,instance:'https://yt.jobbisoft.com.mx',results:[
+      {videoId:'dQw4w9WgXcQ',title:'Luis Miguel - Test Music',artist:'Example channel',duration:180,url:'https://yt.jobbisoft.com.mx/watch?v=dQw4w9WgXcQ',thumbnail:'/api/invidious/thumbnail/dQw4w9WgXcQ'}
+    ]});
+    if(pathname==='/api/invidious/import'&&method==='POST'){
+      const job={id:'fallback-'+(state.fallbackJobs.length+1),...body,status:'queued'};
+      state.fallbackJobs.push(job);return reply({queued:true,jobId:job.id},202);
     }
     if(pathname==='/api/soulseek/status')return reply({mode:'slskd',configured:true,serverConnected:true});
     if(pathname==='/api/soulseek/search')return reply({source:'slskd',results:[{username:'peer1',filename:'Kino/Кино - Группа крови.flac',size:28000000,format:'FLAC',bitrate:950,freeUploadSlot:true,relevanceScore:290}],total:1,peerCount:1,elapsedMs:2300});
@@ -97,10 +113,10 @@ test('Soulseek search presents peer results instead of raw JSON',async({page})=>
   await navigate(page,'Discover');
   await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
   await page.getByRole('button',{name:/Soulseek · New music/}).click();
-  await page.getByRole('button',{name:'Search Soulseek'}).click();
+  await page.getByRole('button',{name:'Search music sources'}).click();
   await expect(page.getByText('Music from Soulseek')).toBeVisible();
   await expect(page.getByText('Кино - Группа крови.flac')).toBeVisible();
-  await page.getByRole('button',{name:'Add to library'}).click();
+  await page.getByRole('button',{name:'Import song'}).click();
   await expect(page.getByText('Add to your library')).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -275,34 +291,56 @@ test('immersive player fits phone and respects reduced motion',async({page})=>{
   expect(viewport.animation).toBe('none');
 });
 
-test('listener finds Soulseek music and sends request for admin review',async({page})=>{
+test('listener discovers Soulseek and imports directly without admin approval',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await setupMocks(page);await login(page,'listener');
   await navigate(page,'Discover');
-  await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Luis Miguel');
   await page.getByRole('button',{name:/Soulseek · New music/}).click();
-  await expect(page.getByRole('button',{name:'Search Soulseek'})).toBeVisible();
-  await page.getByRole('button',{name:'Search Soulseek'}).click();
+  await page.getByRole('button',{name:'Search music sources'}).click();
   await expect(page.getByText('Кино - Группа крови.flac')).toBeVisible();
-  await page.getByRole('button',{name:'Request song'}).click();
-  await expect(page.getByRole('heading',{name:'Request a song'})).toBeVisible();
-  await page.getByLabel('Artist').fill('Кино');
-  await page.getByLabel('Track title').fill('Группа крови');
-  await page.getByRole('button',{name:'Send request'}).click();
-  await expect(page.getByText(/Request sent/)).toBeVisible();
-  await expect(page.getByText('Awaiting approval')).toBeVisible();
+  await page.getByRole('button',{name:'Import song'}).click();
+  await page.getByLabel('Artist').fill('Luis Miguel');
+  await page.getByLabel('Track title').fill('Test song');
+  await page.getByRole('button',{name:'Queue import'}).click();
+  await expect(page.getByText('Queued at NAS')).toBeVisible();
+  await expect(page.getByText('My NAS imports')).toBeVisible();
+  await expect(page.getByText('From Invidious')).toBeVisible();
   expect(errors).toEqual([]);
+});
+test('listener can import permitted Invidious fallback audio using optional worker',async({page})=>{
+  await setupMocks(page);await login(page,'listener');
+  await navigate(page,'Discover');
+  await page.getByRole('button',{name:/Soulseek · New music/}).click();
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Luis Miguel');
+  await page.getByRole('button',{name:'Search music sources'}).click();
+  await expect(page.getByText('Luis Miguel - Test Music')).toBeVisible();
+  await page.getByRole('button',{name:'Import audio'}).click();
+  await page.getByRole('checkbox',{name:/I confirm I have permission/}).check();
+  await page.getByRole('button',{name:'Import audio to NAS'}).click();
+  await expect(page.getByText('Alternate-source imports')).toBeVisible();
+  await expect(page.getByText('Queued', {exact:true}).last()).toBeVisible();
+});
+test('artist and album names in song list open Navidrome catalog pages',async({page})=>{
+  await setupMocks(page);await login(page,'listener');
+  await navigate(page,'Discover');
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
+  await page.getByRole('button',{name:'Test Artist',exact:true}).last().click();
+  await expect(page.getByRole('heading',{name:'Test Artist'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Tracks'})).toBeVisible();
+  await page.getByRole('button',{name:'Test Album',exact:true}).last().click();
+  await expect(page.getByRole('heading',{name:'Test Album'})).toBeVisible();
 });
 test('admin sees direct Soulseek import and listener request approvals',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await setupMocks(page);await login(page,'testadmin');
   await navigate(page,'Discover');
   await page.getByRole('button',{name:/Soulseek · New music/}).click();
-  await expect(page.getByRole('button',{name:'Search Soulseek'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Search music sources'})).toBeVisible();
   await expect(page.getByText('Listener requests')).toBeVisible();
   await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
-  await page.getByRole('button',{name:'Search Soulseek'}).click();
-  await page.getByRole('button',{name:'Add to library'}).click();
-  await expect(page.getByRole('heading',{name:'Add to your library'})).toBeVisible();
+  await page.getByRole('button',{name:'Search music sources'}).click();
+  await page.getByRole('button',{name:'Import song'}).click();
+  await expect(page.getByRole('heading',{name:'Import song to NAS'})).toBeVisible();
   expect(errors).toEqual([]);
 });
