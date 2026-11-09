@@ -27,7 +27,7 @@ function CardTitle({icon:Icon,title,subtitle,action}){
   return <div className="social-card-title"><span className="social-title-icon"><Icon size={19}/></span>
     <div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action&&<span className="social-card-action">{action}</span>}</div>;
 }
-export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=[],initialPlaylistId,onProfileUpdate=()=>{}}){
+export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=[],initialPlaylistId,onProfileUpdate=()=>{},onDiscoverMusic=()=>{}}){
   const [overview,setOverview]=useState(null),[tab,setTab]=useState('discover');
   const [profileName,setProfileName]=useState(''),[profile,setProfile]=useState(null),[profileDraft,setProfileDraft]=useState(null);
   const [currentId,setCurrentId]=useState(null),[playlist,setPlaylist]=useState(null);
@@ -173,6 +173,10 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
     {!overview&&<div className="social-loading"><RefreshCw size={20}/> Loading community…</div>}
 
     {tab==='discover'&&overview&&<div className="social-columns">
+      <div className="social-card social-music-discovery"><CardTitle icon={Search} title="Find new music" subtitle="Search beyond your library using Soulseek"/>
+        <p>Explore new audio and bring your selections into your shared music library. Administrators can import directly; listeners request approval.</p>
+        <button className="social-primary" onClick={onDiscoverMusic}><Search size={16}/> Open music discovery</button>
+      </div>
       <div className="social-section">
         <CardTitle icon={Globe2} title="Public playlists" subtitle="Shared with everyone signed into Jobbi Music"/>
         <div className="social-playlist-grid">{overview.discover?.length?overview.discover.map(p=><PlaylistTile key={p.id} entry={p} onOpen={loadPlaylist}/>):<div className="social-empty">No public playlists yet. Be the first to share one.</div>}</div>
