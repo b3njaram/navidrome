@@ -65,7 +65,6 @@ services:
       WORKER_SECRET: ${INVIDIOUS_WORKER_SECRET:-}
     volumes:
       - /volume1/music/Jobbi Imports:/imports:rw
-      - jobbi-invidious-state:/state:rw
     security_opt:
       - no-new-privileges:true
     read_only: true
