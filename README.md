@@ -1,71 +1,62 @@
-# 🎵 Navidrome
+# Jobbi Music
 
-A self-hosted music server and streaming application.
+**A personal, self-hosted music experience with Navidrome at its core.**
 
-## My hosted instance
+Jobbi Music is the primary web and Android experience for this music server. Navidrome remains the source of truth for your users, music collection, artists, albums, favorites and personal playlists; Jobbi Music provides a modern interface on top of its OpenSubsonic API.
 
-- Hosted link: [TODO: MY_HOSTED_LINK]
-- Access method: [TODO: ACCESS_METHOD]
-- Status: [TODO: STATUS]
-- Last updated: [TODO: DATE]
+## What Jobbi Music includes
 
-## What this service does
+- Responsive dark interface, animated playback and full-screen now playing with synchronized lyrics and queue controls
+- Your existing Navidrome library and login credentials, native album/artist navigation, streaming-quality choices
+- Native Android application with offline music downloads
+- Social profiles, friends, collaborative playlists with accepted invitations, public/private playlists and blends
+- Soulseek discovery and monitored NAS import jobs, plus optional Invidious discovery/import service
+- Administrator tools, account-management capability gating, storage monitoring and per-user import limits
+- Cloudflare Tunnel-compatible HTTPS deployment, with no direct public NAS port required
 
-A self-hosted music server and streaming application.
+**The music remains yours to operate.** Neither a GitHub merge nor a frontend deployment migrates or rewrites the Navidrome database or the audio library. Social features persist separately in the Jobbi PostgreSQL volume.
 
-## My self-hosting setup
+## Architecture
 
-- Host machine: [TODO: HOST_MACHINE]
-- Operating system: [TODO: OPERATING_SYSTEM]
-- Installation method: [TODO: INSTALLATION_METHOD]
-- Storage: [TODO: STORAGE]
-- Reverse proxy: [TODO: REVERSE_PROXY]
-- Authentication: [TODO: AUTHENTICATION_METHOD]
-- Backups: [TODO: BACKUP_METHOD]
-- Updates: [TODO: UPDATE_PROCEDURE]
-- Monitoring: [TODO: MONITORING_METHOD]
+```text
+Browser / Android application
+          |
+          | HTTPS (Cloudflare Tunnel, after public launch)
+          v
+       Jobbi Music                  Port 3131 (HTTP behind tunnel)
+          |  \
+          |   +-- jobbi-social-db   Friends, profiles, shared playlists
+          |
+          +------ Navidrome         Port 4533 — library/users/personal playlists
+          |        /rest/* clients remain compatible
+          |
+          +------ Soulseek downloader + slskd
+          |        Audio files in the existing NAS music share
+          |
+          +------ Optional Invidious search / audio importer
+```
 
-## How I access it
+## Source and releases
 
-- Local access: [TODO: LOCAL_ACCESS_DETAILS]
-- Remote access: [TODO: REMOTE_ACCESS_DETAILS]
-- Public access: [TODO: PUBLIC_ACCESS_DETAILS]
-- HTTPS status: [TODO: HTTPS_STATUS]
+The application source is in [jobbi-music/](jobbi-music/) and its [setup guide](jobbi-music/README.md). Desktop and mobile automated tests run through GitHub Actions. The **main** branch is the public source of the Jobbi Music project. Before deploying to your own NAS, review the [production checklist](jobbi-music/PRODUCTION_CHECKLIST.md).
 
-[PLACEHOLDER: Add a representative image or interface preview here if desired.]
+A GitHub code update is **not** itself a Cloudflare or NAS deployment. The Cloudflare hostname can be promoted only after health, login and real-streaming checks are successful.
 
-## Learn how to install it yourself
+## Upgrade without losing your library
 
-- Official project: [TODO: OFFICIAL_PROJECT_LINK]
-- Official documentation: [TODO: OFFICIAL_DOCUMENTATION_LINK]
-- Official installation guide: [TODO: OFFICIAL_INSTALLATION_GUIDE_LINK]
+The recommended strategy is **frontend replacement, not Navidrome replacement**:
 
-## My installation notes
+1. Keep the existing Navidrome container, its `/data` volume and the `/volume1/music` share untouched.
+2. Back up your Navidrome data, the existing music share and Jobbi's `jobbi-social-data` volume, and verify that backups are restorable.
+3. Deploy and test Jobbi Music on its existing internal URL and a temporary HTTPS hostname.
+4. On the NAS only, set `PUBLIC_HTTPS=true` once the public HTTPS tunnel is ready. Cloudflare provides browser TLS and proxies to `http://NAS-LAN-IP:3131`. No certificate or HTTPS listener inside the Node container is needed.
+5. Update the existing Cloudflare route for your music hostname from Navidrome's port 4533 to Jobbi Music's port 3131. **Keep Navidrome running on 4533** so the backend and other apps continue working.
+6. Keep an immediate rollback route: point Cloudflare back to port 4533 if any user login, playback, artwork or `/rest/` client fails.
 
-[TODO: Add my personal installation notes here.]
+See [the production cutover guide](docs/production-cutover.md).
 
-## Configuration
+## Security principles
 
-See [docs/configuration.md](docs/configuration.md) for configuration details.
+Authenticated Navidrome sessions, HttpOnly cookies, CSRF protections, security headers, backend-side import quotas and limited container privileges. Never commit `.env` secrets, expose PostgreSQL or the downloader to the internet, or mount the Docker socket into the frontend. Review NAS and Cloudflare access restrictions before public exposure.
 
-## Backups and updates
-
-See [docs/updates-and-backups.md](docs/updates-and-backups.md) for backup and update procedures.
-
-## Troubleshooting
-
-See [docs/troubleshooting.md](docs/troubleshooting.md) for common issues.
-
-## Security notes
-
-- Strong authentication
-- HTTPS for remote access
-- Software updates
-- Limiting public exposure
-- Protecting API keys and tokens
-- Maintaining tested backups
-- Avoiding publication of private network information
-
-## Disclaimer
-
-This repository documents my personal self-hosting setup. It is not an official installation guide and is not affiliated with, endorsed by, or maintained by the original project. Always consult the official project documentation for current installation and configuration instructions.
+Jobbi Music is a community-developed interface, not affiliated with Navidrome or Apple.
