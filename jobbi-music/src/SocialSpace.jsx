@@ -145,6 +145,11 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
     await remove('/playlists/'+playlist.playlist.id+'/members/'+encodeURIComponent(username));
     await loadPlaylist(playlist.playlist.id);setNotice('Access revoked');
   });
+  const updateCollaborator=(username,canEdit)=>act(async()=>{
+    await patch('/playlists/'+playlist.playlist.id+'/members/'+encodeURIComponent(username),{canEdit});
+    await loadPlaylist(playlist.playlist.id);
+    setNotice(canEdit?'Collaborator can now edit the playlist.':'Collaborator changed to listen-only access.');
+  });
   const findTracks=()=>handle(async()=>{
     if(libraryQ.trim().length<2){setLibrarySongs([]);return}
     const data=await api('/api/search?q='+encodeURIComponent(libraryQ.trim()));
@@ -370,7 +375,10 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
             </div><div className="social-divider"/></>}
             {playlist.members?.map(m=><div className="social-person" key={m.username}>
               {avatar({username:m.username})}<div><strong>@{m.username}</strong><small>{m.can_edit?'Can edit':'Can listen'}</small></div>
-              {owner&&playlist.playlist.kind!=='blend'&&<button className="social-icon" title="Remove access" disabled={busy} onClick={()=>revoke(m.username)}><X size={16}/></button>}
+              {owner&&playlist.playlist.kind!=='blend'&&<div className="social-member-actions">
+                <button className="social-outline" disabled={busy} onClick={()=>updateCollaborator(m.username,!m.can_edit)}><Settings2 size={14}/> {m.can_edit?'Set listen only':'Allow editing'}</button>
+                <button className="social-icon" title="Remove access" disabled={busy} onClick={()=>revoke(m.username)}><X size={16}/></button>
+              </div>}
             </div>)}
             {owner&&playlist.playlist.kind!=='blend'&&<form className="social-form" onSubmit={e=>{e.preventDefault();share()}}>
               <label>Invite someone to this playlist<input list="jobbi-existing-friends" aria-label="Existing playlist invite username" maxLength={80} placeholder="Jobbi Music username" value={shareName} onChange={e=>setShareName(e.target.value)}/></label>
