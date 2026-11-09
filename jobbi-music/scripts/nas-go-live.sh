@@ -14,11 +14,15 @@ if ! [ -r /dev/tty ];then echo 'An interactive terminal is required for the Clou
 test -s .env || { echo 'Missing Jobbi Music .env; refusing to deploy.';exit 1; }
 command -v docker >/dev/null || { echo 'Docker is not available';exit 1; }
 command -v curl >/dev/null || { echo 'curl is not available';exit 1; }
-if ! mkdir "$LOCK" 2>/dev/null;then
-  echo 'Another Jobbi updater is running, or a stale lock exists. No changes made.'
-  exit 1
+if [ "${JOBBI_GO_LIVE_ALREADY_LOCKED:-0}" = '1' ];then
+  [ -d "$LOCK" ] || { echo 'Expected parent updater lock not found';exit 1; }
+else
+  if ! mkdir "$LOCK" 2>/dev/null;then
+    echo 'Another Jobbi updater is running, or a stale lock exists. No changes made.'
+    exit 1
+  fi
+  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT HUP INT TERM
 fi
-trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT HUP INT TERM
 mkdir -p "$BACKUPS"
 chmod 700 "$BACKUPS"
 
