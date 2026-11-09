@@ -9,6 +9,10 @@ on:
     paths:
       - 'jobbi-music/**'
       - '.github/workflows/jobbi-music-build.yml'
+concurrency:
+  group: jobbi-music-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
