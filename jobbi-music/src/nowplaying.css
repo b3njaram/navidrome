@@ -102,3 +102,29 @@
 .immersive-artist-link{padding:0;margin:0;color:#f3c9df;font-size:14px;max-width:100%;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;text-align:left}
 .immersive-album-link:hover,.immersive-artist-link:hover{color:#fff;text-decoration:underline;text-underline-offset:4px}
 @media(max-width:480px){.immersive-artist-link{font-size:12px}}
+
+
+/* Expressive but calm full-screen player interactions */
+@keyframes immersive-art-hover{0%,100%{transform:scale(.985)}50%{transform:scale(1.007)}}
+@keyframes immersive-pulse{0%,100%{box-shadow:0 12px 33px #0005,0 0 0 0 #f9a5cb40}50%{box-shadow:0 17px 40px #0007,0 0 0 12px #f9a5cb00}}
+@keyframes immersive-track-in{from{opacity:.35;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes immersive-aurora{0%,100%{opacity:.72;transform:scale(1)}50%{opacity:.95;transform:scale(1.06)}}
+.immersive-player .immersive-art.is-playing{animation:immersive-art-hover 5s ease-in-out infinite}
+.immersive-player .immersive-controls .immersive-main-play{
+  transition:background-color .24s,transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .3s
+}
+.immersive-player:has(.immersive-art.is-playing) .immersive-main-play{
+  animation:immersive-pulse 3.4s ease-in-out infinite
+}
+.immersive-player .immersive-backdrop{transform-origin:center;animation:immersive-aurora 20s ease-in-out infinite}
+.immersive-player .immersive-title{animation:immersive-track-in .48s cubic-bezier(.18,.8,.2,1) both}
+.immersive-player .immersive-actions-menu{animation:immersive-track-in .2s ease-out both;transform-origin:top right}
+.immersive-player .immersive-like.hearted{filter:drop-shadow(0 0 12px #ff81a780)}
+.immersive-player .immersive-main-play:active{animation:none!important;transform:scale(.89)!important}
+.immersive-player .immersive-bottom-actions button:active,.immersive-player .immersive-top-button:active{transform:scale(.9)}
+@media(prefers-reduced-motion:reduce){
+ .immersive-player .immersive-art.is-playing,.immersive-player .immersive-controls .immersive-main-play,
+ .immersive-player .immersive-backdrop,.immersive-player .immersive-title{
+   animation:none!important;transform:none
+ }
+}
