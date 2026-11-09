@@ -356,6 +356,19 @@ export function createSocialRouter({mustAuth,subsonic}){
   r.post('/playlists/:id/members',respond(async(req,res)=>{
     fail(410,'Update Jobbi Music and send a collaborator invitation instead');
   }));
+  r.patch('/playlists/:id/members/:username',respond(async(req,res)=>{
+    const p=await loadPlaylist(req.params.id,req.socialName);
+    if(p.owner!==req.socialName)fail(403,'Only the owner can change collaborator permissions');
+    if(p.kind==='blend')fail(403,'Blend permissions are fixed');
+    const target=key(req.params.username);
+    if(!target||target===req.socialName||typeof req.body?.canEdit!=='boolean')
+      fail(400,'Invalid collaborator or editing permission');
+    const result=await socialQuery(`UPDATE social_members SET can_edit=$3
+      WHERE playlist_id=$1 AND username=$2 RETURNING username,can_edit`,
+      [p.id,target,req.body.canEdit]);
+    if(!result.rowCount)fail(404,'Collaborator not found');
+    res.json({member:result.rows[0]});
+  }));
   r.delete('/playlists/:id/members/:username',respond(async(req,res)=>{
     const p=await loadPlaylist(req.params.id,req.socialName);
     const target=key(req.params.username);
