@@ -96,7 +96,7 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
     try{
       const ids=req.body?.ids;
       if(!Array.isArray(ids)||ids.length<1||ids.length>60||
-        ids.some(x=>typeof x!=='string'||!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(x)||x.length>40))
+        ids.some(x=>typeof x!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(x)))
         return res.status(400).json({error:'Select valid import entries to hide'});
       const actor=normalUsername(req.user.username);
       const result=await socialQuery(`UPDATE music_import_requests
