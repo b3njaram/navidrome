@@ -11,6 +11,7 @@ import { subsonicProxy } from './navidrome-proxy.js';
 import { normalizeLyrics } from './lyrics-normalize.js';
 import { androidLatest } from './android-update.js';
 import { createSocialRouter } from './social-routes.js';
+import { createMusicRequestsRouter } from './music-requests.js';
 import { promises as fs } from 'node:fs';
 
 const app = express();
@@ -31,6 +32,7 @@ const MAX_SESSIONS = 1000;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const ACTION_WINDOW_MS = 10 * 60 * 1000;
 const actionLimits = new Map();
+const soulseekSearchLimits=new Map();
 const attempts = new Map();
 const ttl = 12 * 60 * 60 * 1000;
 const cookieName = 'jobbi_session';
@@ -59,6 +61,14 @@ const mustAdmin = async (req, res, next) => {
   } catch {return res.status(503).json({error:'Cannot verify administrator permissions with the music server'});}
 };
 const mustBeLimited = (req,res,next) => { const key = req.user.username.toLowerCase(); const now = Date.now(); const prev = actionLimits.get(key) || {count:0,start:now}; if(now-prev.start > ACTION_WINDOW_MS){ prev.count=0; prev.start=now; } prev.count++; actionLimits.set(key,prev); if(prev.count > 30) return res.status(429).json({error:'Too many music discovery requests; try again shortly'}); next(); };
+const mustLimitPeerSearch=(req,res,next)=>{
+  const username=req.user.username.toLowerCase();
+  const now=Date.now(),before=soulseekSearchLimits.get(username);
+  const state=before&&now-before.start<10*60*1000?before:{start:now,count:0};
+  state.count++;soulseekSearchLimits.set(username,state);
+  if(state.count>10)return res.status(429).json({error:'Soulseek search limit reached. Try again in a few minutes.'});
+  next();
+};
 const validId = x => typeof x === 'string' && x.length > 0 && x.length <= 150;
 const validName = x => typeof x === 'string' && x.trim().length >= 1 && x.trim().length <= 100;
 const saltAuth = (user) => { const s = crypto.randomBytes(8).toString('hex'); return {u:user.username, t:crypto.createHash('md5').update(user.password + s).digest('hex'),s,v:'1.16.1',c:'JobbiMusic',f:'json'}; };
@@ -189,7 +199,7 @@ app.get('/api/soulseek/health',mustAuth,mustAdmin,route(async(req,res)=>{
   const r=await fetch(`${DOWNLOADER}/api/health`,{signal:AbortSignal.timeout(6000)});
   res.status(r.status).json(await r.json());
 }));
-app.get('/api/soulseek/status',mustAuth,mustAdmin,route(async(req,res)=>{
+app.get('/api/soulseek/status',mustAuth,route(async(req,res)=>{
   if(SLSKD&&SLSKD_KEY){
     try {
       const connection=await slskdConnection({url:SLSKD,key:SLSKD_KEY});
@@ -202,7 +212,7 @@ app.get('/api/soulseek/status',mustAuth,mustAdmin,route(async(req,res)=>{
   return res.json({mode:'legacy',configured:Boolean(DOWNLOADER),serverConnected:null,
     message:DOWNLOADER?'Using custom downloader search. Direct slskd search is not configured; empty results may not reflect the full peer network.':'Configure slskd access to search the Soulseek network.'});
 }));
-app.post('/api/soulseek/search',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+app.post('/api/soulseek/search',mustAuth,mustBeLimited,mustLimitPeerSearch,route(async(req,res)=>{
   const query=String(req.body?.query||'').trim().slice(0,150);
   if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
   if(SLSKD&&SLSKD_KEY){
@@ -321,6 +331,7 @@ app.delete('/api/admin/accounts/:id',mustAuth,mustAdmin,mustBeLimited,route(asyn
 // Social features reuse Navidrome's authenticated session but store sharing and
 // friendship relationships in an isolated, persistent private PostgreSQL database.
 app.use('/api/social',createSocialRouter({mustAuth,subsonic}));
+app.use('/api/music-requests',createMusicRequestsRouter({mustAuth,mustAdmin,downloader:DOWNLOADER}));
 
 // Available to the designated music admin only. No direct browser access to
 // downloader/slskd. This uses the existing /api/downloads route read-only.
