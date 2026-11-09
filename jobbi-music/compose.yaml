@@ -1,0 +1,107 @@
+services:
+  jobbi-music:
+    build: .
+    container_name: jobbi-music
+    restart: unless-stopped
+    ports:
+      - "3131:3131"
+    environment:
+      PORT: "3131"
+      NODE_ENV: production
+      PUBLIC_HTTPS: ${PUBLIC_HTTPS:-false}
+      NAVIDROME_URL: ${NAVIDROME_URL:?Set NAVIDROME_URL in .env}
+      DOWNLOADER_URL: ${DOWNLOADER_URL:?Set DOWNLOADER_URL in .env}
+      SLSKD_URL: ${SLSKD_URL:-}
+      SLSKD_API_KEY: ${SLSKD_API_KEY:-}
+      INVIDIOUS_URL: ${INVIDIOUS_URL:-https://yt.jobbisoft.com.mx}
+      INVIDIOUS_BACKUPS: ${INVIDIOUS_BACKUPS:-}
+      INVIDIOUS_WORKER_URL: ${INVIDIOUS_WORKER_URL:-}
+      INVIDIOUS_WORKER_SECRET: ${INVIDIOUS_WORKER_SECRET:-}
+      ADMIN_USERS: ${ADMIN_USERS:?Set ADMIN_USERS in .env}
+      ENABLE_ACCOUNT_MANAGEMENT: ${ENABLE_ACCOUNT_MANAGEMENT:-false}
+      SOCIAL_DATABASE_URL: postgresql://jobbi_social:${SOCIAL_DB_PASSWORD:?Set SOCIAL_DB_PASSWORD in .env}@jobbi-social-db:5432/jobbi_social
+    depends_on:
+      jobbi-social-db:
+        condition: service_healthy
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    volumes:
+      - jobbi-storage-stats:/run/jobbi-stats:ro
+    cap_drop:
+      - ALL
+    pids_limit: 128
+
+  jobbi-social-db:
+    image: postgres:17-alpine
+    container_name: jobbi-social-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jobbi_social
+      POSTGRES_USER: jobbi_social
+      POSTGRES_PASSWORD: ${SOCIAL_DB_PASSWORD:?Set SOCIAL_DB_PASSWORD in .env}
+    volumes:
+      - jobbi-social-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobbi_social -d jobbi_social"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 384m
+    pids_limit: 120
+    security_opt:
+      - no-new-privileges:true
+
+  jobbi-invidious-worker:
+    profiles: ["invidious-import"]
+    build: ./invidious-worker
+    container_name: jobbi-invidious-worker
+    restart: unless-stopped
+    user: "${IMPORT_WORKER_UID:-1000}:${IMPORT_WORKER_GID:-100}"
+    environment:
+      WORKER_SECRET: ${INVIDIOUS_WORKER_SECRET:-}
+    volumes:
+      - /volume1/music/Jobbi Imports:/imports:rw
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=128m
+    mem_limit: 768m
+    pids_limit: 80
+    # No published ports. Only the Jobbi Music server can request imports.
+
+  jobbi-storage-agent:
+    image: node:22-alpine
+    container_name: jobbi-storage-agent
+    restart: unless-stopped
+    network_mode: none
+    user: "0:0"
+    command: ["node", "/agent/storage-agent.mjs"]
+    environment:
+      MUSIC_ROOT: /music
+      STORAGE_OUTPUT: /stats/storage.json
+      STORAGE_INTERVAL_MS: "1800000"
+    volumes:
+      - /volume1/music:/music:ro
+      - ./server/storage-agent.js:/agent/storage-agent.mjs:ro
+      - jobbi-storage-stats:/stats:rw
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 192m
+    pids_limit: 64
+    tmpfs:
+      - /tmp:size=16m
+
+volumes:
+  jobbi-storage-stats: {}
+  jobbi-social-data: {}
+

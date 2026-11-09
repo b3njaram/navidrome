@@ -1,0 +1,47 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.jobbisoft.music'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.jobbisoft.music'
+        minSdk 26
+        targetSdk 35
+        versionCode 3
+        versionName '1.1.0'
+    }
+
+    signingConfigs {
+        production {
+            storeFile file(System.getenv('ANDROID_KEYSTORE_PATH') ?: 'release-signing.jks')
+            storePassword (System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: '')
+            keyAlias (System.getenv('ANDROID_KEY_ALIAS') ?: '')
+            keyPassword (System.getenv('ANDROID_KEY_PASSWORD') ?: '')
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.production
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug { applicationIdSuffix '.debug' }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildFeatures { buildConfig true }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.webkit:webkit:1.14.0'
+    implementation 'androidx.media3:media3-exoplayer:1.11.1'
+    implementation 'androidx.media3:media3-session:1.11.1'
+    implementation 'androidx.media3:media3-common:1.11.1'
+    implementation 'com.google.guava:guava:33.3.1-android'
+}

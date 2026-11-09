@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false" />
+  <!-- Existing private Tailscale/LAN preview only. Use HTTPS for public domains. -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain>nasjobbi</domain>
+    <domain>192.168.1.20</domain>
+  </domain-config>
+</network-security-config>

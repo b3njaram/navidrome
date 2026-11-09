@@ -1,0 +1,123 @@
+# Jobbi Music — Production security and acceptance gate
+
+> Status: **main-source candidate; Cloudflare production cutover is separate and requires passing live NAS checks below.**
+> The current Navidrome service (port 4533) remains the music database, Subsonic API,
+> and instant rollback destination.
+
+## System boundaries
+
+- `jobbi-music`: Node application, runs as unprivileged `node`, read-only root filesystem, dropped Linux capabilities, no Docker socket, no direct read or write access to music files.
+- `jobbi-storage-agent`: single-purpose container running as UID 0 **without capabilities and without networking** because the Synology music folder is root-owned and mode 0700. It mounts `/volume1/music` read-only and only writes a nonsensitive aggregate JSON snapshot into a separate Docker volume; it cannot modify music or use the Docker API. The main app mounts that JSON cache read-only.
+- Existing Navidrome, slskd and Soulseek downloader containers remain unchanged. Navidrome user-scoped authentication keeps each listener's favorites and playlists separate. Authenticated listeners may search Soulseek and import audio through quota-limited, validated API endpoints. Direct unrestricted downloader controls remain administrator-only.
+- Passwords are never committed to GitHub. Application sessions are process-memory-only, with randomly generated cookie IDs, HTTP-only SameSite cookies and AES-GCM encrypted password storage in the in-memory session map. Session keys are rotated on restart, which signs everyone out. State-changing endpoints require per-session CSRF tokens and origin checks.
+
+## Release blockers that must be addressed on the actual NAS
+
+- [ ] **Navidrome backend version and security patches:** Official release v0.64.2 (2026-09-24) follows v0.64.1, which fixed five security vulnerabilities involving Subsonic authentication, artwork, playlists, player ownership, and cross-user libraries. v0.64.0 also fixed an SQL injection vulnerability in the native API. Before enabling the public frontend, check the actually running NAS container version with `docker exec navidrome-navidrome-1 /app/navidrome --version` or inspect startup logs; require a reviewed release with these fixes. **Do not blindly pull `latest` or replace the Navidrome container.** First back up its database and music, and review the release's breaking internal-ID migration notes. References: https://github.com/navidrome/navidrome/releases and https://github.com/navidrome/navidrome/security/advisories/GHSA-hm54-32q6-3rcr.
+- [ ] Rotate the previously disclosed administrator password and reauthenticate all test devices.
+- [ ] Backup and verify restore for `/volume1/docker/navidrome`, `/volume1/music`, and the slskd/downloader configuration and relevant volumes. Confirm backups are available outside the NAS.
+- [ ] Confirm Cloudflare Tunnel serves `https://music-preview.jobbisoft.com.mx` using HTTPS. Configure `PUBLIC_HTTPS=true` *on the public HTTPS deployment*, then redeploy only Jobbi Music. Do not expose password sign-in over public HTTP.
+- [ ] Set an appropriate Cloudflare Access policy including MFA for administrators. Avoid allowing public self-registration. Test policy enforcement for the `/api/admin/*` routes.
+- [ ] Verify the existing admin's Navidrome `adminRole` is `true`, and the admin username is listed in `ADMIN_USERS` in the local NAS `.env`. The allowlist alone **never** elevates someone to administrator.
+- [ ] Check the `jobbi-storage-agent` volume scan status and that music size, filesystem total and free bytes match the NAS dashboard. Capacity includes other files on that volume; snapshot scans can be stale for up to 30 minutes.
+- [ ] Navidrome native user-management API compatibility gate: initially keep `ENABLE_ACCOUNT_MANAGEMENT=false`. Test `/auth/login` (or `/api/authenticate`), native `GET /api/user` and `POST /api/user` against the *installed* Navidrome version with an isolated disposable listener account. Confirm that the new listener has no admin privileges and can log in. Then, after backup, verify deletion of **that disposable listener only**. Only then set `ENABLE_ACCOUNT_MANAGEMENT=true`; leave disabled if any step fails. The native API is undocumented and can change across Navidrome upgrades.
+- [ ] Validate actual slskd search results and search timeouts, authorized file selection, transfer progress, downloader metadata, completed import into `/volume1/music`, and Navidrome scan. Never assume mocked tests prove that an external peer has an available file.
+- [ ] Verify the original Navidrome UI remains reachable locally through Tailscale for administrators, Subsonic clients retain access to port 4533, and rollback route can be restored immediately.
+
+## Social acceptance and privacy gate
+
+- [ ] Back up the persistent `jobbi-social-data` PostgreSQL volume and securely retain the `SOCIAL_DB_PASSWORD` value in the NAS-only `.env`. Never use `docker compose down -v` during upgrades.
+- [ ] Create two disposable regular Navidrome users. Test friend request approval, friend removal, discoverable/private profiles, avatar upload/removal and mobile layout.
+- [ ] Create a private social playlist. Verify an unrelated logged-in user receives HTTP 404 for its details, even with a direct link. A friend should also be denied until explicitly invited.
+- [ ] Send a playlist invitation (at creation and afterward), verify it does not grant access until accepted; test decline, revoke, edit/listen permission changes, attribution and removal.
+- [ ] Switch a playlist public and verify only authenticated users can view it; switch it back to private and verify access is revoked for uninvited users.
+- [ ] Verify profile statistics show created playlists and songs added without exposing private playlists or hidden contributions to unauthorized viewers.
+- [ ] Confirm both friends must opt into blend creation; refreshing works, and opting out removes shared blend data.
+- [ ] Import an existing Navidrome playlist as a social copy and verify that collaboration does not mutate the original Navidrome playlist.
+- [ ] Verify music playback uses each listener's existing Navidrome permissions; social sharing must never bypass Navidrome authorization.
+- [ ] Test database recovery using a restored social database volume and the original database password in an isolated test environment.
+
+## User acceptance test matrix — run on desktop Chrome and mobile Safari
+
+| Area | Administrator | Listener |
+| --- | --- | --- |
+| Login/log out | correct credentials, wrong credentials, throttling, CSRF | same |
+| Navigation and mobile | Home, Library, Search, Settings, Admin | Home, Library, Search, Settings only |
+| Home/Library | Albums, artists, filters, paging, empty/error states | same, limited by Navidrome libraries |
+| Playback | Start, pause, seek, next/previous, repeat, shuffle, long track, media controls | same |
+| Audio profiles | Original/lossless when playable, 320 kbps, 128 kbps | same |
+| Songs | cover art, lyrics, stars, scrobbles, queue, artwork fallback | same |
+| Playlists | Create, rename, add/remove, delete with confirmation | own playlists |
+| Soulseek | Search, peer delay, imports and downstream transfer diagnostics | bounded search and direct imports, own progress only; unrestricted downloader controls denied |
+| Admin panel | User list, user role, volume usage, filesystem available space | all routes 403; no UI controls |
+| Account lifecycle | Create disposable listener, login as it, verify admin denied, delete only that listener | cannot create, elevate or delete users |
+| Security | Tampered CSRF, cross-origin, unauthorized cookie, disabled account feature flag, session expiry, rate limits | same |
+| Reliability | Restart Jobbi Music container, confirm sign-in needed; music files remain unchanged | same |
+
+## Tests run in CI
+
+- `npm run check` — Node syntax.
+- `npm test` — server API, authentication, role authorization, CSRF, native user management, NAS scan, slskd asynchronous behavior, streaming profiles.
+- `npm audit --omit=dev --audit-level=high` — fail on high/critical runtime dependency advisories.
+- `npm run build` — Vite production bundle.
+- `docker build` — reproducible build compatibility (dependency lockfile still recommended).
+- `npm run test:e2e` — browser-only functional smoke tests for desktop Chromium and iPhone WebKit using **mock API responses**. Browser test screenshots and traces are kept on failure.
+
+Passing mock tests is **not** the same as testing the real NAS, Cloudflare identity controls, real library, or music file integrity.
+
+## Social feature release gate
+
+This upgrade introduces one **additional** persistent database, `jobbi-social-db`, with an isolated `jobbi-social-data` Docker volume. Navidrome, slskd, and existing music files remain unchanged. The public domain must **not** be switched solely because GitHub CI passes.
+
+- [ ] Generate and retain `SOCIAL_DB_PASSWORD` using `sh scripts/enable-social.sh`. It is local to the NAS and never committed, printed, or provided to a browser. Verify PostgreSQL has no published host port.
+- [ ] Back up `jobbi-social-db` using `pg_dump` and verify its restore to an isolated throwaway database. Keep an off-NAS copy.
+- [ ] Sign in with **two real non-admin Navidrome accounts**, ensuring both can access Community but neither can access `/api/admin/*` or Soulseek administrative routes.
+- [ ] Verify pending, accepted, declined, and revoked friend requests. Ensure an unsolicited request does not reveal private playlists.
+- [ ] Create a private social playlist with user A; verify user B receives 404 before invitation, even if they're friends. Invite B as viewer and confirm B receives a pending invitation, not immediate access. Have B accept; verify view-only, change to editor and verify B can add/remove tracks. Revoke access; B must get 404 again.
+- [ ] Change an A-owned social playlist to public; verify another signed-in user can view but cannot edit. Switch back to private; verify an uninvited user loses access. Test direct `?community=<id>` links through the Cloudflare hostname.
+- [ ] Import a personal Navidrome playlist into social sharing; confirm the original Navidrome playlist is unchanged. Contributors must be credited for social playlist additions.
+- [ ] Verify user profiles show created playlist counts and contributed-song counts **only for social playlists the viewer is authorized to see**. Hidden profiles and avatars must not be accessible to nonfriends.
+- [ ] Upload PNG, JPEG, and WebP avatars below 1 MB; reject SVG, malformed images, and oversize uploads. Verify mobile and desktop rendering and deletion.
+- [ ] Opt user A into favorite sharing; ensure B cannot blend until B explicitly opts in. Create and refresh a private blend, then opt out or unfriend and confirm the blend disappears and no previous favorites remain exposed.
+- [ ] Test social database restarts and app rebuilds: all friends, albums of social playlists, avatars and invitations must persist. Do not run `docker compose down -v`.
+- [ ] Evaluate whether existing Navidrome accounts are discoverable only after each user's initial Jobbi Music sign-in (current design). Public playlists are visible to **signed-in** Jobbi Music users, not unauthenticated internet visitors.
+
+The GitHub social tests include a real temporary PostgreSQL service, backend route privacy checks, and desktop/iPhone browser smoke tests using mocked playback APIs. Live NAS and Cloudflare tests must still be performed.
+
+## Safe preview update without Synology host Git
+
+From a NAS root shell, after verifying a clean working tree:
+
+```sh
+cd /volume1/docker/jobbi-music-source
+docker run --rm -v "$PWD:/repo" -w /repo alpine/git:latest -c safe.directory=/repo pull --ff-only origin feature/jobbi-music-preview
+cd jobbi-music
+docker compose -f compose.yaml config --quiet
+docker compose -f compose.yaml up -d --build
+docker compose -f compose.yaml ps
+curl -fsS http://127.0.0.1:3131/api/status
+docker compose -f compose.yaml logs --tail=40 jobbi-storage-agent
+```
+
+Only the new Jobbi Music and storage-agent services are changed by these commands.
+
+Then run the non-destructive hardening audit:
+```sh
+sh scripts/nas-security-audit.sh
+```
+
+It checks read-only Docker confinement, absence of the Docker socket, scanner network isolation, unauthenticated admin/Soulseek denial, cookie mode, and whether unvalidated account provisioning is disabled. It does not prove the entire application or NAS is free from vulnerabilities; manual penetration testing and live acceptance tests remain essential.
+
+
+## Production promotion and rollback
+
+When *all* release blockers pass and production promotion is approved:
+1. In the existing Cloudflare Tunnel published application for `music.jobbisoft.com.mx`, change the service origin from `http://192.168.1.20:4533` to `http://192.168.1.20:3131`. Cloudflare continues to terminate TLS.
+2. Test login as both roles, stream full audio, favorite, playlist, album artwork, search, and admin storage status from both mobile and desktop.
+3. Leave the original Navidrome Docker container and library completely intact. Continue operating on 4533 internally for Subsonic API and native administration.
+4. **Rollback:** Restore the Cloudflare route to `http://192.168.1.20:4533`. No database or music file restoration is needed because the new frontend uses the same existing Navidrome system.
+
+**Compatibility:** Jobbi Music now forwards `/rest/*` requests at the original hostname to Navidrome's fixed backend origin, preserving Subsonic/OpenSubsonic clients, including existing credentials, POST requests, streaming and byte ranges. Navidrome—not Jobbi Music—still authenticates these clients. Test an existing mobile Subsonic client against the actual production hostname **before** and **after** the route change. If Cloudflare Access MFA is enabled for the hostname, arrange an explicitly reviewed path-specific exception or separate service hostname for legacy clients, because many music clients cannot solve interactive browser MFA challenges. Do **not** bypass authentication in Navidrome. 
+
+
+Do not switch to production automatically on every commit. Use a protected deployment branch or manual production approval. Never attach `/var/run/docker.sock` or a privileged shell endpoint to the web server.
