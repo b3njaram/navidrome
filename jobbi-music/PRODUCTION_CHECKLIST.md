@@ -24,6 +24,19 @@
 - [ ] Validate actual slskd search results and search timeouts, authorized file selection, transfer progress, downloader metadata, completed import into `/volume1/music`, and Navidrome scan. Never assume mocked tests prove that an external peer has an available file.
 - [ ] Verify the original Navidrome UI remains reachable locally through Tailscale for administrators, Subsonic clients retain access to port 4533, and rollback route can be restored immediately.
 
+## Social acceptance and privacy gate
+
+- [ ] Back up the persistent `jobbi-social-data` PostgreSQL volume and securely retain the `SOCIAL_DB_PASSWORD` value in the NAS-only `.env`. Never use `docker compose down -v` during upgrades.
+- [ ] Create two disposable regular Navidrome users. Test friend request approval, friend removal, discoverable/private profiles, avatar upload/removal and mobile layout.
+- [ ] Create a private social playlist. Verify an unrelated logged-in user receives HTTP 404 for its details, even with a direct link. A friend should also be denied until explicitly invited.
+- [ ] Invite a friend with read-only access, confirm they cannot edit; upgrade to edit permission, confirm their additions are attributed to them, then revoke access and confirm immediate denial.
+- [ ] Switch a playlist public and verify only authenticated users can view it; switch it back to private and verify access is revoked for uninvited users.
+- [ ] Verify profile statistics show created playlists and songs added without exposing private playlists or hidden contributions to unauthorized viewers.
+- [ ] Confirm both friends must opt into blend creation; refreshing works, and opting out removes shared blend data.
+- [ ] Import an existing Navidrome playlist as a social copy and verify that collaboration does not mutate the original Navidrome playlist.
+- [ ] Verify music playback uses each listener's existing Navidrome permissions; social sharing must never bypass Navidrome authorization.
+- [ ] Test database recovery using a restored social database volume and the original database password in an isolated test environment.
+
 ## User acceptance test matrix — run on desktop Chrome and mobile Safari
 
 | Area | Administrator | Listener |
