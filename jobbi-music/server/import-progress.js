@@ -14,23 +14,25 @@ export function downloadRows(raw){
 }
 export function findTransfer(importRow,raw){
   const rows=downloadRows(raw),ourId=text(importRow.downloader_job_id);
-  const base=tidy(importRow.filename);
-  const peer=text(importRow.peer_username).toLowerCase();
+  const jobId=row=>text(row?.job_id||row?.jobId||row?.id||row?.downloadId);
+  if(ourId){
+    const exact=rows.find(row=>jobId(row)===ourId);
+    if(exact)return exact;
+    // If the downloader supplies identifiers, an unrelated transfer with a
+    // matching basename must never be confused with this listener's job.
+    if(rows.some(row=>jobId(row)))return null;
+  }
+  const base=tidy(importRow.filename),peer=text(importRow.peer_username).toLowerCase();
   const matching=rows.filter(row=>{
     if(!row||typeof row!=='object')return false;
-    const id=text(row.job_id||row.jobId||row.id||row.downloadId);
-    if(ourId&&id&&id===ourId)return true;
     const filename=tidy(row.filename||row.fileName||row.path||row.name||row.file?.filename);
     if(!filename||filename!==base)return false;
     const actualPeer=text(row.username||row.peer||row.user).toLowerCase();
     return !peer||!actualPeer||actualPeer===peer;
   });
-  // Prefer a stable job identifier over potentially unrelated files of same name.
-  if(ourId){
-    const same=matching.find(row=>text(row.job_id||row.jobId||row.id||row.downloadId)===ourId);
-    if(same)return same;
-  }
-  return matching[0]||null;
+  // If neither the job identifier nor a peer is reported, we only accept a
+  // unique filename match. Ambiguous matches remain explicitly unconfirmed.
+  return matching.length===1?matching[0]:null;
 }
 export function transferStage(row,found,upstreamHealthy){
   if(!found){
