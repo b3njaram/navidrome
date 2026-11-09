@@ -5,7 +5,7 @@ set -eu
 umask 077
 ROOT=/volume1/docker/jobbi-music-source
 APP="$ROOT/jobbi-music"
-BACKUPS="$ROOT/.production-backups"
+BACKUPS="/volume1/docker/jobbi-music-backups"
 LOCK="$ROOT/.git/jobbi-auto-deploy.lock"
 DOMAIN=music.jobbisoft.com.mx
 cd "$APP" || exit 1
