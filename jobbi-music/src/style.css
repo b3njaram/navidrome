@@ -401,3 +401,18 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
     transition-duration:.01ms!important;scroll-behavior:auto!important
   }
 }
+
+
+/* Historic import attempts are grouped, never silently deleted. */
+.music-import-aux{display:inline-flex;align-items:center;gap:6px;padding:9px 11px;
+  font-size:11px;font-weight:700;color:#dec8d7;border:1px solid #755769;
+  background:#493346;border-radius:9px;min-height:36px;
+  transition:background .2s,transform .2s}
+.music-import-aux:hover{background:#5a3a55}
+.music-import-aux:active{transform:scale(.96)}
+.request-status.existing{color:#efdee9;background:#544058;border-color:#866483}
+@media(max-width:480px){
+  .music-import-footer{align-items:stretch}
+  .music-import-message{flex:1 0 100%}
+  .music-import-play,.music-import-aux{flex:1 1 auto;justify-content:center;min-height:40px}
+}
