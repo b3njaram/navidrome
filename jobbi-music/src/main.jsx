@@ -98,13 +98,14 @@ function App() {
   const [nowPlayingOpen,setNowPlayingOpen]=useState(false),[nowPlayingMode,setNowPlayingMode]=useState('artwork'),[lyricsLoading,setLyricsLoading]=useState(false);
   const [user,setUser]=useState(undefined),[page,setPage]=useState(()=>{const id=new URLSearchParams(window.location.search).get('community');return id&&/^[0-9a-f-]{36}$/i.test(id)?{id:'social',idValue:id}:{id:'home'}}),[home,setHome]=useState(null),[loading,setLoading]=useState(false),[detail,setDetail]=useState(null),[starred,setStarred]=useState(new Set());
   const [q,setQ]=useState(''),[results,setResults]=useState(null),[searchTab,setSearchTab]=useState('library'),[remote,setRemote]=useState(null),[remoteBusy,setRemoteBusy]=useState(false),[remoteStatus,setRemoteStatus]=useState(null),[formatFilter,setFormatFilter]=useState('all'),[sortRemote,setSortRemote]=useState('relevance');
+  const [invidious,setInvidious]=useState(null),[invidiousBusy,setInvidiousBusy]=useState(false),[invidiousSong,setInvidiousSong]=useState(null),[permitVideo,setPermitVideo]=useState(false),[importWorker,setImportWorker]=useState({importEnabled:false}),[invidiousJobs,setInvidiousJobs]=useState([]);
   const [quality,setQuality]=useState(()=>{try{const v=localStorage.getItem('jobbi-quality');return ['original','balanced','saver'].includes(v)?v:'balanced'}catch{return 'balanced'}});
   const activeAudioTrack=useRef(null);
   const androidApp=isNativeAndroid();
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const audio=useRef(null);
   const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false),[importSong,setImportSong]=useState(null),[importArtist,setImportArtist]=useState(''),[importTitle,setImportTitle]=useState(''),[importBusy,setImportBusy]=useState(false),[importNotice,setImportNotice]=useState('');
-  const [musicRequests,setMusicRequests]=useState([]),[adminMusicRequests,setAdminMusicRequests]=useState([]),[requestBusy,setRequestBusy]=useState('');
+  const [musicImports,setMusicImports]=useState([]);
   const [libraryAlbums,setLibraryAlbums]=useState([]),[libraryArtists,setLibraryArtists]=useState([]),[libraryOffset,setLibraryOffset]=useState(0),[libraryMore,setLibraryMore]=useState(true),[libraryLoading,setLibraryLoading]=useState(false);
   const [adminOverview,setAdminOverview]=useState(null),[adminUsers,setAdminUsers]=useState(null),[adminLoading,setAdminLoading]=useState(false),[adminBusy,setAdminBusy]=useState(false);
   const [accountForm,setAccountForm]=useState({username:'',name:'',email:'',password:''}),[adminNotice,setAdminNotice]=useState('');
@@ -296,22 +297,42 @@ function App() {
     setImportTitle(parts.length?parts.join(' - '):basename);
     setImportNotice('');
   };
+  const refreshMusicImports=async()=>{
+    try{
+      const result=await api('/api/music-imports');
+      setMusicImports(result.items||[]);
+    }catch(e){setError(e.message)}
+  };
+  const refreshInvidiousJobs=async()=>{
+    try{
+      const result=await api('/api/invidious/jobs');
+      setInvidiousJobs(result.jobs||[]);
+    }catch{}
+  };
   const submitImport=async e=>{
     e.preventDefault();if(!importSong||!importArtist.trim()||!importTitle.trim())return;
     setImportBusy(true);setError('');
     try{
-      const details={username:importSong.username,filename:importSong.filename,size:Number(importSong.size),
-        artist:importArtist.trim(),title:importTitle.trim()};
-      if(user.admin){
-        await post('/api/soulseek/download',details);
-        setImportNotice('Transfer queued on your NAS. It will appear after importing and indexing.');
-        await refreshDownloads();
-      }else{
-        await post('/api/music-requests',details);
-        setImportNotice('Request sent. An administrator must approve the NAS import before the song becomes available.');
-        await refreshMusicRequests();
-      }
+      await post('/api/music-imports',{
+        username:importSong.username,filename:importSong.filename,size:Number(importSong.size),
+        artist:importArtist.trim(),title:importTitle.trim()
+      });
       setImportSong(null);
+      setImportNotice('Import queued for your shared NAS library. Your new song will appear after indexing.');
+      await refreshMusicImports();
+      if(user.admin)await refreshDownloads();
+    }catch(e){setError(e.message)}finally{setImportBusy(false)}
+  };
+  const submitInvidious=async e=>{
+    e.preventDefault();if(!invidiousSong||!permitVideo)return;
+    setImportBusy(true);setError('');
+    try{
+      await post('/api/invidious/import',{
+        videoId:invidiousSong.videoId,title:invidiousSong.title,artist:invidiousSong.artist,authorized:true
+      });
+      setImportNotice('Audio import queued from the alternate source. You can track progress below.');
+      setInvidiousSong(null);setPermitVideo(false);
+      await refreshInvidiousJobs();
     }catch(e){setError(e.message)}finally{setImportBusy(false)}
   };
   const scanLibrary=async()=>{
@@ -319,46 +340,36 @@ function App() {
     try{await post('/api/library/scan',{});setImportNotice('Library scan requested. New songs may take a moment to appear.');}
     catch(e){setError(e.message)}
   };
-  const refreshMusicRequests=async()=>{
-    try{
-      if(user?.admin){
-        const result=await api('/api/music-requests/admin');
-        setAdminMusicRequests(result.requests||[]);
-      }else{
-        const result=await api('/api/music-requests');
-        setMusicRequests(result.requests||[]);
-      }
-    }catch(e){setError(e.message)}
-  };
-  const reviewMusicRequest=async(id,decision)=>{
-    setRequestBusy(id+decision);setError('');
-    try{
-      await post(`/api/music-requests/${encodeURIComponent(id)}/decision`,{decision});
-      setImportNotice(decision==='approve'?'Music import queued on the NAS.':'Request declined.');
-      await refreshMusicRequests();
-      if(decision==='approve')await refreshDownloads();
-    }catch(e){setError(e.message);await refreshMusicRequests()}
-    finally{setRequestBusy('')}
-  };
   useEffect(()=>{
     if(!user?.username||page.id!=='search'||searchTab!=='soulseek')return;
     let active=true;
     api('/api/soulseek/status').then(d=>{if(active)setRemoteStatus(d)})
       .catch(()=>{if(active)setRemoteStatus({configured:false,message:'Soulseek status unavailable'})});
+    api('/api/invidious/status').then(d=>{if(active)setImportWorker(d)}).catch(()=>{});
     const update=()=>{
-      if(user.admin){
-        api('/api/soulseek/downloads').then(d=>{if(active)setDownloads(d)}).catch(()=>{});
-        api('/api/music-requests/admin').then(d=>{if(active)setAdminMusicRequests(d.requests||[])}).catch(()=>{});
-      }else{
-        api('/api/music-requests').then(d=>{if(active)setMusicRequests(d.requests||[])}).catch(()=>{});
-      }
+      api('/api/music-imports').then(d=>{if(active)setMusicImports(d.items||[])}).catch(()=>{});
+      api('/api/invidious/jobs').then(d=>{if(active)setInvidiousJobs(d.jobs||[])}).catch(()=>{});
+      if(user.admin)api('/api/soulseek/downloads').then(d=>{if(active)setDownloads(d)}).catch(()=>{});
     };
     update();
     const timer=setInterval(update,30000);
     return()=>{active=false;clearInterval(timer)};
   },[user?.username,user?.admin,page.id,searchTab]);
 
-  async function remoteSearch(){if(!q.trim())return;setRemoteBusy(true);setRemote(null);setError('');try{setRemote(await post('/api/soulseek/search',{query:q}));}catch(e){setError(e.message)}finally{setRemoteBusy(false)}}
+  async function remoteSearch(){
+    const query=q.trim();if(query.length<2)return;
+    setRemoteBusy(true);setInvidiousBusy(true);setRemote(null);setInvidious(null);setError('');
+    const soulseek=post('/api/soulseek/search',{query})
+      .then(d=>setRemote(d))
+      .catch(e=>setRemote({results:[],total:0,peerCount:0,failed:true,
+        message:'Soulseek could not complete this search: '+e.message}))
+      .finally(()=>setRemoteBusy(false));
+    const alternate=api('/api/invidious/search?q='+encodeURIComponent(query))
+      .then(d=>setInvidious(d))
+      .catch(e=>setInvidious({results:[],available:false,message:'Invidious fallback unavailable: '+e.message}))
+      .finally(()=>setInvidiousBusy(false));
+    await Promise.allSettled([soulseek,alternate]);
+  }
   if(user===undefined)return <div className="loading-page"><div className="brand-symbol"><Waves/></div><span>Loading your music...</span></div>;
   if(!user)return <Login onLogin={setUser}/>;
   let main=null;
