@@ -384,7 +384,7 @@ app.delete('/api/admin/accounts/:id',mustAuth,mustAdmin,mustBeLimited,route(asyn
 app.use('/api/social',createSocialRouter({mustAuth,subsonic}));
 app.use('/api/music-requests',createMusicRequestsRouter({mustAuth,mustAdmin,downloader:DOWNLOADER}));
 app.use('/api/music-imports',createMusicImportRouter({
-  mustAuth,downloader:DOWNLOADER,statsFile:STORAGE_STATS_PATH
+  mustAuth,downloader:DOWNLOADER,statsFile:STORAGE_STATS_PATH,subsonic
 }));
 
 // Available to the designated music admin only. No direct browser access to
