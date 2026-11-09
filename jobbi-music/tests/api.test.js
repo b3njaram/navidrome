@@ -244,7 +244,7 @@ test('regular user imports Soulseek audio immediately with no approval flow',asy
   assert.deepEqual(received.download,track);
   const history=await fetch(base+'/api/music-imports',{headers:{cookie:listenerCookie}});
   assert.equal(history.status,200);
-  assert.ok((await history.json()).items.some(x=>x.title==='Test Song'&&x.status==='queued'));
+  assert.ok((await history.json()).items.some(x=>x.title==='Test Song'&&x.stage==='queued'&&x.label.startsWith('Queued')));
   const duplicate=await fetch(base+'/api/music-imports',{
     method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json','x-csrf-token':listenerCsrfToken},
     body:JSON.stringify(track)
