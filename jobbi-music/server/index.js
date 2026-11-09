@@ -9,6 +9,7 @@ import { searchSlskd, slskdConnection } from './slskd.js';
 import { nativeAccounts, NativeAdminError, validateNewAccount } from './admin-native.js';
 import { subsonicProxy } from './navidrome-proxy.js';
 import { normalizeLyrics } from './lyrics-normalize.js';
+import { androidLatest } from './android-update.js';
 import { createSocialRouter } from './social-routes.js';
 import { promises as fs } from 'node:fs';
 
@@ -116,6 +117,7 @@ app.post('/api/login', route(async(req,res)=> {
 app.post('/api/logout', (req,res)=> {const token=cookies(req)[cookieName]; if(token)sessions.delete(token);res.clearCookie(cookieName,{path:'/',secure:SECURE_COOKIE,sameSite:'strict'});res.json({ok:true});});
 app.get('/api/session', (req,res)=>{const user=sess(req);res.json(user?{username:user.username,admin:user.admin,csrfToken:user.csrfToken}:null);});
 app.get('/api/status',(req,res)=>res.json({ok:true,service:'Jobbi Music'}));
+app.get('/api/android/latest',route(async(req,res)=>{res.setHeader('Cache-Control','public, max-age=1800');res.json(await androidLatest());}));
 // Keep legacy Subsonic clients working if the public hostname is moved to Jobbi Music.
 // This pass-through is fixed-origin, does not expose native admin endpoints,
 // and Navidrome authenticates each client independently.
