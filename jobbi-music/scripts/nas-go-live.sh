@@ -16,12 +16,13 @@ command -v docker >/dev/null || { echo 'Docker is not available';exit 1; }
 command -v curl >/dev/null || { echo 'curl is not available';exit 1; }
 if [ "${JOBBI_GO_LIVE_ALREADY_LOCKED:-0}" = '1' ];then
   [ -d "$LOCK" ] || { echo 'Expected parent updater lock not found';exit 1; }
+  trap 'stty echo < /dev/tty 2>/dev/null || true' EXIT HUP INT TERM
 else
   if ! mkdir "$LOCK" 2>/dev/null;then
     echo 'Another Jobbi updater is running, or a stale lock exists. No changes made.'
     exit 1
   fi
-  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT HUP INT TERM
+  trap 'stty echo < /dev/tty 2>/dev/null || true; rmdir "$LOCK" 2>/dev/null || true' EXIT HUP INT TERM
 fi
 mkdir -p "$BACKUPS"
 chmod 700 "$BACKUPS"
