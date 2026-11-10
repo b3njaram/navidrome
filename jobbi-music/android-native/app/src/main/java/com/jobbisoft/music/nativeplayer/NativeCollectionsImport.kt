@@ -221,7 +221,8 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
     suspend fun applySong(collectionId:String,row:NativeCollectionRow,song:Song){
         val col=collections.first{it.id==collectionId}
         if(col.kind=="favorites")JobbiApi.setFavorite(song.id,true)
-        else JobbiApi.addToNativePlaylist(playlistFor(collectionId),song.id)
+        else JobbiApi.editPlaylist(playlistFor(collectionId),
+            JSONObject().put("addSongId",song.id))
         editRow(collectionId,row.position){
             it.copy(status=if(col.kind=="favorites")"hearted" else "added",
                 songId=song.id,note=if(col.kind=="favorites")
