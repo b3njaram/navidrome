@@ -708,8 +708,8 @@ test('Apple Music Favorite Songs userscript captures current track-list-item row
       <span data-testid="track-duration">${duration}</span>
     </div>`;
   await page.route('https://music.apple.com/**',route=>route.fulfill({
-    status:200,contentType:'text/html',
-    body:`<!doctype html><html><body><main><h1>Favorite Songs</h1>
+    status:200,contentType:'text/html; charset=utf-8',
+    body:`<!doctype html><html><head><meta charset="utf-8"></head><body><main><h1>Favorite Songs</h1>
       <div id="scrollable-page" style="height:190px;overflow-y:auto">
         <div id="track-collection">${rows.slice(0,2).map((x,i)=>row(...x,i)).join('')}</div>
         <div style="height:650px"></div>
