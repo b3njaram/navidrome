@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -85,6 +86,7 @@ fun ServerDiscoverScreen(onBack:()->Unit){
     var error by remember{mutableStateOf("")}
     var selected by remember{mutableStateOf<ServerCandidate?>(null)}
     var history by remember{mutableStateOf<List<JSONObject>>(emptyList())}
+    val invidious=remember{InvidiousUiState()}
 
     fun refreshHistory(){
         scope.launch{
@@ -96,6 +98,8 @@ fun ServerDiscoverScreen(onBack:()->Unit){
     }
     LaunchedEffect(Unit){
         refreshHistory()
+        invidious.loadStatus()
+        invidious.refreshJobs()
         try{
             val status=JobbiApi.getObject("/api/soulseek/status")
             sourceMessage=status.optString("message").ifBlank{
@@ -111,10 +115,13 @@ fun ServerDiscoverScreen(onBack:()->Unit){
             Column(Modifier.weight(1f)){
                 Text("Find new music",style=MaterialTheme.typography.headlineSmall,
                     fontWeight=FontWeight.Bold)
-                Text("Search Soulseek · import to your private NAS library",
+                Text("Search Soulseek + Invidious · import to your NAS",
                     style=MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick=::refreshHistory){Icon(Icons.Rounded.Refresh,"Refresh import history")}
+            IconButton(onClick={
+                refreshHistory()
+                scope.launch{invidious.refreshJobs();invidious.loadStatus()}
+            }){Icon(Icons.Rounded.Refresh,"Refresh import history")}
         }
         if(sourceMessage.isNotBlank())Text(sourceMessage,
             Modifier.padding(horizontal=19.dp,vertical=4.dp),
@@ -130,15 +137,27 @@ fun ServerDiscoverScreen(onBack:()->Unit){
             FilledIconButton(onClick={
                 scope.launch{
                     busy=true;error="";results=emptyList()
+                    val term=query.trim()
                     try {
-                        val response=JobbiApi.post("/api/soulseek/search",
-                            JSONObject().put("query",query.trim()))
-                        results=parseServerCandidates(response)
-                        sourceMessage=response.optString("message").ifBlank{
-                            "${results.size} recordings found. FLAC shown first."
+                        // Both are independent: an unavailable Soulseek server must not
+                        // suppress working Invidious discovery, and vice versa.
+                        coroutineScope {
+                            launch {
+                                try {
+                                    val response=JobbiApi.post("/api/soulseek/search",
+                                        JSONObject().put("query",term))
+                                    results=parseServerCandidates(response)
+                                    sourceMessage=response.optString("message").ifBlank{
+                                        "${results.size} Soulseek recordings found. FLAC first."
+                                    }
+                                }catch(e:Exception){
+                                    error="Soulseek unavailable: "+(e.message?:"Search failed")+
+                                        ". Check the Invidious fallback below."
+                                }
+                            }
+                            launch {invidious.search(term)}
                         }
-                    }catch(e:Exception){error=e.message?:"Search unavailable"}
-                    finally{busy=false}
+                    }finally{busy=false}
                 }
             },enabled=query.trim().length>=2&&!busy,modifier=Modifier.size(50.dp)){
                 Icon(Icons.Rounded.Search,"Search Soulseek")
@@ -153,9 +172,9 @@ fun ServerDiscoverScreen(onBack:()->Unit){
                 item{
                     ElevatedCard(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp)){
                         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
-                            Text("Download music directly to your NAS",
+                            Text("Find music across two sources",
                                 style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
-                            Text("Search above, inspect the filename and quality, then explicitly queue each recording. Imported songs appear after Navidrome indexes them.")
+                            Text("Soulseek recordings appear first. Invidious is the alternate discovery source when peer searches fail or have no matches. Queue recordings only when authorized.")
                         }
                     }
                 }
@@ -182,6 +201,10 @@ fun ServerDiscoverScreen(onBack:()->Unit){
                         Icon(Icons.Rounded.Download,"Choose this recording")
                     }
                 }
+            }
+            item{
+                Spacer(Modifier.height(8.dp))
+                NativeInvidiousResults(invidious)
             }
             item{
                 Spacer(Modifier.height(12.dp))

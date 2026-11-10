@@ -16,6 +16,7 @@ The debug application ID is `com.jobbisoft.music.nativeplayer.debug`, so this ed
 - Full native queue, seek bar, quality options (original / 320 kbps / 128 kbps), play/pause/previous/next controls.
 - Android Media3 foreground playback, notification/lock-screen/headphone controls, and audio-focus handling.
 - CSV/TSV playlist metadata import from Spotify and Apple Music with checked artist/title matching, FLAC preference, and explicit approval before each Soulseek queue operation.
+- **Invidious fallback** in native server discovery: searches alternate Invidious instances alongside Soulseek, displays authenticated video thumbnails and external watch links; can explicitly queue authorized audio imports if the optional NAS Invidious worker is enabled, with separate import-job progress.
 
 ## Network/security model
 
@@ -24,6 +25,7 @@ The debug application ID is `com.jobbisoft.music.nativeplayer.debug`, so this ed
 - The player can continue in the background while the app process stays active. Restarting the process currently requires signing in again; future versions can add an Android Keystore-backed session persistence mechanism.
 - Streaming, album covers, playlists and imports come from **your existing authenticated server**. No Soulseek API key, database password, or admin token is included in the APK.
 - No arbitrary HTTP endpoints, SSL bypasses, WebView, browser automation, or public file-sharing permissions.
+- Video metadata and thumbnails are retrieved through the authenticated Jobbi Music API. The app only opens verified HTTPS watch links in the Android browser; it does not embed video playback.
 - Import only recordings you own or have permission to obtain.
 
 ## Known beta differences from the web app
