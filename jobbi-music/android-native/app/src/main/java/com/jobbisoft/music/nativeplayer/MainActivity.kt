@@ -41,6 +41,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -169,7 +170,7 @@ private val tabs = listOf(
     Dest("Home", Icons.Rounded.Home),
     Dest("Search", Icons.Rounded.Search),
     Dest("Library", Icons.Rounded.LibraryMusic),
-    Dest("Community", Icons.Rounded.PersonAdd),
+    Dest("Community", Icons.Rounded.Groups),
     Dest("More", Icons.Rounded.MoreHoriz)
 )
 
@@ -728,7 +729,7 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
             Text("Edit my profile")
         }
         FilledTonalButton(onClick={vm.select("Community")},modifier=Modifier.fillMaxWidth()){
-            Icon(Icons.Rounded.PersonAdd,null)
+            Icon(Icons.Rounded.Groups,null)
             Spacer(Modifier.width(8.dp))
             Text("Community & Friends")
         }
