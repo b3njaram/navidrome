@@ -140,14 +140,16 @@ private fun normalized(value:String):String =
 private val alteredEditions=Regex("\\b(live|remix|acoustic|karaoke|instrumental|demo|cover version|cover song|bootleg|concert|slowed|sped up|nightcore|reverb|radio edit|extended mix)\\b")
 private fun safeCandidate(row:NativeCollectionRow,data:JSONObject):ImportCandidate? {
     val all=data.optJSONArray("results")?:return null
-    val title=normalized(row.title),artist=normalized(row.artist)
+    val title=normalized(row.title)
+    val artist=normalized(row.artist)
     if(title.isBlank()||artist.isBlank())return null
     val requested=alteredEditions.findAll(normalized(row.title+" "+row.version))
         .map{it.value}.toSet()
     val candidates=mutableListOf<ImportCandidate>()
     for(i in 0 until all.length()){
         val obj=all.optJSONObject(i)?:continue
-        val file=obj.optString("filename"),peer=obj.optString("username")
+        val file=obj.optString("filename")
+        val peer=obj.optString("username")
         val size=obj.optLong("size")
         val ext=file.substringAfterLast('.',missingDelimiterValue="").lowercase()
         if(peer.isBlank()||size<1024||ext !in listOf("flac","mp3"))continue
@@ -248,7 +250,9 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
     suspend fun checkNext(all:Boolean=false,onlyQueued:Boolean=false){
         if(busy)return
         busy=true;running=true;stop=false
-        var checked=0,passed=0,failed=0
+        var checked=0
+        var passed=0
+        var failed=0
         try{
             val source=collections.firstOrNull{it.id==selected}?:return
             val pending=source.songs.filter {
