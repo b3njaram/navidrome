@@ -4,6 +4,7 @@ import { MoreHorizontal, Album, ArrowDownToLine, ArrowLeft, ArrowRight, Check, C
 import './style.css';
 import SocialSpace from './SocialSpace.jsx';
 import NowPlaying from './NowPlaying.jsx';
+import {preferredDuration,cappedPosition,progressPercent,endedTooEarly} from './player-math.js';
 import './nowplaying.css';
 
 let currentCsrfToken='';
@@ -32,7 +33,7 @@ const nativeCommand=(type,extra={})=>{
 
 const covers = item => item?.coverArt || item?.id;
 const coverUrl = item => covers(item) ? `/api/cover/${encodeURIComponent(covers(item))}` : '';
-const duration = seconds => `${Math.floor((Number(seconds)||0)/60)}:${String(Math.floor((Number(seconds)||0)%60)).padStart(2,'0')}`;
+const duration = seconds => {const x=Number(seconds),s=Math.max(0,Math.floor(Number.isFinite(x)?x:0));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;};
 const greeting = () => {const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
 
 function Art({item, size='normal', className='', round=false}) {
@@ -101,6 +102,7 @@ function App() {
   const [invidious,setInvidious]=useState(null),[invidiousBusy,setInvidiousBusy]=useState(false),[invidiousSong,setInvidiousSong]=useState(null),[permitVideo,setPermitVideo]=useState(false),[importWorker,setImportWorker]=useState({importEnabled:false}),[invidiousJobs,setInvidiousJobs]=useState([]);
   const [quality,setQuality]=useState(()=>{try{const v=localStorage.getItem('jobbi-quality');return ['original','balanced','saver'].includes(v)?v:'balanced'}catch{return 'balanced'}});
   const activeAudioTrack=useRef(null);
+  const earlyEndRecovery=useRef({id:null,attempted:false});
   const androidApp=isNativeAndroid();
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const audio=useRef(null);
@@ -169,7 +171,7 @@ function App() {
     }
     if(shouldPlay)a.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));
     activeAudioTrack.current=currentTrack.id;
-    if(!sameTrack){setPosition(0);setLength(Number(currentTrack.duration||0));}
+    if(!sameTrack){earlyEndRecovery.current={id:currentTrack.id,attempted:false};setPosition(0);setLength(preferredDuration(currentTrack.duration,a.duration));}
   },[currentTrack?.id,quality]);
   useEffect(()=>{
     if(!currentTrack||!nowPlayingOpen||nowPlayingMode!=='lyrics')return;
@@ -211,13 +213,46 @@ function App() {
   useEffect(()=>{if(!currentTrack||!Number.isFinite(length)||length<=0||!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
     try{navigator.mediaSession.setPositionState({duration:length,playbackRate:1,position:Math.max(0,Math.min(length,position))});}catch{}
   },[position,length,currentTrack?.id]);
-  const playTracks=(tracks,index=0)=>{const track=tracks?.[index];if(!track)return;const a=audio.current;if(a){const src=`/api/stream/${encodeURIComponent(track.id)}?quality=${quality}`;if(a.getAttribute('src')!==src){a.src=src;a.load();}a.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}setQueue(tracks);setCurrentIndex(index);};
+  const playTracks=(tracks,index=0)=>{const track=tracks?.[index];if(!track)return;
+    // Only the playback effect changes the source to avoid duplicate loads.
+    if(currentTrack?.id===track.id&&audio.current){audio.current.currentTime=0;audio.current.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}
+    setQueue(tracks);setCurrentIndex(index);
+  };
   const next=()=>{if(!queue.length)return;setCurrentIndex(i=>shuffle?Math.floor(Math.random()*queue.length):repeat?i:(i+1)%queue.length)};
   const prev=()=>{if(!queue.length)return;if(audio.current?.currentTime>3){audio.current.currentTime=0;return;}setCurrentIndex(i=>(i-1+queue.length)%queue.length)};
   const changeQuality=value=>{setQuality(value);try{localStorage.setItem('jobbi-quality',value)}catch{}};
   const saveOffline=track=>nativeCommand('download',{track:{id:track.id,title:track.title||track.name,artist:track.artist,album:track.album,suffix:track.suffix||'mp3'},quality});
   const openNowPlaying=(mode='artwork')=>{if(!currentTrack)return;setNowPlayingMode(mode);setNowPlayingOpen(true);};
   const toggle=()=>{if(!audio.current||!currentTrack)return;if(audio.current.paused)audio.current.play().then(()=>setPlaying(true)).catch(()=>{});else{audio.current.pause();setPlaying(false);}};
+  const seekTo=seconds=>{if(!audio.current||!currentTrack)return;
+    const target=cappedPosition(seconds,length);
+    try{audio.current.currentTime=target;setPosition(target);}
+    catch{setError('Seeking is not supported by this stream. Try Original quality.');}
+  };
+  const handleAudioEnded=e=>{
+    if(!currentTrack)return;
+    const player=e.currentTarget,expected=preferredDuration(currentTrack.duration,player.duration);
+    if(endedTooEarly(player.currentTime,expected)){
+      if(earlyEndRecovery.current.id!==currentTrack.id)earlyEndRecovery.current={id:currentTrack.id,attempted:false};
+      if(!earlyEndRecovery.current.attempted){
+        earlyEndRecovery.current.attempted=true;
+        const resume=Math.max(0,player.currentTime-2),id=currentTrack.id;
+        player.addEventListener('loadedmetadata',()=>{
+          if(activeAudioTrack.current!==id)return;
+          try{player.currentTime=resume;}catch{}
+          player.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));
+        },{once:true});
+        player.src=`/api/stream/${encodeURIComponent(id)}?quality=original&recovery=1`;
+        player.load();
+        return;
+      }
+      setPlaying(false);setError('This song ended early even after retrying the original recording. Check the NAS source file.');
+      return;
+    }
+    post('/api/scrobble',{id:currentTrack.id}).catch(()=>{});
+    if(repeat){player.currentTime=0;player.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}
+    else next();
+  };
   const favorite=async item=>{const shouldStar=!starred.has(item.id);await post('/api/star',{id:item.id,starred:shouldStar});setStarred(old=>{const a=new Set(old);shouldStar?a.add(item.id):a.delete(item.id);return a;});};
   const logout=async()=>{await post('/api/logout',{}).catch(()=>{});audio.current?.pause();setCurrentIndex(-1);setQueue([]);setUser(null);};
 
@@ -480,16 +515,16 @@ function App() {
   if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} favorite={favorite} openAlbum={openAlbum} onAdd={setPickerSong} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong}/></>;
   if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><Art item={detail} size="big" round={page.id==='artist'}/><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit"><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{(detail.song||detail.entry||[]).length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={detail.song||detail.entry} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={setPickerSong} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?i=>removeFromPlaylist(page.idValue,i):undefined}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
   return <div className={'app-shell '+(playing?'music-is-playing':'music-is-paused')}><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span>{androidApp&&<button className="native-offline-link" title="Open downloaded music" onClick={()=>nativeCommand("openOffline")}><ArrowDownToLine size={15}/> Offline</button>}<label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Open community profile" onClick={()=>setPage({id:'social'})}>{socialSelf?.has_avatar?<img className="header-profile-photo" src={`/api/social/profiles/${encodeURIComponent(user.username.toLowerCase())}/avatar?v=${socialAvatarVersion}`} alt="My profile"/>:user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
-    <audio ref={audio} onTimeUpdate={e=>setPosition(e.currentTarget.currentTime)} onLoadedMetadata={e=>setLength(e.currentTarget.duration)} onEnded={()=>{if(currentTrack)post('/api/scrobble',{id:currentTrack.id}).catch(()=>{});if(repeat&&audio.current){audio.current.currentTime=0;audio.current.play().catch(()=>{});}else{next()}}} onError={e=>{setPlaying(false);if(e.currentTarget.error && currentTrack)setError('Playback failed. Check the track format or connection, then try again.')}}/>
+    <audio ref={audio} onTimeUpdate={e=>setPosition(Number.isFinite(e.currentTarget.currentTime)?e.currentTarget.currentTime:0)} onLoadedMetadata={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onDurationChange={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onEnded={handleAudioEnded} onError={e=>{setPlaying(false);if(e.currentTarget.error&&currentTrack)setError('Playback failed. Check the track format or connection, then try again.')}}/>
     <div className={`player ${currentTrack?'player-active':''} ${playing?'player-playing':'player-paused'}`}><div className="player-song"><button className="player-open" aria-label={currentTrack?'Open now playing for '+currentTrack.title:'Nothing playing'} onClick={()=>openNowPlaying()} disabled={!currentTrack}><Art item={currentTrack} size="small"/>{currentTrack&&<span className="jobbi-mini-viz" aria-hidden="true"><i/><i/><i/><i/></span>}<div className="player-song-text"><strong>{currentTrack?.title||'Nothing playing yet'}</strong><span>{currentTrack?.artist||'Your soundtrack starts here'}</span></div></button>{currentTrack&&androidApp&&<button className="icon-button" title="Download this song to Android" onClick={()=>saveOffline(currentTrack)}><ArrowDownToLine size={18}/></button>}{currentTrack&&<button className={`icon-button ${starred.has(currentTrack.id)||currentTrack.starred?'hearted':''}`} onClick={()=>favorite(currentTrack).catch(e=>setError(e.message))} title="Favorite"><Heart size={18} fill={starred.has(currentTrack.id)||currentTrack.starred?'currentColor':'none'}/></button>}</div>
-    <div className="player-center"><div className="playback-controls"><button className={`icon-button ${shuffle?'control-on':''}`} onClick={()=>setShuffle(v=>!v)} title="Shuffle"><Shuffle size={16}/></button><button className="icon-button" onClick={prev} disabled={!currentTrack}><SkipBack size={19} fill="currentColor"/></button><button className="play-round" onClick={toggle} disabled={!currentTrack}>{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-button" onClick={next} disabled={!currentTrack}><SkipForward size={19} fill="currentColor"/></button><button className={`icon-button ${repeat?'control-on':''}`} onClick={()=>setRepeat(v=>!v)} title="Repeat"><Repeat2 size={16}/></button></div><div className="seek"><small>{duration(position)}</small><input type="range" min="0" max={Math.max(length,1)} value={Math.min(position,length||0)} onChange={e=>{if(audio.current){audio.current.currentTime=Number(e.target.value);setPosition(Number(e.target.value))}}} disabled={!currentTrack}/><small>{duration(length)}</small></div></div>
+    <div className="player-center"><div className="playback-controls"><button className={`icon-button ${shuffle?'control-on':''}`} onClick={()=>setShuffle(v=>!v)} title="Shuffle"><Shuffle size={16}/></button><button className="icon-button" onClick={prev} disabled={!currentTrack}><SkipBack size={19} fill="currentColor"/></button><button className="play-round" onClick={toggle} disabled={!currentTrack}>{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-button" onClick={next} disabled={!currentTrack}><SkipForward size={19} fill="currentColor"/></button><button className={`icon-button ${repeat?'control-on':''}`} onClick={()=>setRepeat(v=>!v)} title="Repeat"><Repeat2 size={16}/></button></div><div className="seek"><small>{duration(position)}</small><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={cappedPosition(position,length)} style={{'--seek-progress':progressPercent(position,length)+'%'}} onChange={e=>seekTo(Number(e.target.value))} disabled={!currentTrack||!length}/><small>{duration(length)}</small></div></div>
     <div className="player-extras"><button className={`icon-button ${panel==='lyrics'?'control-on':''}`} title="Lyrics" onClick={()=>openNowPlaying('lyrics')} disabled={!currentTrack}><Mic2 size={18}/></button><button className={`icon-button ${panel==='queue'?'control-on':''}`} title="Queue" onClick={()=>setPanel(panel==='queue'?null:'queue')}><ListMusic size={19}/></button><Volume2 size={18}/><input type="range" min="0" max="1" step=".01" value={volume} onChange={e=>setVolume(Number(e.target.value))} aria-label="Volume"/></div></div>
     {nowPlayingOpen&&currentTrack&&<NowPlaying
       track={currentTrack} queue={queue} currentIndex={currentIndex}
       playing={playing} position={position} length={length} mode={nowPlayingMode}
       setMode={setNowPlayingMode} lyrics={lyrics} lyricsLoading={lyricsLoading}
       onClose={()=>setNowPlayingOpen(false)} onToggle={toggle} onNext={next} onPrev={prev}
-      onSeek={seconds=>{if(audio.current){audio.current.currentTime=seconds;setPosition(seconds)}}}
+      onSeek={seekTo}
       onSelect={setCurrentIndex}
       favorited={starred.has(currentTrack.id)||currentTrack.starred}
       onFavorite={()=>favorite(currentTrack).catch(e=>setError(e.message))}
