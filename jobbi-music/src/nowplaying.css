@@ -128,3 +128,9 @@
    animation:none!important;transform:none
  }
 }
+
+.immersive-seek input[type="range"]{appearance:none;-webkit-appearance:none;display:block;min-width:0;height:6px;border:0;border-radius:999px;background:linear-gradient(90deg,#ffb4d3 0 var(--seek-progress,0%),#ffffff60 var(--seek-progress,0%) 100%)}
+.immersive-seek input[type="range"]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:18px;height:18px;border-radius:50%;border:2px solid white;background:#6d6271}
+.immersive-seek input[type="range"]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;border:2px solid white;background:#6d6271}
+.immersive-seek input[type="range"]:focus-visible{outline:2px solid #ffb4d3;outline-offset:7px}
+.immersive-seek input[type="range"]:disabled{opacity:.5;cursor:default}
