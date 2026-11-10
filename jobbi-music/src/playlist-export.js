@@ -66,18 +66,105 @@ export function findLocalSong(item,songs=[]){
   return songs.find(song=>songKey(song.title||song.name)===songKey(item.title)&&
     (hasAll(song.artist,item.artist)||hasAll(item.artist,song.artist)))||null;
 }
+const BAD_EDITION=/\b(live|remix|acoustic|karaoke|instrumental|demo|tribute|re[- ]?record(?:ed|ing)?|sped up|slowed|nightcore|reverb|cover version|cover song|concert|bootleg|radio edit|extended mix)\b/iu;
+const normalizePath=s=>songKey(s).replace(/\s+/g,' ');
+const variants=s=>[...normalizePath(s).matchAll(BAD_EDITION)].map(m=>m[0]).sort();
+function recordedDuration(value){
+  if(typeof value==='number')return Number.isFinite(value)?value:null;
+  const bits=String(value||'').split(':').map(Number);
+  if(bits.length===2&&bits.every(Number.isFinite))return bits[0]*60+bits[1];
+  if(bits.length===3&&bits.every(Number.isFinite))return bits[0]*3600+bits[1]*60+bits[2];
+  return null;
+}
 export function pickSoulseekCandidate(item,results=[]){
-  const fits=results.filter(row=>{
-    if(!row||typeof row.filename!=='string')return false;
-    const name=row.filename.split(/[\\/]/).pop().replace(/\.[^.]+$/,'');
-    return hasAll(name,item.title)&&hasAll(row.filename,item.artist) &&
-      /\.(flac|mp3|m4a|aac|ogg|opus|wav|alac)$/i.test(row.filename);
-  }).sort((a,b)=>{
-    const score=x=>(/\.flac$/i.test(x.filename)?120:0)+
-      Math.min(70,Number(x.bitrate)||0)/10+
-      (x.freeUploadSlot?20:0)+
-      Math.min(35,Math.log2(Math.max(1,Number(x.uploadSpeed)||1)));
-    return score(b)-score(a);
+  const artist=normalizePath(item.artist),title=normalizePath(item.title),album=normalizePath(item.album);
+  if(!title||!artist||!Array.isArray(results))return null;
+  const expectedEdition=variants([item.title,item.version].filter(Boolean).join(' '));
+  const duration=recordedDuration(item.durationSeconds??item.duration);
+  const candidates=[];
+  for(const row of results){
+    if(!row||typeof row.filename!=='string'||typeof row.username!=='string'||
+       !Number.isSafeInteger(Number(row.size))||Number(row.size)<1024)continue;
+    const file=row.filename,ext=file.split('.').pop().toLowerCase();
+    if(!['flac','mp3'].includes(ext))continue;
+    const basename=file.split(/[\\/]/).pop().replace(/\.[^.]+$/,'').replace(/^\s*\d{1,3}\s*[-._ ]\s*/,'');
+    const plainTitle=normalizePath(basename),path=normalizePath(file),whole=' '+path+' ';
+    if(!plainTitle.includes(title))continue;
+    if(!whole.includes(' '+artist+' '))continue;
+    // A differing live/remix/demo etc. edition is a false match, regardless
+    // of bitrate. If the user supplied a specific version, respect it.
+    const extraEdition=variants(file);
+    if(extraEdition.some(v=>!expectedEdition.includes(v)))continue;
+    if(expectedEdition.some(v=>!extraEdition.includes(v)))continue;
+    const candidateDuration=recordedDuration(row.duration);
+    if(duration&&candidateDuration&&Math.abs(candidateDuration-duration)>Math.max(9,duration*.08))continue;
+    const likelyAlbum=album&&whole.includes(' '+album+' ');
+    const exactTitle=plainTitle===title||plainTitle===artist+' '+title||
+      plainTitle===title+' '+artist;
+    const extraWords=Math.max(0,plainTitle.split(' ').length-title.split(' ').length-
+      (plainTitle.includes(artist)?artist.split(' ').length:0));
+    // Strong title accuracy beats format; FLAC wins among equally safe matches.
+    const score=(exactTitle?180:100)+
+      (likelyAlbum?35:0) + (duration&&candidateDuration?25:0) -
+      extraWords*13 + (ext==='flac'?45:0) +
+      (row.freeUploadSlot?6:0)+Math.min(20,Math.max(0,Number(row.bitrate)||0)/40);
+    candidates.push({...row,matchScore:Math.round(score),
+      matchReason:exactTitle?'Exact title and artist':'Strong title and artist metadata',
+      format:ext.toUpperCase()});
+  }
+  return candidates.sort((a,b)=>b.matchScore-a.matchScore||
+    String(a.filename).localeCompare(String(b.filename)))[0]||null;
+}
+
+export function parseCollectionManifest(raw,filename='collection.json'){
+  if(typeof raw!=='string'||raw.length>8_000_000)throw new Error('Import file exceeds 8 MB');
+  const input=raw.trimStart();
+  if(!input.startsWith('{')&&!input.startsWith('[') && !/\.json$/i.test(filename)){
+    const tracks=parsePlaylistExport(raw,filename);
+    return {format:'jobbi-collection-export/v1',collections:[{
+      id:'single:'+filename,name:filename.replace(/\.(csv|tsv|txt)$/i,'').slice(0,100),
+      kind:'playlist',provider:'unknown',incomplete:false,
+      tracks:tracks.map((track,index)=>({...track,position:index+1}))
+    }]};
+  }
+  const obj=JSON.parse(raw);
+  if(obj?.format!=='jobbi-collection-export/v1'){
+    const tracks=parsePlaylistExport(raw,filename);
+    return {format:'jobbi-collection-export/v1',collections:[{
+      id:'single:'+filename,name:filename.replace(/\.(json)$/i,'').slice(0,100),
+      kind:'playlist',provider:'unknown',incomplete:false,
+      tracks:tracks.map((track,index)=>({...track,position:index+1}))
+    }]};
+  }
+  if(!Array.isArray(obj.collections)||!obj.collections.length||obj.collections.length>150)
+    throw new Error('The Jobbi export must contain between 1 and 150 collections');
+  let total=0;
+  const ids=new Set();
+  const collections=obj.collections.map((c,index)=>{
+    if(!c||!['favorites','playlist'].includes(c.kind)||
+       typeof c.name!=='string'||!c.name.trim()||c.name.length>100||
+       !Array.isArray(c.tracks)||c.tracks.length>12000||
+       !['spotify','apple'].includes(c.provider))
+      throw new Error('Collection '+(index+1)+' has invalid metadata');
+    const id=String(c.id||index);
+    if(ids.has(id))throw new Error('Duplicate collection identifier');
+    ids.add(id);
+    total+=c.tracks.length;
+    if(total>16000)throw new Error('This import has too many song entries (limit 16,000)');
+    return {id,name:c.name.trim(),kind:c.kind,provider:c.provider,
+      sourceUrl:typeof c.sourceUrl==='string'?c.sourceUrl.slice(0,500):'',
+      expectedCount:Number.isInteger(c.expectedCount)?c.expectedCount:null,
+      incomplete:Boolean(c.incomplete),
+      tracks:c.tracks.map((track,pos)=>{
+        const title=field(track?.title),artist=field(track?.artist);
+        if(!title||!artist||title.length>200||artist.length>200)
+          throw new Error('Missing artist or song title in '+c.name+' at row '+(pos+1));
+        return {id:id+':'+pos,position:pos,title,artist,
+          album:field(track.album).slice(0,200),version:field(track.version).slice(0,100),
+          duration:track.duration||track.durationSeconds||'',
+          sourceUrl:field(track.sourceUrl).slice(0,500),status:'unsearched',note:''};
+      })
+    };
   });
-  return fits[0]||null;
+  return {format:obj.format,exportedAt:obj.exportedAt,collections};
 }
