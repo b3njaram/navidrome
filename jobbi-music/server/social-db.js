@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS social_playlists (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK(kind <> 'blend' OR visibility = 'private')
 );
+ALTER TABLE social_playlists ADD COLUMN IF NOT EXISTS source_navidrome_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS social_playlist_native_copy_uniq ON social_playlists(owner,source_navidrome_id) WHERE source_navidrome_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS social_members (
   playlist_id UUID NOT NULL REFERENCES social_playlists(id) ON DELETE CASCADE,
   username TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
