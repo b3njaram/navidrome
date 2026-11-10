@@ -723,7 +723,7 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
         Text("Music settings",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
         Text("Signed in as ${vm.account}",color=MaterialTheme.colorScheme.onSurfaceVariant)
         FilledTonalButton(onClick={vm.select("Profile")},modifier=Modifier.fillMaxWidth()){
-            Icon(Icons.Rounded.Person,null)
+            Icon(Icons.Rounded.PersonAdd,null)
             Spacer(Modifier.width(8.dp))
             Text("Edit my profile")
         }
