@@ -466,6 +466,13 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
 .playlist-tool-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 14px;min-height:41px;background:#29222e;color:#f4deeb;border:1px solid #705269;border-radius:11px;font-weight:700;font-size:12px;cursor:pointer;text-align:center}
 .playlist-tool-button:hover:not(:disabled){background:#3a293b;border-color:#c67b9c}
 .playlist-tool-button:disabled{opacity:.45;cursor:default}
+.playlist-visibility-switch{gap:10px;justify-content:space-between}
+.playlist-visibility-switch .playlist-switch-track{flex-shrink:0;display:inline-flex;align-items:center;width:35px;height:20px;padding:2px;border-radius:100px;background:#5c5360;transition:background .15s}
+.playlist-switch-track>span{width:16px;height:16px;border-radius:50%;background:white;transition:transform .15s}
+.playlist-switch-track.is-on{background:#dc5084}
+.playlist-switch-track.is-on>span{transform:translateX(15px)}
+.playlist-visibility-switch:focus-visible{outline:2px solid #ffb7ce;outline-offset:3px}
+
 .playlist-tools-note{font-size:11px;line-height:1.5;max-width:700px;margin:0;color:#b99fb0}
 .playlist-find{display:flex;align-items:center;gap:10px;background:#211b27;border:1px solid #60465b;border-radius:11px;padding:0 12px;width:min(570px,100%);min-height:45px}
 .playlist-find input{border:0;outline:0;background:transparent;flex:1;min-width:0;font-size:13px;padding:9px 0}
