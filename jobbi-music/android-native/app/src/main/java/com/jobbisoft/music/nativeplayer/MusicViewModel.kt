@@ -16,6 +16,8 @@ import org.json.JSONObject
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
     var signedIn by androidx.compose.runtime.mutableStateOf(false)
         private set
+    var isAdmin by androidx.compose.runtime.mutableStateOf(false)
+        private set
     var busy by androidx.compose.runtime.mutableStateOf(false)
         private set
     var error by androidx.compose.runtime.mutableStateOf("")
@@ -68,6 +70,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         JobbiApi.changeServer(getApplication(),configuredServer)
         server = JobbiApi.serverUrl()
         account = JobbiApi.login(username,password)
+        isAdmin = JobbiApi.isAdmin
         signedIn = true
         refresh()
     }
@@ -75,6 +78,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         runCatching { JobbiApi.logout() }
         JobbiApi.clearSession()
         signedIn = false
+        isAdmin = false
         selected = "Home"
         detail = null; home = HomeResult(emptyList(),emptyList(),emptyList(),emptyList())
         favorites = emptyList(); favoriteIds = emptySet(); playlists = emptyList()
@@ -88,6 +92,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             "Library" -> loadLibrary()
             "Favorites" -> loadFavorites()
             "Search" -> if(searchQuery.isNotBlank()) search(searchQuery)
+            "Community", "Profile", "Admin" -> Unit
         }
     }
     fun refresh() = execute {
