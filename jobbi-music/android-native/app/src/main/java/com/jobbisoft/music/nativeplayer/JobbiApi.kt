@@ -34,7 +34,8 @@ data class Listing(
     val albums: List<Album> = emptyList(),
     val isPlaylist: Boolean = false,
     val public: Boolean = false,
-    val id: String = ""
+    val id: String = "",
+    val owner: String = ""
 )
 data class SearchResult(val songs: List<Song>, val albums: List<Album>)
 data class HomeResult(val recent: List<Album>, val featured: List<Album>, val songs: List<Song>, val playlists: List<MusicPlaylist>)
@@ -243,7 +244,8 @@ object JobbiApi {
     suspend fun openPlaylist(id: String): Listing {
         val data = getObject("/api/playlists/" + Uri.encode(id))
         return Listing(title = data.optStr("name", "Playlist"),songs = data.optJSONArray("entry").songs(),
-            id = id, isPlaylist = true, public = data.optBoolean("public"))
+            id = id, isPlaylist = true, public = data.optBoolean("public"),
+            owner = data.optStr("owner"))
     }
 
     suspend fun setFavorite(id: String, favorite: Boolean) {
@@ -252,9 +254,8 @@ object JobbiApi {
     suspend fun createPlaylist(name: String): MusicPlaylist =
         post("/api/playlists", JSONObject().put("name", name))
             .getJSONObject("playlist").playlist()
-    suspend fun editPlaylist(id: String, update: JSONObject) {
+    suspend fun editPlaylist(id: String, update: JSONObject): JSONObject =
         patch("/api/playlists/" + Uri.encode(id), update)
-    }
     suspend fun favoriteAll(id: String): Set<String> {
         val data = post("/api/playlists/" + Uri.encode(id) + "/favorite-all")
         return data.optJSONArray("ids")?.let { a ->
