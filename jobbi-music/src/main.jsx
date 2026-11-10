@@ -122,6 +122,7 @@ function App() {
   const androidApp=isNativeAndroid();
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const audio=useRef(null);
+  const [playlistQuery,setPlaylistQuery]=useState(''),[coverVersion,setCoverVersion]=useState(0);
   const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false),[importSong,setImportSong]=useState(null),[importArtist,setImportArtist]=useState(''),[importTitle,setImportTitle]=useState(''),[importBusy,setImportBusy]=useState(false),[importNotice,setImportNotice]=useState('');
   const [musicImports,setMusicImports]=useState([]);
   const [libraryAlbums,setLibraryAlbums]=useState([]),[libraryArtists,setLibraryArtists]=useState([]),[libraryOffset,setLibraryOffset]=useState(0),[libraryMore,setLibraryMore]=useState(true),[libraryLoading,setLibraryLoading]=useState(false);
@@ -358,6 +359,20 @@ function App() {
   };
 
   const refreshPlaylists=async()=>{const playlists=await api('/api/playlists');setHome(h=>({...h,playlists}));return playlists;};
+  const favoriteAllPlaylist=async()=>{
+    const response=await post('/api/playlists/'+encodeURIComponent(page.idValue)+'/favorite-all',{});
+    setStarred(old=>new Set([...old,...(response.ids||[])]));
+    if(response.failed)setError(response.failed+' songs could not be favorited.');
+  };
+  const uploadCover=async file=>{
+    const kind=page.id==='album'?'album':'playlist';
+    const res=await fetch('/api/artwork/'+kind+'/'+encodeURIComponent(page.idValue),{
+      method:'POST',credentials:'same-origin',headers:{'Content-Type':file.type,'X-CSRF-Token':currentCsrfToken},body:file
+    });
+    const body=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(body.error||'Artwork upload failed');
+    setCoverVersion(Date.now());
+  };
   const openPlaylistPicker=song=>{
     if(!song?.id){setError('This song is not yet indexed in your library.');return;}
     setPickerSong(song);
@@ -464,6 +479,11 @@ function App() {
   if(user===undefined)return <div className="loading-page"><div className="brand-symbol"><Waves/></div><span>Loading your music...</span></div>;
   if(!user)return <Login onLogin={setUser}/>;
   let main=null;
+  const detailSongs=(detail?.song||detail?.entry||[]).map((song,index)=>({...song,_playlistIndex:index}));
+  const filteredDetailSongs=page.id==='playlist'&&playlistQuery.trim()
+    ?detailSongs.filter(song=>(song.title||song.name||'').toLocaleLowerCase().includes(playlistQuery.trim().toLocaleLowerCase())||
+        (song.artist||'').toLocaleLowerCase().includes(playlistQuery.trim().toLocaleLowerCase()))
+    :detailSongs;
   if(page.id==='home')main=<>
     <div className="home-welcome"><div><div className="eyebrow"><Sparkles size={14}/> YOUR PERSONAL SOUNDTRACK</div><h1>{greeting()}<span className="spark-dot">.</span></h1><p>Pick up where the music left off.</p></div><span className="date-label">{new Intl.DateTimeFormat('en',{weekday:'long',month:'long',day:'numeric'}).format(new Date())}</span></div>
     <div className="hero-card"><div className="hero-glow"/><div className="hero-copy"><span className="hero-kicker"><span className="live-indicator"/> MADE FOR YOUR EARS</span><h2>All your music.<br/><em>One beautiful place.</em></h2><p>Rediscover the songs that move you. Your collection, your way.</p><div className="hero-buttons"><button className="primary" onClick={()=>playTracks(home?.songs||[],0)}><Play size={16} fill="currentColor"/> Play something good</button><button className="ghost-button" onClick={()=>setPage({id:'library'})}>Explore library <ArrowRight size={15}/></button><button className="ghost-button" onClick={()=>{setSearchTab('soulseek');setPage({id:'search'})}}><Radio size={15}/> Find new music</button></div></div><div className="hero-art"><div className="hero-record"><div className="record-core">{albums[0]&&<Art item={albums[0]}/>}</div></div></div></div>
