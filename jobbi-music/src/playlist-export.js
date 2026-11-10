@@ -66,7 +66,7 @@ export function findLocalSong(item,songs=[]){
   return songs.find(song=>songKey(song.title||song.name)===songKey(item.title)&&
     (hasAll(song.artist,item.artist)||hasAll(item.artist,song.artist)))||null;
 }
-const BAD_EDITION=/\b(live|remix|acoustic|karaoke|instrumental|demo|tribute|re[- ]?record(?:ed|ing)?|sped up|slowed|nightcore|reverb|cover version|cover song|concert|bootleg|radio edit|extended mix)\b/iu;
+const BAD_EDITION=/\b(live|remix|acoustic|karaoke|instrumental|demo|tribute|re[- ]?record(?:ed|ing)?|sped up|slowed|nightcore|reverb|cover version|cover song|concert|bootleg|radio edit|extended mix)\b/giu;
 const normalizePath=s=>songKey(s).replace(/\s+/g,' ');
 const variants=s=>[...normalizePath(s).matchAll(BAD_EDITION)].map(m=>m[0]).sort();
 function recordedDuration(value){
