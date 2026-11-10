@@ -703,7 +703,7 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
         Text("Streaming quality",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             listOf("original" to "Lossless","balanced" to "High","saver" to "Data saver").forEach { (value,label)->
-                FilterChip(selected=vm.quality==value,onClick={vm.setQuality(value)},label={Text(label)})
+                FilterChip(selected=vm.quality==value,onClick={vm.updateQuality(value)},label={Text(label)})
             }
         }
         Card(shape=RoundedCornerShape(22.dp)) {
