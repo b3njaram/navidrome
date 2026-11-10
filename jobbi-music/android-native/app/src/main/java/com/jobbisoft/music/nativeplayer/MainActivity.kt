@@ -77,6 +77,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -607,13 +608,37 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                         label={Text("Cover")},leadingIcon={Icon(Icons.Rounded.CloudUpload,null)})
                 }
                 if(detail.isPlaylist) {
-                    Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                        FilterChip(selected=detail.public,onClick={vm.setPlaylistPublic(!detail.public)},
-                            label={Text(if(detail.public)"Public" else "Private")},
-                            leadingIcon={Icon(if(detail.public)Icons.Rounded.Public else Icons.Rounded.Lock,null)})
-                        AssistChip(onClick=onInvite,label={Text("Collaborate")},
-                            leadingIcon={Icon(Icons.Rounded.PersonAdd,null)})
+                    val canChangeVisibility = detail.owner.isBlank() ||
+                        detail.owner.equals(vm.account, ignoreCase = true)
+                    Surface(shape=RoundedCornerShape(15.dp),
+                        color=MaterialTheme.colorScheme.surfaceContainer) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal=13.dp,vertical=9.dp),
+                            verticalAlignment=Alignment.CenterVertically) {
+                            Icon(if(detail.public)Icons.Rounded.Public else Icons.Rounded.Lock,
+                                contentDescription=null)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(if(detail.public)"Public" else "Private",
+                                    fontWeight=FontWeight.SemiBold)
+                                Text(if(detail.public)"Visible to other Jobbi Music listeners"
+                                    else "Only you can see this playlist",
+                                    style=MaterialTheme.typography.bodySmall,
+                                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if(vm.visibilityUpdating){
+                                CircularProgressIndicator(Modifier.size(20.dp),strokeWidth=2.dp)
+                                Spacer(Modifier.width(12.dp))
+                            }
+                            Switch(checked=detail.public,onCheckedChange={vm.setPlaylistPublic(it)},
+                                enabled=canChangeVisibility&&!vm.visibilityUpdating)
+                        }
                     }
+                    if(!canChangeVisibility) Text(
+                        "Only ${detail.owner} can change this playlist's visibility.",
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    AssistChip(onClick=onInvite,label={Text("Collaborate")},
+                        leadingIcon={Icon(Icons.Rounded.PersonAdd,null)})
                     FilledTonalButton(onClick=vm::heartAll) {
                         Icon(Icons.Rounded.Favorite,null)
                         Spacer(Modifier.width(7.dp))
