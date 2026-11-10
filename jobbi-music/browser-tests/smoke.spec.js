@@ -4,7 +4,7 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],musicRequests:[],imports:old,fallbackJobs:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -44,9 +44,14 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
       state.stars.add('s1');state.stars.add('s2');
       return reply({added:2,skipped:0,failed:0,ids:['s1','s2']});
     }
-    if(pathname.startsWith('/api/artwork/')&&method==='POST')return reply({saved:true});
+    if(pathname.startsWith('/api/artwork/')&&method==='POST'){state.artworkUploads.push(pathname);return reply({saved:true});}
     if(pathname.startsWith('/api/artwork/')&&method==='GET')return route.fulfill({status:404,body:''});
     if(pathname==='/api/social/playlists/import'&&method==='POST')return reply({id:'00000000-0000-0000-0000-000000000222',imported:2});
+    if(pathname==='/api/social/home')return reply({me:{username:'listener',display_name:'Listener'},friends:[],incoming:[],outgoing:[],playlists:[],discover:[],playlistInvitations:[]});
+    if(pathname==='/api/social/playlists/00000000-0000-0000-0000-000000000222')return reply({
+      playlist:{id:'00000000-0000-0000-0000-000000000222',title:'Favorites Mix',owner:'listener',description:'Collaborative copy',kind:'manual',visibility:'private'},
+      tracks:[],members:[],pendingInvitations:[]
+    });
     if(pathname==='/api/playlists'&&method==='GET')return reply(state.playlists);
     if(pathname==='/api/playlists'&&method==='POST'){state.playlists.push({id:'p2',name:body.name,songCount:0});return reply({playlist:state.playlists.at(-1)},201);}
 
@@ -588,6 +593,14 @@ test('playlist tools search tracks, change privacy, heart songs and upload album
   expect(state.playlists[0].public).toBe(true);
   await page.getByRole('button',{name:'Heart all songs'}).click();
   await expect.poll(()=>state.stars.size).toBe(2);
+  await page.getByRole('button',{name:/Back to library/}).click();
+  await page.locator('.album-grid .album-card').first().click();
+  await expect(page.getByText('Upload album picture')).toBeVisible();
+  await page.locator('.artwork-upload input[type=file]').setInputFiles({
+    name:'my-cover.png',mimeType:'image/png',
+    buffer:Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(64)])
+  });
+  await expect.poll(()=>state.artworkUploads.length).toBe(1);
   expect(errors).toEqual([]);
 });
 
@@ -620,4 +633,15 @@ test('mobile player shows previous and separate seek timeline',async({page,isMob
   const p=await play.boundingBox(),bar=await seek.boundingBox();
   expect(p&&bar).toBeTruthy();
   expect(bar.y).toBeGreaterThan(p.y+p.height-3);
+});
+
+test('collaborate button opens a private reusable invite-enabled copy',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.locator('.playlist-grid').getByRole('button',{name:/Favorites Mix/}).click();
+  await page.getByRole('button',{name:/Invite collaborators/}).click();
+  await expect(page.getByText('Sharing & collaborators')).toBeVisible();
+  await expect(page.getByRole('button',{name:/Send invitation/})).toBeDisabled();
+  expect(errors).toEqual([]);
 });
