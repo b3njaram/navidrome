@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
 
 async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
@@ -691,4 +692,65 @@ test('combined collection JSON automatically hearts Liked Songs and builds a sep
   await expect.poll(()=>state.playlists.some(p=>p.name==='Road Trip')).toBe(true);
   await expect.poll(()=>state.addedTracks.some(x=>x.songId==='s1'&&x.playlistId==='p2')).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test('Apple Music Favorite Songs userscript captures current track-list-item rows and inner-pane scrolling',async({page})=>{
+  const rows=[
+    ['Circle of Death','Flawed Mangoes','Anomaly IV','2:40'],
+    ['Мама-анархия','Кино','Ночь','2:42'],
+    ['Feel It','Ayesha Erotica','Feel It - Single','2:30']
+  ];
+  const row=(title,artist,album,duration,index)=>`
+    <div data-testid="track-list-item" data-index="${index}" style="height:85px">
+      <span data-testid="track-title">${title}</span>
+      <span data-testid="track-column-secondary">${artist}</span>
+      <span data-testid="track-column-tertiary">${album}</span>
+      <span data-testid="track-duration">${duration}</span>
+    </div>`;
+  await page.route('https://music.apple.com/**',route=>route.fulfill({
+    status:200,contentType:'text/html',
+    body:`<!doctype html><html><body><main><h1>Favorite Songs</h1>
+      <div id="scrollable-page" style="height:190px;overflow-y:auto">
+        <div id="track-collection">${rows.slice(0,2).map((x,i)=>row(...x,i)).join('')}</div>
+        <div style="height:650px"></div>
+      </div></main></body></html>`
+  }));
+  await page.addInitScript(()=>{
+    window.GM_getValue=()=>({collections:[]});
+    window.GM_setValue=()=>{};
+  });
+  await page.goto('https://music.apple.com/us/library/playlist/p.test');
+  await page.evaluate(([title,artist,album,duration])=>{
+    const pane=document.querySelector('#scrollable-page');
+    pane.addEventListener('scroll',()=>{
+      if(pane.scrollTop>0&&!document.querySelector('[data-index="2"]')){
+        const r=document.createElement('div');
+        r.setAttribute('data-testid','track-list-item');
+        r.setAttribute('data-index','2');
+        r.innerHTML=`<span data-testid="track-title">${title}</span>
+          <span data-testid="track-column-secondary">${artist}</span>
+          <span data-testid="track-column-tertiary">${album}</span>
+          <span data-testid="track-duration">${duration}</span>`;
+        document.querySelector('#track-collection').appendChild(r);
+      }
+    });
+  },rows[2]);
+  await page.addScriptTag({content:readFileSync(
+    new URL('../tools/jobbi-collection-export.user.js',import.meta.url),'utf8')});
+  await expect(page.getByText('Favorite Songs',{exact:true}).last()).toBeVisible();
+  await page.getByRole('button',{name:'Capture current collection'}).click();
+  await expect(page.locator('#jobbi-collection-exporter #status')).toContainText('Saved 3 songs as Favorites',{timeout:25000});
+  const downloaded=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download all as JSON'}).click();
+  const file=await downloaded;
+  const manifest=JSON.parse(readFileSync(await file.path(),'utf8'));
+  expect(manifest.format).toBe('jobbi-collection-export/v1');
+  expect(manifest.collections).toHaveLength(1);
+  expect(manifest.collections[0].name).toBe('Favorite Songs');
+  expect(manifest.collections[0].kind).toBe('favorites');
+  expect(manifest.collections[0].tracks).toHaveLength(3);
+  expect(manifest.collections[0].tracks.map(t=>t.title)).toEqual(
+    ['Circle of Death','Мама-анархия','Feel It']);
+  expect(manifest.collections[0].tracks[1].artist).toBe('Кино');
+  expect(manifest.collections[0].tracks[2].album).toBe('Feel It - Single');
 });
