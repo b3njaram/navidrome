@@ -57,6 +57,10 @@ jobs:
 
   browser-smoke:
     runs-on: ubuntu-latest
+    # Official Playwright image ships Chromium, WebKit and their OS dependencies.
+    # Avoid Ubuntu apt installation hangs on hosted runners.
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.0-noble
     defaults:
       run:
         working-directory: jobbi-music
@@ -67,7 +71,6 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()

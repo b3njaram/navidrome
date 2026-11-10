@@ -4,7 +4,7 @@ async function setupMocks(page,{staleImports=false}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],musicRequests:[],imports:old,fallbackJobs:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(),addedTracks:[],musicRequests:[],imports:old,fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -19,7 +19,17 @@ async function setupMocks(page,{staleImports=false}={}){
     if(pathname==='/api/login'){const isAdmin=body.username==='testadmin';state.session={username:body.username,admin:isAdmin,csrfToken:'test-csrf-token'};return reply(state.session);}
     if(pathname==='/api/logout'){state.session=null;return reply({ok:true});}
     if(pathname==='/api/home')return reply({recent:[{id:'a1',name:'Test Album',artist:'Test Artist'}],featured:[],played:[],songs:[{id:'s1',title:'Kino',artist:'Test Artist',duration:180}],playlists:state.playlists});
-    if(pathname==='/api/starred')return reply({song:[],album:[]});
+    if(pathname==='/api/starred')return reply({song:[...state.stars].map(id=>({id,title:'Kino',artist:'Test Artist',duration:180})),album:[]});
+    if(pathname==='/api/star'&&method==='POST'){
+      if(body.starred)state.stars.add(body.id);else state.stars.delete(body.id);
+      return reply({ok:true});
+    }
+    if(pathname.startsWith('/api/playlists/')&&method==='PATCH'){
+      const id=pathname.split('/')[3],p=state.playlists.find(x=>x.id===id);
+      if(!p)return reply({error:'Playlist not found'},404);
+      if(body.addSongId){state.addedTracks.push({playlistId:id,songId:body.addSongId});p.songCount++;}
+      return reply({playlist:{...p}});
+    }
     if(pathname==='/api/lyrics/s1')return reply({available:true,synced:true,source:'Navidrome',lines:[{at:0,text:'First line of the song'},{at:4500,text:'Second line of the song'}]});
     if(pathname==='/api/search')return reply({artist:[{id:'artist1',name:'Test Artist'}],album:[{id:'a1',name:'Test Album',artist:'Test Artist'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
     if(pathname==='/api/library/albums')return reply({albums:[{id:'a1',name:'Test Album',artist:'Test Artist'}],offset:0,size:48});
@@ -436,5 +446,53 @@ test('older Kino import attempts are grouped, can be hidden, and do not claim th
   await page.getByRole('button',{name:'Hide attempts'}).click();
   await expect(page.getByText('3 attempts')).toHaveCount(0);
   await expect(page.getByText(/Previous attempts hidden/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('song rows play on click while favorites and playlist buttons act independently',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const state=await setupMocks(page);
+  await page.addInitScript(()=>{
+    window.__playEvents=[];
+    HTMLMediaElement.prototype.play=function(){
+      window.__playEvents.push({src:this.getAttribute('src'),
+        userGesture:navigator.userActivation?.isActive??true});
+      return Promise.resolve();
+    };
+  });
+  await login(page,'listener');
+  await navigate(page,'Discover');
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
+  const row=page.locator('.track-row').first();
+  await expect(row).toBeVisible();
+
+  await row.getByRole('button',{name:'Favorite Kino'}).click();
+  await expect(row.getByRole('button',{name:'Remove favorite Kino'})).toHaveAttribute('aria-pressed','true');
+  expect(state.stars.has('s1')).toBe(true);
+  expect(await page.evaluate(()=>window.__playEvents.length)).toBe(0);
+
+  await row.getByRole('button',{name:'Add Kino to playlist'}).click();
+  await expect(page.getByRole('heading',{name:'Add to playlist'})).toBeVisible();
+  await page.locator('.side-panel').getByRole('button',{name:/Favorites Mix/}).click();
+  await expect(page.getByRole('heading',{name:'Add to playlist'})).toHaveCount(0);
+  expect(state.addedTracks).toEqual([{playlistId:'p1',songId:'s1'}]);
+  expect(await page.evaluate(()=>window.__playEvents.length)).toBe(0);
+
+  // A synthetic blank-row click tests the delegated handler independent of
+  // layout positioning (the mobile fixed navigation overlaps edge coordinates).
+  await row.evaluate(element=>element.click());
+  await expect(page.getByRole('button',{name:'Open now playing for Kino'})).toBeEnabled();
+  expect((await page.evaluate(()=>window.__playEvents)).at(-1).src).toContain('/api/stream/s1');
+
+  // Move the song above fixed player/navigation overlays. Click the actual
+  // rendered title coordinates as a user would, rather than depending on the
+  // locator's center-point actionability in animated desktop/mobile layouts.
+  await row.locator('.track-song-title').evaluate(el=>el.scrollIntoView({block:'center',inline:'nearest'}));
+  const titleBox=await row.locator('.track-song-title').boundingBox();
+  expect(titleBox).not.toBeNull();
+  await page.mouse.click(titleBox.x+Math.min(titleBox.width/2,18),titleBox.y+titleBox.height/2);
+  const starts=await page.evaluate(()=>window.__playEvents);
+  expect(starts.length).toBeGreaterThanOrEqual(2);
+  expect(starts.at(-1).userGesture).toBe(true);
   expect(errors).toEqual([]);
 });

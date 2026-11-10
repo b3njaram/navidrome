@@ -426,3 +426,24 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
 .seek input[type="range"]::-moz-range-thumb{width:14px;height:14px;border:2px solid white;border-radius:50%;background:#797582}
 .seek input[type="range"]:disabled{opacity:.45;cursor:default}
 .seek input[type="range"]:focus-visible{outline:2px solid #f77ba4;outline-offset:8px}
+
+/* The full track row plays on blank-space clicks; its own buttons keep priority. */
+.track-row{cursor:pointer}
+.track-actions .icon-button{position:relative;z-index:1;min-width:29px;min-height:32px;flex:none;display:inline-grid;place-items:center;padding:6px}
+.track-row:has(.track-actions button:focus-visible){outline:1px solid #ff94b5;outline-offset:2px}
+
+/* Track controls must fit *inside* the song-row grid. Previously the grid
+   reserved 105px while the actions needed 135px, leaving partly unclickable
+   favorite and playlist buttons under the adjacent hit area. */
+@media(min-width:721px){
+  .track-row,.track-header{grid-template-columns:40px minmax(0,3fr) minmax(0,2fr) 160px}
+}
+.track-row .track-actions{display:flex;justify-content:flex-end;align-items:center;min-width:0;width:100%;gap:6px;overflow:visible;position:relative;z-index:2}
+.track-row .track-actions .icon-button{display:inline-grid;place-items:center;flex:0 0 32px;width:32px;height:32px;min-width:32px;min-height:32px;padding:6px;position:relative;z-index:3}
+.track-row .track-actions>span:last-child{flex:0 0 37px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(max-width:720px){
+  .track-row,.track-header{grid-template-columns:25px minmax(0,1fr) 145px}
+  .track-row .track-actions{gap:3px}
+  .track-row .track-actions .icon-button{flex-basis:30px;min-width:30px;width:30px;height:32px;padding:5px}
+  .track-row .track-actions>span:last-child{flex-basis:33px}
+}
