@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.Normalizer
+import okhttp3.Request
 
 data class NativeCollectionRow(
     val position:Int,
@@ -123,7 +124,9 @@ fun restoreNativeCollections(text:String):List<NativeCollection> {
             songs=col.songs.mapIndexed{n,row->
                 val data=rows.optJSONObject(n)
                 if(data==null)row else row.copy(
-                    status=data.optString("status","unsearched"),
+                    status=data.optString("status","unsearched").let {
+                        if(it=="checking"||it=="waiting")"unsearched" else it
+                    },
                     note=data.optString("note"),songId=data.optString("songId"),
                     peer=data.optString("peer"),filename=data.optString("filename"),
                     size=data.optLong("size",0)
@@ -247,7 +250,7 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
                 else "Queued; recheck when Navidrome has indexed the recording")
         }
     }
-    suspend fun checkNext(all:Boolean=false,onlyQueued:Boolean=false){
+    suspend fun checkNext(all:Boolean=false,onlyQueued:Boolean=false,autoQueue:Boolean=false){
         if(busy)return
         busy=true;running=true;stop=false
         var checked=0
@@ -283,6 +286,7 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
                                     note="Matched "+candidate.format.uppercase()+" · "+
                                         candidate.filename.substringAfterLast('/').take(130))
                             }
+                            if(autoQueue&&authorized)queueSong(selected,row,candidate)
                             passed++
                         }
                     }
@@ -318,7 +322,43 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
             finally{busy=false}
         }
     }
-    val exporterLink="https://music.jobbisoft.com.mx/tools/jobbi-collection-export.user.js"
+    val exporterLink=JobbiApi.serverUrl().trimEnd('/')+"/tools/jobbi-collection-export.user.js"
+    // Save through Android's document picker: no storage permissions, WebView,
+    // or browser download assumptions, including Android 8-15.
+    val exporterSave=rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/javascript")
+    ){uri:Uri?->
+        if(uri!=null)scope.launch{
+            busy=true
+            try {
+                val script=withContext(Dispatchers.IO){
+                    val request=Request.Builder().url(exporterLink).get()
+                        .header("Accept","application/javascript,text/javascript,text/plain").build()
+                    JobbiApi.client.newCall(request).execute().use{response->
+                        if(!response.isSuccessful)error(
+                            "Exporter is not available on this server (HTTP ${response.code}). Deploy the updated website.")
+                        val data=response.body?.byteStream()?.use{it.readNBytes(200_001)}
+                            ?:error("The exporter download was empty")
+                        require(data.size in 100..200_000){"Unexpected exporter file size"}
+                        val file=data.toString(Charsets.UTF_8)
+                        require(file.startsWith("// ==UserScript==") &&
+                            file.contains("@match        https://open.spotify.com/*") &&
+                            file.contains("@match        https://music.apple.com/*")){
+                            "The server did not return the expected exporter script"
+                        }
+                        file
+                    }
+                }
+                withContext(Dispatchers.IO){
+                    context.contentResolver.openOutputStream(uri,"w")?.use{stream->
+                        stream.write(script.toByteArray(Charsets.UTF_8))
+                    }?:error("Could not save the script to the selected location")
+                }
+                message="Exporter saved. Transfer the .user.js file to a desktop browser with a userscript manager. Capture playlists there, then upload the JSON here."
+            }catch(e:Exception){message=e.message?:"Exporter download failed"}
+            finally{busy=false}
+        }
+    }
     val report=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri:Uri?->
         if(uri!=null)scope.launch(Dispatchers.IO){
             try{
@@ -348,9 +388,23 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
                         Text("Export multiple playlists and Liked Songs on your desktop browser, "+
                             "then import the single JSON file here. Favorites become hearts.")
                         FilledTonalButton(onClick={
-                            try{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(exporterLink)))}
-                            catch(e:Exception){message="Open "+exporterLink+" in a browser"}
-                        }){Icon(Icons.Rounded.OpenInNew,null);Text("Get free browser exporter")}
+                            exporterSave.launch("jobbi-collection-export.user.js")
+                        },enabled=!busy){
+                            Icon(Icons.Rounded.Download,null)
+                            Text("Save free exporter script")
+                        }
+                        OutlinedButton(onClick={
+                            try{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(
+                                "https://github.com/b3njaram/navidrome/blob/main/jobbi-music/tools/README.md"
+                            )))}
+                            catch(e:Exception){message="Open the Jobbi exporter setup guide on GitHub"}
+                        }){
+                            Icon(Icons.Rounded.OpenInNew,null)
+                            Text("How to export on a computer")
+                        }
+                        Text("Choose Spotify or Apple Music in your desktop browser; the script detects which site you're viewing. Android downloads the script, but it must run through a compatible desktop userscript manager. Your account password never enters Jobbi Music.",
+                            style=MaterialTheme.typography.bodySmall,
+                            color=MaterialTheme.colorScheme.onSurfaceVariant)
                         Button(onClick={picker.launch(arrayOf("application/json","text/plain","*/*"))},
                             enabled=!busy){Icon(Icons.Rounded.FileOpen,null);Text("Choose collection JSON")}
                         Row(verticalAlignment=Alignment.CenterVertically){
@@ -407,9 +461,11 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
                             (counts["unsearched"]?:0)>0){
                             Icon(Icons.Rounded.Search,null);Text("Check next 3")
                         }
-                        FilledTonalButton(onClick={scope.launch{checkNext(true)}},
-                            enabled=!busy&&(counts["unsearched"]?:0)>0){
-                            Icon(Icons.Rounded.PlayArrow,null);Text("Scan remaining")
+                        FilledTonalButton(onClick={scope.launch{
+                            checkNext(all=true,autoQueue=authorized)
+                        }},enabled=!busy&&(counts["unsearched"]?:0)>0){
+                            Icon(Icons.Rounded.PlayArrow,null)
+                            Text(if(authorized)"Scan & queue matches" else "Scan remaining")
                         }
                     }
                     Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
