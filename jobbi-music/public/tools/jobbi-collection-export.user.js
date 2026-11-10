@@ -72,7 +72,7 @@
     // In compact Apple rows, title and artist can both be inside the primary
     // column. Read distinct text lines instead of returning its combined text.
     if(primary){
-      const lines=clean(primary.innerText||primary.textContent).split(/\s*\n\s*/).filter(Boolean);
+      const lines=String(primary.innerText||primary.textContent||'').split(/\s*\n\s*/).map(clean).filter(Boolean);
       if(!title)title=lines[0]||'';
       if(!artist&&lines.length>1)artist=lines.find(line=>line!==title)||'';
       if(!title||!artist){
@@ -133,7 +133,7 @@
       }
     }
     // Suppress outer wrapper rows that contain actual song rows.
-    return candidates.filter(row=>!row.querySelector(
+    return candidates.filter(row=>!row.matches('[role="row"]')||!row.querySelector(
       '[data-testid="track-list-item"], [data-testid^="track-item-"], .songs-list-row, [class*="songs-list-row"]'
     ));
   };
