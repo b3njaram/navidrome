@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MoreHorizontal, Album, ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Disc3, Heart, Home, Library, ListMusic, LoaderCircle, LogOut, Maximize2, Music2, Pause, Play, Plus, Repeat2, Search, Settings2, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles, Volume2, VolumeX, Waves, X, Mic2, Radio, RefreshCw, Headphones, HardDrive } from 'lucide-react';
+import { MoreHorizontal, Album, ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Disc3, Heart, Home, Library, ListMusic, LoaderCircle, LogOut, Maximize2, Music2, Pause, Play, Plus, Repeat2, Search, Settings2, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles, Volume2, VolumeX, Waves, X, Mic2, Radio, RefreshCw, Headphones, HardDrive, UsersRound } from 'lucide-react';
 import './style.css';
 import SocialSpace from './SocialSpace.jsx';
 import NowPlaying from './NowPlaying.jsx';
@@ -52,7 +52,7 @@ function Login({onLogin}) {
     <form className="login-card" onSubmit={submit}><div className="login-icon"><Headphones size={25}/></div><h2>Welcome back</h2><p>Sign in using your existing Navidrome account.</p><label>Username<input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} placeholder="Your username" required/></label><label>Password<input autoComplete="current-password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Your password" required/></label>{error&&<div className="error-note">{error}</div>}<button className="primary wide" disabled={busy} type="submit">{busy?<LoaderCircle className="spin" size={18}/>:<Play size={17} fill="currentColor"/>} Sign in to Jobbi Music</button><small>Secure connection to your personal music library.</small></form></main>
   </div>;
 }
-const navs=[{id:'home',label:'Listen Now',icon:Home},{id:'search',label:'Discover',icon:Search},{id:'library',label:'Your Library',icon:Library},{id:'social',label:'Community',icon:Heart}];
+const navs=[{id:'home',label:'Listen Now',icon:Home},{id:'search',label:'Discover',icon:Search},{id:'library',label:'Your Library',icon:Library},{id:'social',label:'Community',icon:UsersRound}];
 function Sidebar({page,setPage,user,logout,playlists}) {
   return <aside className="sidebar"><button className="brand" onClick={()=>setPage({id:'home'})}><span className="brand-symbol"><Waves size={19}/></span><span>jobbi<span className="brand-soft">music</span></span></button>
     <div className="sidebar-section"><span className="sidebar-heading">DISCOVER</span>{navs.map(n=><button key={n.id} onClick={()=>setPage({id:n.id})} className={`nav-item ${page.id===n.id?'active':''}`}><n.icon size={19} strokeWidth={1.8}/><span>{n.label}</span></button>)}</div>
@@ -74,11 +74,23 @@ function AlbumRow({items,title,tagline,onClick,action}) {
 function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,onSave,onArtist,onAlbum,head=true}) {
   const [busy,setBusy]=useState('');
   return <div className="track-list">{head&&<div className="track-header"><span>#</span><span>TITLE</span><span>ALBUM</span><span className="track-time"><Clock3 size={15}/></span></div>}
-    {(songs||[]).map((song,index)=><div className={`track-row ${currentTrack?.id===song.id?'is-playing':''}`} key={song.id||index}>
-      <button className="track-number" onClick={()=>onPlay(songs,index)}>{currentTrack?.id===song.id ? <Waves size={16}/>:<><span className="track-index">{index+1}</span><Play size={14} className="row-play" fill="currentColor"/></>}</button>
+    {(songs||[]).map((song,index)=><div className={`track-row ${currentTrack?.id===song.id?'is-playing':''}`} key={song.id||index}
+      onClick={event=>{
+        // Row clicks play the recording, while action and navigation controls remain independent.
+        if(event.target.closest('button,a,input,select,textarea'))return;
+        onPlay(songs,index);
+      }}>
+      <button className="track-number" aria-label={'Play '+(song.title||song.name||'track')} onClick={()=>onPlay(songs,index)}>{currentTrack?.id===song.id ? <Waves size={16}/>:<><span className="track-index">{index+1}</span><Play size={14} className="row-play" fill="currentColor"/></>}</button>
       <div className="track-main"><button className="track-art-click" aria-label={'Play '+(song.title||song.name)} onClick={()=>onPlay(songs,index)}><Art item={song} size="tiny"/></button><span className="track-meta"><button className="track-song-title" onClick={()=>onPlay(songs,index)}>{song.title||song.name}</button><button className="track-artist-link" title={'More songs by '+(song.artist||'this artist')} onClick={()=>onArtist?.(song)}>{song.artist||'Unknown artist'}</button></span></div>
       <span className="track-album">{song.album&&<button className="track-album-link" title={'View '+song.album+' album'} onClick={()=>onAlbum?.(song)}>{song.album}</button>}</span>
-      <div className="track-actions"><button className={`icon-button ${starred?.has(song.id)?'hearted':''}`} title="Favorite" disabled={busy===song.id} onClick={async()=>{setBusy(song.id);await onFavorite(song).catch(()=>{});setBusy('')}}><Heart size={15} fill={starred?.has(song.id)?'currentColor':'none'}/></button>{onAdd&&<button className="icon-button" title="Add to playlist" onClick={()=>onAdd(song)}><Plus size={16}/></button>}{onSave&&<button className="icon-button" title="Save on Android for offline playback" onClick={()=>onSave(song)}><ArrowDownToLine size={16}/></button>}{onRemove&&<button className="icon-button" title="Remove from playlist" onClick={()=>onRemove(index)}><X size={16}/></button>}<span>{duration(song.duration)}</span></div>
+      <div className="track-actions"><button className={`icon-button ${starred?.has(song.id)?'hearted':''}`}
+        type="button" aria-label={(starred?.has(song.id)?'Remove favorite ':'Favorite ')+(song.title||song.name||'track')}
+        aria-pressed={Boolean(starred?.has(song.id))}
+        title={starred?.has(song.id)?'Remove favorite':'Favorite'}
+        disabled={busy===song.id}
+        onClick={async()=>{setBusy(song.id);try{await onFavorite(song)}catch{/* App displays the API error. */}finally{setBusy('')}}}>
+        <Heart size={15} fill={starred?.has(song.id)?'currentColor':'none'}/></button>
+        {onAdd&&<button type="button" className="icon-button" aria-label={'Add '+(song.title||song.name||'track')+' to playlist'} title="Add to playlist" onClick={()=>onAdd(song)}><Plus size={16}/></button>}{onSave&&<button className="icon-button" title="Save on Android for offline playback" onClick={()=>onSave(song)}><ArrowDownToLine size={16}/></button>}{onRemove&&<button className="icon-button" title="Remove from playlist" onClick={()=>onRemove(index)}><X size={16}/></button>}<span>{duration(song.duration)}</span></div>
     </div>)}</div>;
 }
 const extractRemote = data => {
@@ -102,6 +114,7 @@ function App() {
   const [invidious,setInvidious]=useState(null),[invidiousBusy,setInvidiousBusy]=useState(false),[invidiousSong,setInvidiousSong]=useState(null),[permitVideo,setPermitVideo]=useState(false),[importWorker,setImportWorker]=useState({importEnabled:false}),[invidiousJobs,setInvidiousJobs]=useState([]);
   const [quality,setQuality]=useState(()=>{try{const v=localStorage.getItem('jobbi-quality');return ['original','balanced','saver'].includes(v)?v:'balanced'}catch{return 'balanced'}});
   const activeAudioTrack=useRef(null);
+  const userInitiatedPlay=useRef(null);
   const earlyEndRecovery=useRef({id:null,attempted:false});
   const androidApp=isNativeAndroid();
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
@@ -169,7 +182,12 @@ function App() {
       if(pos>0&&Number.isFinite(pos))a.addEventListener('loadedmetadata',()=>{try{a.currentTime=pos}catch{}},{once:true});
       a.load();
     }
-    if(shouldPlay)a.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));
+    // Direct song clicks already call play() synchronously with browser user activation.
+    const startedFromClick=userInitiatedPlay.current===currentTrack.id;
+    userInitiatedPlay.current=null;
+    if(shouldPlay&&!startedFromClick)a.play().then(()=>setPlaying(true)).catch(err=>{
+      setPlaying(false);setError('Unable to play this track: '+(err?.message||'Check browser audio permissions.'));
+    });
     activeAudioTrack.current=currentTrack.id;
     if(!sameTrack){earlyEndRecovery.current={id:currentTrack.id,attempted:false};setPosition(0);setLength(preferredDuration(currentTrack.duration,a.duration));}
   },[currentTrack?.id,quality]);
@@ -213,9 +231,19 @@ function App() {
   useEffect(()=>{if(!currentTrack||!Number.isFinite(length)||length<=0||!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
     try{navigator.mediaSession.setPositionState({duration:length,playbackRate:1,position:Math.max(0,Math.min(length,position))});}catch{}
   },[position,length,currentTrack?.id]);
-  const playTracks=(tracks,index=0)=>{const track=tracks?.[index];if(!track)return;
-    // Only the playback effect changes the source to avoid duplicate loads.
-    if(currentTrack?.id===track.id&&audio.current){audio.current.currentTime=0;audio.current.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}
+  const playTracks=(tracks,index=0)=>{
+    const track=tracks?.[index];if(!track?.id)return;
+    const element=audio.current;
+    if(element){
+      // play() must run inside the user's click/tap; useEffect can be blocked by autoplay policies.
+      const src=`/api/stream/${encodeURIComponent(track.id)}?quality=${quality}`;
+      if(element.getAttribute('src')!==src){element.src=src;element.load();}
+      else if(currentTrack?.id===track.id){try{element.currentTime=0}catch{}}
+      userInitiatedPlay.current=track.id!==currentTrack?.id?track.id:null;
+      element.play().then(()=>{setPlaying(true);setError('')}).catch(err=>{
+        setPlaying(false);setError('Unable to play this track: '+(err?.message||'Check browser audio permissions.'));
+      });
+    }
     setQueue(tracks);setCurrentIndex(index);
   };
   const next=()=>{if(!queue.length)return;setCurrentIndex(i=>shuffle?Math.floor(Math.random()*queue.length):repeat?i:(i+1)%queue.length)};
@@ -253,7 +281,16 @@ function App() {
     if(repeat){player.currentTime=0;player.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}
     else next();
   };
-  const favorite=async item=>{const shouldStar=!starred.has(item.id);await post('/api/star',{id:item.id,starred:shouldStar});setStarred(old=>{const a=new Set(old);shouldStar?a.add(item.id):a.delete(item.id);return a;});};
+  const favorite=async item=>{
+    if(!item?.id){setError('Cannot favorite a song without a library ID.');return;}
+    const shouldStar=!starred.has(item.id);
+    setStarred(old=>{const next=new Set(old);shouldStar?next.add(item.id):next.delete(item.id);return next;});
+    try{await post('/api/star',{id:item.id,starred:shouldStar});}
+    catch(err){
+      setStarred(old=>{const next=new Set(old);shouldStar?next.delete(item.id):next.add(item.id);return next;});
+      setError('Could not update favorite: '+err.message);throw err;
+    }
+  };
   const logout=async()=>{await post('/api/logout',{}).catch(()=>{});audio.current?.pause();setCurrentIndex(-1);setQueue([]);setUser(null);};
 
   const loadAdmin=async()=>{
@@ -318,6 +355,11 @@ function App() {
   };
 
   const refreshPlaylists=async()=>{const playlists=await api('/api/playlists');setHome(h=>({...h,playlists}));return playlists;};
+  const openPlaylistPicker=song=>{
+    if(!song?.id){setError('This song is not yet indexed in your library.');return;}
+    setPickerSong(song);
+    refreshPlaylists().catch(err=>setError('Could not refresh playlists: '+err.message));
+  };
   const createPlaylist=async e=>{e.preventDefault();if(!newPlaylist.trim())return;setPlaylistBusy(true);setError('');try{await post('/api/playlists',{name:newPlaylist.trim()});setNewPlaylist('');await refreshPlaylists();}catch(e){setError(e.message)}finally{setPlaylistBusy(false)}};
   const addToPlaylist=async id=>{if(!pickerSong)return;setPlaylistBusy(true);setError('');try{const result=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({addSongId:pickerSong.id})});setPickerSong(null);if(page.id==='playlist'&&page.idValue===id)setDetail(result.playlist);await refreshPlaylists();}catch(e){setError(e.message)}finally{setPlaylistBusy(false)}};
   const removeFromPlaylist=async(id,index)=>{setError('');try{const result=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({removeIndex:index})});setDetail(result.playlist);await refreshPlaylists();}catch(e){setError(e.message)}};
@@ -430,7 +472,7 @@ function App() {
   </>;
   if(page.id==='search')main=<><div className="page-title"><div className="eyebrow">EXPLORE MUSIC</div><h1>Discover<span className="spark-dot">.</span></h1><p>Search your library, Soulseek peers, and your private Invidious fallback.</p></div><div className="search-bar"><Search size={22}/><input className="search-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Songs, artists, albums..." autoFocus/>{q&&<button className="icon-button" onClick={()=>{setQ('');setRemote(null);setInvidious(null)}}><X size={18}/></button>}<span>⌘ K</span></div>
     <div className="segmented"><button className={searchTab==='library'?'selected':''} onClick={()=>setSearchTab('library')}><Library size={16}/> Your library</button><button className={searchTab==='soulseek'?'selected':''} onClick={()=>setSearchTab('soulseek')}><Radio size={16}/> Soulseek · New music <span className="experimental">IMPORT</span></button></div>
-    {searchTab==='library'?<>{results?<><AlbumRow items={results.album||[]} title="Albums" onClick={openAlbum}/>{(results.artist||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Artists</h2></div><div className="artist-strip">{results.artist.map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(results.song||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Songs</h2></div><SongList songs={results.song} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={setPickerSong} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong}/></section>}{!results.album?.length&&!results.song?.length&&!results.artist?.length&&<div className="empty-state">No matches in your library.</div>}</>:<div className="search-suggestion"><Search size={35}/><h3>Every great listen starts somewhere.</h3><p>Search albums, artists, and tracks.</p><button className="discover-peer-cta" onClick={()=>setSearchTab('soulseek')}><Radio size={18}/> Discover new songs on Soulseek <ArrowRight size={16}/></button></div>}</>:
+    {searchTab==='library'?<>{results?<><AlbumRow items={results.album||[]} title="Albums" onClick={openAlbum}/>{(results.artist||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Artists</h2></div><div className="artist-strip">{results.artist.map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(results.song||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Songs</h2></div><SongList songs={results.song} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong}/></section>}{!results.album?.length&&!results.song?.length&&!results.artist?.length&&<div className="empty-state">No matches in your library.</div>}</>:<div className="search-suggestion"><Search size={35}/><h3>Every great listen starts somewhere.</h3><p>Search albums, artists, and tracks.</p><button className="discover-peer-cta" onClick={()=>setSearchTab('soulseek')}><Radio size={18}/> Discover new songs on Soulseek <ArrowRight size={16}/></button></div>}</>:
     <section className="remote-search"><div className="remote-notice"><Radio size={21}/><div><strong>Search beyond your library</strong><p>Explore more music through Soulseek and Invidious.</p></div></div>
       <div className="source-indicator"><span className={remoteStatus?.serverConnected?'source-online':'source-unknown'}/><span>{remoteStatus?.mode==='slskd'?remoteStatus.serverConnected?'Soulseek connected':'Soulseek connection needs attention':remoteStatus?.mode==='legacy'?'Legacy search · direct slskd connection recommended':'Checking Soulseek connection…'}</span></div>
       {remoteStatus?.message&&<div className="search-notice">{remoteStatus.message}</div>}
@@ -512,11 +554,11 @@ function App() {
       <form className="account-form" onSubmit={createAccount}><h3>Create listener account</h3><div className="account-fields"><label>Username<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9_-]+" value={accountForm.username} autoComplete="off" onChange={e=>setAccountForm(p=>({...p,username:e.target.value}))}/></label><label>Display name<input maxLength={80} value={accountForm.name} onChange={e=>setAccountForm(p=>({...p,name:e.target.value}))}/></label><label>Email (optional)<input type="email" maxLength={200} value={accountForm.email} onChange={e=>setAccountForm(p=>({...p,email:e.target.value}))}/></label><label>Temporary password<input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={accountForm.password} onChange={e=>setAccountForm(p=>({...p,password:e.target.value}))}/></label></div><button type="submit" className="primary" disabled={adminBusy||adminUsers?.readOnly}><Plus size={16}/> Create listener</button><p>New accounts are listeners by default. There is no public sign-up or privilege escalation from this form.</p></form>}
     </div>
   </section>;
-  if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} favorite={favorite} openAlbum={openAlbum} onAdd={setPickerSong} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong}/></>;
-  if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><Art item={detail} size="big" round={page.id==='artist'}/><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit"><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{(detail.song||detail.entry||[]).length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={detail.song||detail.entry} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={setPickerSong} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?i=>removeFromPlaylist(page.idValue,i):undefined}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
+  if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} favorite={favorite} openAlbum={openAlbum} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong}/></>;
+  if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><Art item={detail} size="big" round={page.id==='artist'}/><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit"><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{(detail.song||detail.entry||[]).length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={detail.song||detail.entry} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?i=>removeFromPlaylist(page.idValue,i):undefined}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
   return <div className={'app-shell '+(playing?'music-is-playing':'music-is-paused')}><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span>{androidApp&&<button className="native-offline-link" title="Open downloaded music" onClick={()=>nativeCommand("openOffline")}><ArrowDownToLine size={15}/> Offline</button>}<label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Open community profile" onClick={()=>setPage({id:'social'})}>{socialSelf?.has_avatar?<img className="header-profile-photo" src={`/api/social/profiles/${encodeURIComponent(user.username.toLowerCase())}/avatar?v=${socialAvatarVersion}`} alt="My profile"/>:user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
     <audio ref={audio} onTimeUpdate={e=>setPosition(Number.isFinite(e.currentTarget.currentTime)?e.currentTarget.currentTime:0)} onLoadedMetadata={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onDurationChange={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onEnded={handleAudioEnded} onError={e=>{setPlaying(false);if(e.currentTarget.error&&currentTrack)setError('Playback failed. Check the track format or connection, then try again.')}}/>
-    <div className={`player ${currentTrack?'player-active':''} ${playing?'player-playing':'player-paused'}`}><div className="player-song"><button className="player-open" aria-label={currentTrack?'Open now playing for '+currentTrack.title:'Nothing playing'} onClick={()=>openNowPlaying()} disabled={!currentTrack}><Art item={currentTrack} size="small"/>{currentTrack&&<span className="jobbi-mini-viz" aria-hidden="true"><i/><i/><i/><i/></span>}<div className="player-song-text"><strong>{currentTrack?.title||'Nothing playing yet'}</strong><span>{currentTrack?.artist||'Your soundtrack starts here'}</span></div></button>{currentTrack&&androidApp&&<button className="icon-button" title="Download this song to Android" onClick={()=>saveOffline(currentTrack)}><ArrowDownToLine size={18}/></button>}{currentTrack&&<button className={`icon-button ${starred.has(currentTrack.id)||currentTrack.starred?'hearted':''}`} onClick={()=>favorite(currentTrack).catch(e=>setError(e.message))} title="Favorite"><Heart size={18} fill={starred.has(currentTrack.id)||currentTrack.starred?'currentColor':'none'}/></button>}</div>
+    <div className={`player ${currentTrack?'player-active':''} ${playing?'player-playing':'player-paused'}`}><div className="player-song"><button className="player-open" aria-label={currentTrack?'Open now playing for '+currentTrack.title:'Nothing playing'} onClick={()=>openNowPlaying()} disabled={!currentTrack}><Art item={currentTrack} size="small"/>{currentTrack&&<span className="jobbi-mini-viz" aria-hidden="true"><i/><i/><i/><i/></span>}<div className="player-song-text"><strong>{currentTrack?.title||'Nothing playing yet'}</strong><span>{currentTrack?.artist||'Your soundtrack starts here'}</span></div></button>{currentTrack&&androidApp&&<button className="icon-button" title="Download this song to Android" onClick={()=>saveOffline(currentTrack)}><ArrowDownToLine size={18}/></button>}{currentTrack&&<button className={`icon-button ${starred.has(currentTrack.id)||currentTrack.starred?'hearted':''}`} onClick={()=>favorite(currentTrack).catch(()=>{})} aria-label="Favorite current song" aria-pressed={starred.has(currentTrack.id)} title="Favorite"><Heart size={18} fill={starred.has(currentTrack.id)||currentTrack.starred?'currentColor':'none'}/></button>}</div>
     <div className="player-center"><div className="playback-controls"><button className={`icon-button ${shuffle?'control-on':''}`} onClick={()=>setShuffle(v=>!v)} title="Shuffle"><Shuffle size={16}/></button><button className="icon-button" onClick={prev} disabled={!currentTrack}><SkipBack size={19} fill="currentColor"/></button><button className="play-round" onClick={toggle} disabled={!currentTrack}>{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-button" onClick={next} disabled={!currentTrack}><SkipForward size={19} fill="currentColor"/></button><button className={`icon-button ${repeat?'control-on':''}`} onClick={()=>setRepeat(v=>!v)} title="Repeat"><Repeat2 size={16}/></button></div><div className="seek"><small>{duration(position)}</small><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={cappedPosition(position,length)} style={{'--seek-progress':progressPercent(position,length)+'%'}} onChange={e=>seekTo(Number(e.target.value))} disabled={!currentTrack||!length}/><small>{duration(length)}</small></div></div>
     <div className="player-extras"><button className={`icon-button ${panel==='lyrics'?'control-on':''}`} title="Lyrics" onClick={()=>openNowPlaying('lyrics')} disabled={!currentTrack}><Mic2 size={18}/></button><button className={`icon-button ${panel==='queue'?'control-on':''}`} title="Queue" onClick={()=>setPanel(panel==='queue'?null:'queue')}><ListMusic size={19}/></button><Volume2 size={18}/><input type="range" min="0" max="1" step=".01" value={volume} onChange={e=>setVolume(Number(e.target.value))} aria-label="Volume"/></div></div>
     {nowPlayingOpen&&currentTrack&&<NowPlaying
@@ -528,7 +570,7 @@ function App() {
       onSelect={setCurrentIndex}
       favorited={starred.has(currentTrack.id)||currentTrack.starred}
       onFavorite={()=>favorite(currentTrack).catch(e=>setError(e.message))}
-      onAdd={()=>{setPickerSong(currentTrack);setNowPlayingOpen(false)}}
+      onAdd={()=>{openPlaylistPicker(currentTrack);setNowPlayingOpen(false)}}
       onDownload={androidApp?()=>saveOffline(currentTrack):null}
       onArtist={()=>{setNowPlayingOpen(false);openArtistSong(currentTrack)}}
       onAlbum={()=>{setNowPlayingOpen(false);openAlbumSong(currentTrack)}}
