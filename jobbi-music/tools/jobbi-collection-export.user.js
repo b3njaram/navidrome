@@ -5,6 +5,8 @@
 // @description  Export YOUR currently displayed Spotify or Apple Music playlist metadata to a Jobbi Music JSON manifest; never copies audio or login credentials.
 // @match        https://open.spotify.com/*
 // @match        https://music.apple.com/*
+// @updateURL    https://music.jobbisoft.com.mx/tools/jobbi-collection-export.user.js
+// @downloadURL  https://music.jobbisoft.com.mx/tools/jobbi-collection-export.user.js
 // @run-at       document-idle
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -222,7 +224,7 @@
     '<p class="small">You choose which playlists to capture. Sign in only through Spotify or Apple Music. This script reads visible track metadata, never passwords or music audio. Web layouts can change; always inspect the captured counts. Some providers restrict automated collection access.</p></div></div>';
   document.documentElement.appendChild(host);
   const $=id=>shadow.getElementById(id);
-  $('provider').textContent=(provider==='spotify'?'Spotify':'Apple Music')+' · Saves one combined file across both providers';
+  $('provider').textContent=(provider==='spotify'?'Spotify':'Apple Music')+' · exporter v1.2.0 · Saves one combined file across both providers';
   const resetForm=()=>{$('title').value=inferredName();$('favorites').checked=inferredFavorites()};
   resetForm();
   let lastUrl=location.href;
