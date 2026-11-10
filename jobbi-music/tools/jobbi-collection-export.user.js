@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jobbi Music — My Collection Exporter
 // @namespace    https://music.jobbisoft.com.mx
-// @version      1.1.0
+// @version      1.2.0
 // @description  Export YOUR currently displayed Spotify or Apple Music playlist metadata to a Jobbi Music JSON manifest; never copies audio or login credentials.
 // @match        https://open.spotify.com/*
 // @match        https://music.apple.com/*
@@ -44,22 +44,54 @@
     if(!title||!artist)return null;
     return {position:number>0?number-1:null,title,artist,album,sourceUrl:trackUrl,duration,version:''};
   };
+  // Prefer title and artist elements inside the actual track row. Apple Music
+  // ships different desktop, responsive and library layouts concurrently.
   const appleRow=row=>{
-    // Apple Music's 2026 web player uses "track-list-item" and
-    // "track-column-secondary" rather than legacy songs-list-row classes.
-    // Read only one row at a time; never scrape sidebar suggestions.
-    const title=pick(row,[
-      '[data-testid="track-title"]','[data-testid="track-column-primary"]',
-      '[data-testid="song-title"]','.songs-list-row__song-name',
-      '.songs-list__song-name','.product-lockup__title',
-      '[class*="song-name"]','[class*="track-lockup__title"]'
-    ]);
-    const artist=pick(row,[
-      '[data-testid="track-title-by-line"]','[data-testid="track-column-secondary"]',
-      '[data-testid="track-artist"]','.songs-list-row__artist',
+    const titleSelectors=[
+      '[data-testid="track-title"]','[data-testid="song-title"]',
+      '.songs-list-row__song-name','.songs-list__song-name',
+      '.product-lockup__title','[class*="track-lockup__title"]',
+      '[class*="song-name"]','[data-testid="track-name"]',
+      '[class*="track-title"]','[data-testid="title"]'
+    ];
+    const artistSelectors=[
+      '[data-testid="track-title-by-line"]','[data-testid="track-artist"]',
+      '[data-testid="track-column-secondary"]','[data-testid="song-artist"]',
+      '.songs-list-row__by-line','.songs-list-row__artist',
       '.songs-list__col-artist','.product-lockup__subtitle',
-      '[class*="song-artist"]','[class*="artist-name"]'
-    ]);
+      '[class*="track-lockup__subtitle"]','[class*="artist-name"]',
+      '[class*="song-artist"]','[class*="by-line"]','[class*="subtitle"]'
+    ];
+    const primary=row.querySelector('[data-testid="track-column-primary"], [class*="song-info"], [class*="track-info"]');
+    const titleFromLink=[...row.querySelectorAll('a[href*="?i="],a[href*="/song/"]')]
+      .map(a=>clean(a.textContent)).find(Boolean)||'';
+    let title=pick(row,titleSelectors)||titleFromLink;
+    let artist=pick(row,artistSelectors)||
+      [...row.querySelectorAll('a[href*="/artist/"]')]
+        .map(a=>clean(a.textContent)).filter(Boolean).join(', ');
+    // In compact Apple rows, title and artist can both be inside the primary
+    // column. Read distinct text lines instead of returning its combined text.
+    if(primary){
+      const lines=clean(primary.innerText||primary.textContent).split(/\s*\n\s*/).filter(Boolean);
+      if(!title)title=lines[0]||'';
+      if(!artist&&lines.length>1)artist=lines.find(line=>line!==title)||'';
+      if(!title||!artist){
+        const bits=[...primary.querySelectorAll('a,span,div')]
+          .filter(e=>!e.querySelector('a,span,div'))
+          .map(e=>clean(e.textContent)).filter(Boolean);
+        if(!title)title=bits[0]||'';
+        if(!artist)artist=bits.find(bit=>bit!==title)||'';
+      }
+    }
+    // Accessible labels are a last resort; only use explicit "by Artist".
+    const label=clean(row.getAttribute('aria-label')||'');
+    const named=label.match(/^(.+?)\s+by\s+(.+?)(?:[,·]|$)/i);
+    if(named){if(!title)title=clean(named[1]);if(!artist)artist=clean(named[2])}
+    // Some Apple views render the artist as a sibling of the title link.
+    if(!artist&&titleFromLink){
+      const sibling=pick(row,['[data-testid="artist"]','[class*="secondary"]']);
+      if(sibling&&sibling!==title)artist=sibling;
+    }
     const album=pick(row,[
       '[data-testid="track-column-tertiary"]','[data-testid="track-album"]',
       '.songs-list__col-album','[class*="album-name"]'
@@ -71,7 +103,7 @@
       row.closest('[data-index]')?.getAttribute('data-index');
     const index=rawIndex===null?null:Number(rawIndex);
     const position=Number.isSafeInteger(index)&&index>=0?index:null;
-    const link=row.querySelector('a[href*="/song/"],a[href*="?i="],a[href*="/album/"]');
+    const link=row.querySelector('a[href*="?i="],a[href*="/song/"],a[href*="/album/"]');
     const sourceUrl=link?.getAttribute('href')
       ?new URL(link.getAttribute('href'),location.origin).href.split('#')[0]:'';
     const duration=pick(row,['[data-testid="track-duration"]',
@@ -80,46 +112,70 @@
     return {position,title,artist,album,sourceUrl,duration,version:''};
   };
   const selectors=provider==='spotify'
-    ?'[data-testid="tracklist-row"]'
-    :'[data-testid="track-list-item"], [data-testid^="track-item-"], .songs-list-row, [class*="songs-list-row"], [role="row"][aria-label]';
+    ?'[data-testid="tracklist-row"], [role="row"][data-testid*="track"]'
+    :[
+      '[data-testid="track-list-item"]','[data-testid^="track-item-"]',
+      '[data-testid="song-row"]','[data-testid="song-list-item"]',
+      '[data-testid="track-row"]','.songs-list-row',
+      '[class*="songs-list-row"]','[class*="track-list-item"]',
+      '[role="row"][aria-label]','[role="row"][data-row-index]'
+    ].join(',');
+  let diagnostics={rows:0,readable:0,scroll:'none'};
+  const getRowCandidates=()=>{
+    const scope=document.querySelector('#scrollable-page main, [data-testid="main-view-container"], #scrollable-page, main')||document;
+    const candidates=[...scope.querySelectorAll(selectors)]
+      .filter(e=>!e.closest('#jobbi-collection-exporter'));
+    if(provider==='apple'&&!candidates.length){
+      // Row class names occasionally change, but song links are still present.
+      for(const link of scope.querySelectorAll('a[href*="?i="],a[href*="/song/"]')){
+        const row=link.closest('[role="row"],li,[class*="song-row"],[class*="track-row"]');
+        if(row&&!candidates.includes(row))candidates.push(row);
+      }
+    }
+    // Suppress outer wrapper rows that contain actual song rows.
+    return candidates.filter(row=>!row.querySelector(
+      '[data-testid="track-list-item"], [data-testid^="track-item-"], .songs-list-row, [class*="songs-list-row"]'
+    ));
+  };
   const readRows=()=>{
-    const all=[...document.querySelectorAll(selectors)]
-      .filter(e=>e.closest('#jobbi-collection-exporter')===null);
-    // Ignore wrapper rows if a nested canonical Apple Music track row exists.
-    const rows=provider==='apple'&&all.some(r=>r.matches('[data-testid="track-list-item"]'))
-      ?all.filter(r=>r.matches('[data-testid="track-list-item"]')):all;
+    const rows=getRowCandidates();
     const results=[],seen=new Set(),occurrences=new Map();
+    diagnostics.rows=Math.max(diagnostics.rows,rows.length);
     for(const row of rows){
       const song=provider==='spotify'?spotifyRow(row):appleRow(row);
       if(!song)continue;
       const fingerprint=[song.sourceUrl,song.title,song.artist,song.album,song.duration].join('|');
       const number=(occurrences.get(fingerprint)||0)+1;
       occurrences.set(fingerprint,number);
-      // An explicit row position is best; same-song playlist duplicates are
-      // preserved when both are visible, even without a stable index.
       const key=song.position!=null?'position:'+song.position:
         'track:'+fingerprint+':occurrence:'+number;
       if(!seen.has(key)){seen.add(key);results.push({key,song})}
     }
+    diagnostics.readable=Math.max(diagnostics.readable,results.length);
     return results;
   };
   function scroller(){
-    // Apple Music scrolls this specific inner pane, not the document/body.
-    if(provider==='apple'){
-      const pane=document.querySelector('#scrollable-page');
-      if(pane)return pane;
-    }
-    const first=document.querySelector(selectors);
+    const first=getRowCandidates()[0];
+    const candidates=[];
     if(first){
-      for(let element=first.parentElement;element;element=element.parentElement){
-        const style=getComputedStyle(element);
-        if(element.scrollHeight>element.clientHeight+70 && /auto|scroll/.test(style.overflowY))
-          return element;
+      for(let el=first.parentElement;el;el=el.parentElement)candidates.push(el);
+    }
+    if(provider==='apple'){
+      for(const selector of ['#scrollable-page','[data-testid="scrollable-page"]','[class*="scrollable"]']){
+        const node=document.querySelector(selector);
+        if(node&&!candidates.includes(node))candidates.push(node);
       }
     }
-    const main=document.querySelector('[data-testid="main-view-container"], #main-view, main');
-    if(main&&main.scrollHeight>main.clientHeight+70)return main;
-    return document.scrollingElement||document.documentElement;
+    for(const el of candidates){
+      const style=getComputedStyle(el);
+      if(el.scrollHeight>el.clientHeight+40&&/auto|scroll/.test(style.overflowY)){
+        diagnostics.scroll=el.id||el.getAttribute('data-testid')||el.tagName.toLowerCase();
+        return el;
+      }
+    }
+    const root=document.scrollingElement||document.documentElement;
+    diagnostics.scroll=root.tagName.toLowerCase();
+    return root;
   }
   function expectedCount(){
     if(provider!=='spotify')return null;
@@ -195,6 +251,7 @@
       $('status').textContent='Open an Apple Music playlist or your Favorite Songs library first.';return
     }
     busy=true;stop=false;$('scan').disabled=true;$('stop').disabled=false;
+    diagnostics={rows:0,readable:0,scroll:'none'};
     const found=new Map(),expected=expectedCount(),target=scroller();
     const original=target.scrollTop;
     let previous=0,stall=0,lastTop=-1,steps=0;
@@ -211,7 +268,9 @@
         else if(lastTop===target.scrollTop&&previous===count)stall++;
         else stall=0;
         if(steps%5===0)$('status').textContent='Capturing: '+count+(expected?' / '+expected:'')+' songs · scroll step '+steps;
-        if(stall>=14)break;
+        // A static, non-scrollable list should finish quickly. For empty lists
+        // wait a little longer to allow delayed Apple Music hydration.
+        if(stall>=(maxScroll<10?(count?3:8):14))break;
         previous=count;lastTop=target.scrollTop;
         target.scrollTop=Math.min(maxScroll,target.scrollTop+Math.max(260,target.clientHeight*.72));
         await sleep(provider==='apple'?480:180);
@@ -224,8 +283,11 @@
         position:position??i+1,title,artist,album,duration,sourceUrl,version
       }));
       if(!tracks.length)throw new Error(
-        'No songs detected. Apple Music may not have finished loading, or its layout has changed. '+
-        'Verify that songs and artists are visible, refresh the playlist, then capture again.'
+        'No readable songs detected. Found '+diagnostics.rows+' possible rows, '+
+        diagnostics.readable+' with a title and artist. Scrolling: '+diagnostics.scroll+
+        '. The page may still be loading, or Apple Music changed its markup. '+
+        'Open the playlist songs (not its overview), refresh, then try again. '+
+        'Send these diagnostic numbers if it still fails.'
       );
       const incomplete=Boolean(stop||(expected&&tracks.length<expected));
       const item={
