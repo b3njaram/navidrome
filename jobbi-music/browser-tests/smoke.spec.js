@@ -585,12 +585,12 @@ test('playlist tools search tracks, change privacy, heart songs and upload album
   await navigate(page,'Your Library');
   await page.locator('.playlist-grid').getByRole('button',{name:/Favorites Mix/}).click();
   await expect(page.getByRole('button',{name:/Invite collaborators/})).toBeVisible();
-  await expect(page.getByRole('button',{name:/Private · Make public/})).toBeVisible();
+  await expect(page.getByRole('switch',{name:/Private · Make public/})).toBeVisible();
   await page.getByRole('searchbox',{name:'Find a song in this playlist'}).fill('Kino');
   await expect(page.locator('.track-row')).toHaveCount(1);
   page.once('dialog',dialog=>dialog.accept());
-  await page.getByRole('button',{name:/Private · Make public/}).click();
-  await expect(page.getByRole('button',{name:/Public · Make private/})).toBeVisible();
+  await page.getByRole('switch',{name:/Private · Make public/}).click();
+  await expect(page.getByRole('switch',{name:/Public · Make private/})).toBeVisible();
   expect(state.playlists[0].public).toBe(true);
   await page.getByRole('button',{name:'Heart all songs'}).click();
   await expect.poll(()=>state.stars.size).toBe(2);
