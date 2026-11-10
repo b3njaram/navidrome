@@ -20,6 +20,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var busy by androidx.compose.runtime.mutableStateOf(false)
         private set
+    var visibilityUpdating by androidx.compose.runtime.mutableStateOf(false)
+        private set
     var error by androidx.compose.runtime.mutableStateOf("")
         private set
     var message by androidx.compose.runtime.mutableStateOf("")
@@ -161,11 +163,41 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         favoriteIds = favoriteIds + ids
         message = "Favorited ${ids.size} tracks in this playlist."
     }
-    fun setPlaylistPublic(value: Boolean) = execute {
-        val listing = detail ?: return@execute
-        JobbiApi.editPlaylist(listing.id, JSONObject().put("public",value))
-        detail = listing.copy(public=value)
-        playlists = JobbiApi.playlists()
+    fun setPlaylistPublic(value: Boolean) {
+        val listing = detail ?: return
+        if (!listing.isPlaylist || visibilityUpdating || listing.public == value) return
+        if (listing.owner.isNotBlank() && !listing.owner.equals(account, ignoreCase = true)) {
+            error = "Only the playlist owner (${listing.owner}) can change its visibility."
+            return
+        }
+        viewModelScope.launch {
+            visibilityUpdating = true
+            error = ""
+            message = ""
+            try {
+                val response = JobbiApi.editPlaylist(
+                    listing.id, JSONObject().put("public", value)
+                )
+                val returned = response.optJSONObject("playlist")
+                    ?: throw JobbiException("The music server did not confirm the visibility change.")
+                if (!returned.has("public") || returned.optBoolean("public") != value) {
+                    throw JobbiException("The playlist visibility was not saved. Please retry.")
+                }
+                // Keep the playlist screen open and show the confirmed server value.
+                if (detail?.id == listing.id) {
+                    detail = listing.copy(public = value)
+                }
+                playlists = playlists.map { playlist ->
+                    if (playlist.id == listing.id) playlist.copy(public = value) else playlist
+                }
+                message = if (value) "Playlist is now public." else "Playlist is now private."
+            } catch (e: Exception) {
+                // Never flip the switch when a request failed or was not confirmed.
+                error = e.message ?: "Could not change playlist visibility."
+            } finally {
+                visibilityUpdating = false
+            }
+        }
     }
     fun addToPlaylist(song: Song, id: String) = execute {
         JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
