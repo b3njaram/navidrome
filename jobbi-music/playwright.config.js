@@ -9,7 +9,9 @@ export default defineConfig({
   use:{baseURL:'http://127.0.0.1:4173',trace:'retain-on-failure',screenshot:'only-on-failure'},
   projects:[
     {name:'desktop-chromium',use:{...devices['Desktop Chrome']}},
-    {name:'iphone-webkit',use:{...devices['iPhone 13']}}
+    {name:'iphone-webkit',use:{...devices['iPhone 13']}},
+    // Firefox hit-testing is important for desktop Synology listeners.
+    {name:'desktop-firefox',grep:/Favorites page heart and plus icons receive real pointer clicks/,use:{...devices['Desktop Firefox']}}
   ],
   webServer:{
     command:'npm run preview -- --host 127.0.0.1 --port 4173',
