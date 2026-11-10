@@ -73,28 +73,72 @@ function AlbumRow({items,title,tagline,onClick,action}) {
   if(!items?.length)return null;
   return <section className="shelf"><div className="shelf-title"><div><h2>{title}</h2>{tagline&&<p>{tagline}</p>}</div>{action&&<span className="section-kicker">{action}</span>}</div><div className="album-grid">{items.map((x,i)=><AlbumCard key={x.id || i} item={x} onClick={onClick}/>)}</div></section>;
 }
-function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,onSave,onArtist,onAlbum,head=true}) {
+function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,onSave,onArtist,onAlbum,head=true,
+  selectionKey='songs',onBulkAction=null,isAdmin=false}) {
   const [busy,setBusy]=useState('');
-  return <div className="track-list">{head&&<div className="track-header"><span>#</span><span>TITLE</span><span>ALBUM</span><span className="track-time"><Clock3 size={15}/></span></div>}
-    {(songs||[]).map((song,index)=><div className={`track-row ${currentTrack?.id===song.id?'is-playing':''}`} key={song.id||index}
+  const [selecting,setSelecting]=useState(false),[selected,setSelected]=useState(new Set());
+  const hold=useRef(null),held=useRef(false);
+  useEffect(()=>{setSelecting(false);setSelected(new Set());},[selectionKey]);
+  const rows=songs||[];
+  const choose=index=>{setSelecting(true);setSelected(old=>{
+    const next=new Set(old);next.has(index)?next.delete(index):next.add(index);return next;
+  })};
+  const chosen=[...selected].sort((a,b)=>a-b).map(i=>rows[i]).filter(Boolean);
+  const act=async action=>{
+    if(!chosen.length||!onBulkAction)return;
+    try{
+      await onBulkAction(action,chosen);
+      if(!['copy','move'].includes(action)){setSelected(new Set());setSelecting(false)}
+    }catch{/* The parent displays the actionable API error. */}
+  };
+  return <div className="track-list">
+    {onBulkAction&&<div className="selection-toolbar">
+      <button type="button" className="ghost-button" onClick={()=>{setSelecting(v=>!v);setSelected(new Set())}}>{selecting?'Done selecting':'Select songs'}</button>
+      {selecting&&<><span>{selected.size} of {rows.length} selected</span>
+      <button type="button" onClick={()=>setSelected(new Set(rows.map((_,i)=>i)))}>Select all</button>
+      <button type="button" onClick={()=>setSelected(new Set())}>Clear</button>
+      <button type="button" disabled={!chosen.length||!!busy} onClick={()=>act('favorite')}>Add to Favorites</button>
+      <button type="button" disabled={!chosen.length||!!busy} onClick={()=>act('copy')}>Add to playlist</button>
+      {onRemove&&<><button type="button" disabled={!chosen.length||!!busy} onClick={()=>act('move')}>Move to playlist</button>
+        <button type="button" disabled={!chosen.length||!!busy} onClick={()=>act('remove')}>Remove from playlist</button></>}
+      {!onRemove&&selectionKey==='favorites'&&<button type="button" disabled={!chosen.length||!!busy} onClick={()=>act('unfavorite')}>Remove from Favorites</button>}
+      {isAdmin&&<button type="button" disabled={!chosen.length||chosen.length>20||!!busy} onClick={()=>act('quarantine')}>Remove recordings from NAS</button>}
+      </>}
+    </div>}
+    {head&&<div className="track-header"><span>#</span><span>TITLE</span><span>ALBUM</span><span className="track-time"><Clock3 size={15}/></span></div>}
+    {rows.map((song,index)=><div className={`track-row ${currentTrack?.id===song.id?'is-playing':''} ${selected.has(index)?'track-selected':''}`}
+      key={song.id+'|'+(song._playlistIndex??index)}
+      onContextMenu={event=>{if(!onBulkAction)return;event.preventDefault();choose(index)}}
+      onTouchStart={()=>{if(!onBulkAction)return;held.current=false;clearTimeout(hold.current);hold.current=setTimeout(()=>{held.current=true;choose(index)},520)}}
+      onTouchEnd={()=>clearTimeout(hold.current)}
+      onTouchMove={()=>clearTimeout(hold.current)}
+      onTouchCancel={()=>clearTimeout(hold.current)}
       onClick={event=>{
-        // Never treat action-button clicks as a request to start playback.
+        if(held.current){held.current=false;return}
+        if(onBulkAction&&(selecting||event.ctrlKey||event.metaKey||event.shiftKey)){choose(index);return}
         const clicked=event.target;
         if(clicked instanceof Element&&clicked.closest('.track-actions,button,a,input,select,textarea'))return;
-        onPlay(songs,index);
+        onPlay(rows,index);
       }}>
-      <button className="track-number" aria-label={'Play '+(song.title||song.name||'track')} onClick={()=>onPlay(songs,index)}>{currentTrack?.id===song.id ? <Waves size={16}/>:<><span className="track-index">{index+1}</span><Play size={14} className="row-play" fill="currentColor"/></>}</button>
-      <div className="track-main"><button className="track-art-click" aria-label={'Play '+(song.title||song.name)} onClick={()=>onPlay(songs,index)}><Art item={song} size="tiny"/></button><span className="track-meta"><button className="track-song-title" onClick={()=>onPlay(songs,index)}>{song.title||song.name}</button><button className="track-artist-link" title={'More songs by '+(song.artist||'this artist')} onClick={()=>onArtist?.(song)}>{song.artist||'Unknown artist'}</button></span></div>
+      {selecting?<label className="track-selection"><input type="checkbox" aria-label={'Select '+(song.title||song.name||'song')} checked={selected.has(index)}
+        onChange={()=>choose(index)}/></label>:
+      <button className="track-number" aria-label={'Play '+(song.title||song.name||'track')} onClick={()=>onPlay(rows,index)}>
+        {currentTrack?.id===song.id ? <Waves size={16}/>:<><span className="track-index">{index+1}</span><Play size={14} className="row-play" fill="currentColor"/></>}</button>}
+      <div className="track-main"><button className="track-art-click" aria-label={'Play '+(song.title||song.name)} onClick={()=>selecting?choose(index):onPlay(rows,index)}><Art item={song} size="tiny"/></button><span className="track-meta"><button className="track-song-title" onClick={()=>selecting?choose(index):onPlay(rows,index)}>{song.title||song.name}</button><button className="track-artist-link" title={'More songs by '+(song.artist||'this artist')} onClick={()=>onArtist?.(song)}>{song.artist||'Unknown artist'}</button></span></div>
       <span className="track-album">{song.album&&<button className="track-album-link" title={'View '+song.album+' album'} onClick={()=>onAlbum?.(song)}>{song.album}</button>}</span>
-      <div className="track-actions"><button className={`icon-button ${starred?.has(song.id)?'hearted':''}`}
+      {!selecting&&<div className="track-actions"><button className={`icon-button ${starred?.has(song.id)?'hearted':''}`}
         type="button" aria-label={(starred?.has(song.id)?'Remove favorite ':'Favorite ')+(song.title||song.name||'track')}
         aria-pressed={Boolean(starred?.has(song.id))}
         title={starred?.has(song.id)?'Remove favorite':'Favorite'}
         disabled={busy===song.id}
-        onClick={async event=>{event.stopPropagation();setBusy(song.id);try{await onFavorite(song)}catch{/* App displays the API error. */}finally{setBusy('')}}}>
+        onClick={async event=>{event.stopPropagation();setBusy(song.id);try{await onFavorite(song)}catch{}finally{setBusy('')}}}>
         <Heart size={15} fill={starred?.has(song.id)?'currentColor':'none'}/></button>
-        {onAdd&&<button type="button" className="icon-button" aria-label={'Add '+(song.title||song.name||'track')+' to playlist'} title="Add to playlist" onClick={event=>{event.stopPropagation();onAdd(song)}}><Plus size={16}/></button>}{onSave&&<button className="icon-button" title="Save on Android for offline playback" onClick={()=>onSave(song)}><ArrowDownToLine size={16}/></button>}{onRemove&&<button className="icon-button" title="Remove from playlist" onClick={()=>onRemove(index,song)}><X size={16}/></button>}<span>{duration(song.duration)}</span></div>
-    </div>)}</div>;
+        {onAdd&&<button type="button" className="icon-button" aria-label={'Add '+(song.title||song.name||'track')+' to playlist'} title="Add to playlist" onClick={event=>{event.stopPropagation();onAdd(song)}}><Plus size={16}/></button>}
+        {onSave&&<button className="icon-button" title="Save on Android for offline playback" onClick={()=>onSave(song)}><ArrowDownToLine size={16}/></button>}
+        {onRemove&&<button className="icon-button" title="Remove from playlist" onClick={()=>onRemove(index,song)}><X size={16}/></button>}
+        <span>{duration(song.duration)}</span></div>}
+    </div>)}
+  </div>;
 }
 const extractRemote = data => {
   const found=[], visited=new Set();
@@ -123,6 +167,7 @@ function App() {
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const audio=useRef(null);
   const [playlistQuery,setPlaylistQuery]=useState(''),[coverVersion,setCoverVersion]=useState(0);
+  const [bulkTask,setBulkTask]=useState(null);
   const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false),[importSong,setImportSong]=useState(null),[importArtist,setImportArtist]=useState(''),[importTitle,setImportTitle]=useState(''),[importBusy,setImportBusy]=useState(false),[importNotice,setImportNotice]=useState('');
   const [musicImports,setMusicImports]=useState([]);
   const [libraryAlbums,setLibraryAlbums]=useState([]),[libraryArtists,setLibraryArtists]=useState([]),[libraryOffset,setLibraryOffset]=useState(0),[libraryMore,setLibraryMore]=useState(true),[libraryLoading,setLibraryLoading]=useState(false);
@@ -381,6 +426,76 @@ function App() {
   };
   const createPlaylist=async e=>{e.preventDefault();if(!newPlaylist.trim())return;setPlaylistBusy(true);setError('');try{await post('/api/playlists',{name:newPlaylist.trim()});setNewPlaylist('');await refreshPlaylists();}catch(e){setError(e.message)}finally{setPlaylistBusy(false)}};
   const addToPlaylist=async id=>{if(!pickerSong)return;setPlaylistBusy(true);setError('');try{const result=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({addSongId:pickerSong.id})});setPickerSong(null);if(page.id==='playlist'&&page.idValue===id)setDetail(result.playlist);await refreshPlaylists();}catch(e){setError(e.message)}finally{setPlaylistBusy(false)}};
+  const bulkAction=async(action,items)=>{
+    if(!items?.length)return;
+    const unique=[...new Map(items.map(s=>[s.id,s])).values()];
+    if(action==='copy'||action==='move'){
+      setBulkTask({action,items,source:page.id==='playlist'?page.idValue:null});
+      await refreshPlaylists();
+      return;
+    }
+    if(action==='remove'){
+      if(page.id!=='playlist')throw new Error('Open a playlist first.');
+      if(!window.confirm('Remove '+items.length+' entries from this playlist? Audio will stay on the NAS.'))return;
+      let done=0;
+      try{
+        for(const row of [...items].sort((a,b)=>(b._playlistIndex??0)-(a._playlistIndex??0))){
+          await api('/api/playlists/'+encodeURIComponent(page.idValue),{
+            method:'PATCH',body:JSON.stringify({removeIndex:row._playlistIndex})
+          });done++;
+        }
+        setDetail(await api('/api/playlists/'+encodeURIComponent(page.idValue)));
+        await refreshPlaylists();
+      }catch(e){setError('Removed '+done+' entries; then failed: '+e.message);throw e}
+      return;
+    }
+    if(action==='quarantine'){
+      if(!user?.admin)return setError('Only the Jobbi administrator can quarantine NAS recordings.');
+      if(unique.length>20)return setError('Quarantine up to 20 recordings at once.');
+      if(!window.confirm('Move '+unique.length+' recording(s) out of the active NAS library? Playlists containing them may become incomplete.'))return;
+      if(window.prompt('Type QUARANTINE to confirm this storage operation')!=='QUARANTINE')return;
+      let done=0;
+      try{
+        for(const item of unique){
+          await post('/api/admin/songs/'+encodeURIComponent(item.id)+'/quarantine',{confirm:'QUARANTINE'});
+          done++;
+        }
+        setError('Quarantined '+done+' recordings; they can be restored from the NAS quarantine folder.');
+      }catch(e){setError('Quarantined '+done+' recordings; next attempt failed: '+e.message);throw e}
+      return;
+    }
+    if(action==='favorite'||action==='unfavorite'){
+      const add=action==='favorite';let done=0;
+      try{
+        for(const item of unique){await post('/api/star',{id:item.id,starred:add});done++}
+        setStarred(old=>{const next=new Set(old);for(const song of unique)add?next.add(song.id):next.delete(song.id);return next});
+      }catch(e){setError('Updated '+done+' favorites; then failed: '+e.message);throw e}
+    }
+  };
+  const bulkToPlaylist=async destination=>{
+    const task=bulkTask;if(!task)return;
+    if(task.action==='move'&&destination===task.source){setError('Choose a different destination playlist.');return}
+    setPlaylistBusy(true);setError('');
+    let added=0;
+    try{
+      for(const item of task.items){
+        await api('/api/playlists/'+encodeURIComponent(destination),{
+          method:'PATCH',body:JSON.stringify({addSongId:item.id})
+        });added++;
+      }
+      if(task.action==='move'&&task.source){
+        for(const item of [...task.items].sort((a,b)=>(b._playlistIndex??0)-(a._playlistIndex??0))){
+          await api('/api/playlists/'+encodeURIComponent(task.source),{
+            method:'PATCH',body:JSON.stringify({removeIndex:item._playlistIndex})
+          });
+        }
+        setDetail(await api('/api/playlists/'+encodeURIComponent(task.source)));
+      }
+      setBulkTask(null);await refreshPlaylists();
+    }catch(e){setError('Copied '+added+' of '+task.items.length+' songs; operation stopped: '+e.message+
+      '. Review the destination before retrying.');}
+    finally{setPlaylistBusy(false)}
+  };
   const removeFromPlaylist=async(id,index)=>{setError('');try{const result=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({removeIndex:index})});setDetail(result.playlist);await refreshPlaylists();}catch(e){setError(e.message)}};
   const renamePlaylist=async id=>{const name=window.prompt('New playlist name:',detail?.name||'');if(name===null)return;setError('');try{const r=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({name})});setDetail(r.playlist);await refreshPlaylists();}catch(e){setError(e.message)}};
   const deletePlaylist=async id=>{if(!window.confirm('Delete this playlist? Songs in your music library will not be deleted.'))return;setError('');try{await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'DELETE'});await refreshPlaylists();setPage({id:'library'});}catch(e){setError(e.message)}};
@@ -496,7 +611,7 @@ function App() {
   </>;
   if(page.id==='search')main=<><div className="page-title"><div className="eyebrow">EXPLORE MUSIC</div><h1>Discover<span className="spark-dot">.</span></h1><p>Search your library, Soulseek peers, and your private Invidious fallback.</p></div><div className="search-bar"><Search size={22}/><input className="search-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Songs, artists, albums..." autoFocus/>{q&&<button className="icon-button" onClick={()=>{setQ('');setRemote(null);setInvidious(null)}}><X size={18}/></button>}<span>⌘ K</span></div>
     <div className="segmented"><button className={searchTab==='library'?'selected':''} onClick={()=>setSearchTab('library')}><Library size={16}/> Your library</button><button className={searchTab==='soulseek'?'selected':''} onClick={()=>setSearchTab('soulseek')}><Radio size={16}/> Soulseek · New music <span className="experimental">IMPORT</span></button></div>
-    {searchTab==='library'?<>{results?<><AlbumRow items={results.album||[]} title="Albums" onClick={openAlbum}/>{(results.artist||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Artists</h2></div><div className="artist-strip">{results.artist.map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(results.song||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Songs</h2></div><SongList songs={results.song} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong}/></section>}{!results.album?.length&&!results.song?.length&&!results.artist?.length&&<div className="empty-state">No matches in your library.</div>}</>:<div className="search-suggestion"><Search size={35}/><h3>Every great listen starts somewhere.</h3><p>Search albums, artists, and tracks.</p><button className="discover-peer-cta" onClick={()=>setSearchTab('soulseek')}><Radio size={18}/> Discover new songs on Soulseek <ArrowRight size={16}/></button></div>}</>:
+    {searchTab==='library'?<>{results?<><AlbumRow items={results.album||[]} title="Albums" onClick={openAlbum}/>{(results.artist||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Artists</h2></div><div className="artist-strip">{results.artist.map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(results.song||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Songs</h2></div><SongList songs={results.song} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} selectionKey="search" onBulkAction={bulkAction} isAdmin={user.admin}/></section>}{!results.album?.length&&!results.song?.length&&!results.artist?.length&&<div className="empty-state">No matches in your library.</div>}</>:<div className="search-suggestion"><Search size={35}/><h3>Every great listen starts somewhere.</h3><p>Search albums, artists, and tracks.</p><button className="discover-peer-cta" onClick={()=>setSearchTab('soulseek')}><Radio size={18}/> Discover new songs on Soulseek <ArrowRight size={16}/></button></div>}</>:
     <section className="remote-search"><div className="remote-notice"><Radio size={21}/><div><strong>Search beyond your library</strong><p>Explore more music through Soulseek and Invidious.</p></div></div>
       <div className="source-indicator"><span className={remoteStatus?.serverConnected?'source-online':'source-unknown'}/><span>{remoteStatus?.mode==='slskd'?remoteStatus.serverConnected?'Soulseek connected':'Soulseek connection needs attention':remoteStatus?.mode==='legacy'?'Legacy search · direct slskd connection recommended':'Checking Soulseek connection…'}</span></div>
       {remoteStatus?.message&&<div className="search-notice">{remoteStatus.message}</div>}
@@ -583,8 +698,9 @@ function App() {
     </div>
   </section>;
   if(page.id==='transfer')main=<PlaylistTransfer api={api} user={user?.username} onLibrary={()=>refreshPlaylists().catch(()=>{})}/>;
-  if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} favorite={favorite} openAlbum={openAlbum} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong}/></>;
-  if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><div className="detail-artwork"><Art item={detail} size="big" round={page.id==='artist'}/>{['album','playlist'].includes(page.id)&&<img key={page.idValue+'-'+coverVersion} className="custom-cover-art" src={'/api/artwork/'+page.id+'/'+encodeURIComponent(page.idValue)+'?v='+coverVersion} alt="Your uploaded cover" onError={e=>{e.currentTarget.style.display='none'}} onLoad={e=>{e.currentTarget.style.display='block'}}/>}</div><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit"><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{['album','playlist'].includes(page.id)&&<PlaylistTools detail={detail} playlistId={page.idValue} isPlaylist={page.id==='playlist'} api={api} onUpdate={updated=>setDetail(old=>({...old,...updated,entry:updated?.entry??old?.entry}))} onSocial={id=>setPage({id:'social',idValue:id})} onFavoriteAll={favoriteAllPlaylist} onArtwork={uploadCover} onError={setError} search={playlistQuery} onSearch={setPlaylistQuery} viewer={user?.username}/>}{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{detailSongs.length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={filteredDetailSongs} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?(_i,song)=>removeFromPlaylist(page.idValue,song._playlistIndex):undefined}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
+  if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} favorite={favorite} openAlbum={openAlbum} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onBulkAction={bulkAction} isAdmin={user.admin}/></>;
+  if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><div className="detail-artwork"><Art item={detail} size="big" round={page.id==='artist'}/>{['album','playlist'].includes(page.id)&&<img key={page.idValue+'-'+coverVersion} className="custom-cover-art" src={'/api/artwork/'+page.id+'/'+encodeURIComponent(page.idValue)+'?v='+coverVersion} alt="Your uploaded cover" onError={e=>{e.currentTarget.style.display='none'}} onLoad={e=>{e.currentTarget.style.display='block'}}/>}</div><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit"><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{['album','playlist'].includes(page.id)&&<PlaylistTools detail={detail} playlistId={page.idValue} isPlaylist={page.id==='playlist'} api={api} onUpdate={updated=>setDetail(old=>({...old,...updated,entry:updated?.entry??old?.entry}))} onSocial={id=>setPage({id:'social',idValue:id})} onFavoriteAll={favoriteAllPlaylist} onArtwork={uploadCover} onError={setError} search={playlistQuery} onSearch={setPlaylistQuery} viewer={user?.username}/>}{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{detailSongs.length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={filteredDetailSongs} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?(_i,song)=>removeFromPlaylist(page.idValue,song._playlistIndex):undefined}
+  selectionKey={page.id+':'+page.idValue} onBulkAction={bulkAction} isAdmin={user.admin}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
   return <div className={'app-shell '+(playing?'music-is-playing':'music-is-paused')}><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span>{androidApp&&<button className="native-offline-link" title="Open downloaded music" onClick={()=>nativeCommand("openOffline")}><ArrowDownToLine size={15}/> Offline</button>}<label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Open community profile" onClick={()=>setPage({id:'social'})}>{socialSelf?.has_avatar?<img className="header-profile-photo" src={`/api/social/profiles/${encodeURIComponent(user.username.toLowerCase())}/avatar?v=${socialAvatarVersion}`} alt="My profile"/>:user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
     <audio ref={audio} onTimeUpdate={e=>setPosition(Number.isFinite(e.currentTarget.currentTime)?e.currentTarget.currentTime:0)} onLoadedMetadata={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onDurationChange={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onEnded={handleAudioEnded} onError={e=>{setPlaying(false);if(e.currentTarget.error&&currentTrack)setError('Playback failed. Check the track format or connection, then try again.')}}/>
     <div className={`player ${currentTrack?'player-active':''} ${playing?'player-playing':'player-paused'}`}><div className="player-song"><button className="player-open" aria-label={currentTrack?'Open now playing for '+currentTrack.title:'Nothing playing'} onClick={()=>openNowPlaying()} disabled={!currentTrack}><Art item={currentTrack} size="small"/>{currentTrack&&<span className="jobbi-mini-viz" aria-hidden="true"><i/><i/><i/><i/></span>}<div className="player-song-text"><strong>{currentTrack?.title||'Nothing playing yet'}</strong><span>{currentTrack?.artist||'Your soundtrack starts here'}</span></div></button>{currentTrack&&androidApp&&<button className="icon-button" title="Download this song to Android" onClick={()=>saveOffline(currentTrack)}><ArrowDownToLine size={18}/></button>}{currentTrack&&<button className={`icon-button ${starred.has(currentTrack.id)?'hearted':''}`} onClick={()=>favorite(currentTrack).catch(()=>{})} aria-label="Favorite current song" aria-pressed={starred.has(currentTrack.id)} title="Favorite"><Heart size={18} fill={starred.has(currentTrack.id)?'currentColor':'none'}/></button>}</div>
@@ -610,12 +726,25 @@ function App() {
     {mobileMore&&<div className="mobile-more-backdrop" onClick={()=>setMobileMore(false)}><div className="mobile-more-sheet" role="dialog" aria-label="More navigation" onClick={e=>e.stopPropagation()}><div className="mobile-more-heading"><strong>More in Jobbi Music</strong><button aria-label="Close menu" onClick={()=>setMobileMore(false)}><X size={20}/></button></div><button onClick={()=>{setPage({id:'favorites'});setMobileMore(false)}}><Heart size={19}/> Favorites</button><button onClick={()=>{setPage({id:'settings'});setMobileMore(false)}}><SlidersHorizontal size={19}/> Settings</button><button onClick={()=>{setPage({id:'transfer'});setMobileMore(false)}}><FileUp size={19}/> Import Spotify / Apple Music</button>{user.admin&&<button onClick={()=>{setPage({id:'admin'});setMobileMore(false)}}><Settings2 size={19}/> Admin console</button>}{androidApp&&<button onClick={()=>{nativeCommand('openOffline');setMobileMore(false)}}><ArrowDownToLine size={19}/> Downloads & offline</button>}</div></div>}
     {invidiousSong&&<div className="panel-backdrop" onClick={()=>setInvidiousSong(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">ALTERNATE SOURCE</span><h2>Import audio</h2></div><button className="icon-button" onClick={()=>setInvidiousSong(null)}><X size={22}/></button></header><form className="import-form" onSubmit={submitInvidious}><p className="import-filename">{invidiousSong.title}</p><p>Source channel: {invidiousSong.artist}. Saved to your NAS music library. Up to 15 minutes per recording.</p><button className="primary wide" type="submit" disabled={importBusy}>{importBusy?<LoaderCircle className="spin" size={16}/>:<ArrowDownToLine size={16}/>} Import audio to NAS</button></form></aside></div>}
     {importSong&&<div className="panel-backdrop" onClick={()=>setImportSong(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">IMPORT AUDIO</span><h2>Import song to NAS</h2></div><button className="icon-button" onClick={()=>setImportSong(null)}><X size={22}/></button></header><form onSubmit={submitImport} className="import-form"><p className="import-filename">{importSong.filename?.split(/[\\/]/).pop()}</p><p>Source: {importSong.username||'Unknown peer'} · {(Number(importSong.size)/1048576).toFixed(1)} MB</p><label>Artist<input value={importArtist} maxLength="180" onChange={e=>setImportArtist(e.target.value)} required placeholder="Artist name"/></label><label>Track title<input value={importTitle} maxLength="180" onChange={e=>setImportTitle(e.target.value)} required placeholder="Song title"/></label><button type="submit" className="primary wide" disabled={importBusy||!importArtist.trim()||!importTitle.trim()}>{importBusy?<LoaderCircle className="spin" size={16}/>:<ArrowDownToLine size={16}/>} Queue import</button></form></aside></div>}
+    {bulkTask&&<div className="panel-backdrop" onClick={()=>setBulkTask(null)}>
+      <aside className="side-panel" onClick={e=>e.stopPropagation()}>
+        <header><div><span className="eyebrow">BULK ACTION</span><h2>{bulkTask.action==='move'?'Move songs':'Add songs to playlist'}</h2></div>
+        <button className="icon-button" onClick={()=>setBulkTask(null)}><X size={22}/></button></header>
+        <p>{bulkTask.items.length} selected songs. {bulkTask.action==='move'?'The source entries will only be removed after copying succeeds.':'Original playlist entries remain untouched.'}</p>
+        <div className="queue-content">{(home?.playlists||[]).filter(p=>bulkTask.action!=='move'||p.id!==bulkTask.source).map(p=>
+          <button key={p.id} className="queue-item" disabled={playlistBusy} onClick={()=>bulkToPlaylist(p.id)}>
+            <ListMusic size={19}/><div><strong>{p.name}</strong><small>{p.songCount||0} tracks</small></div><Plus size={19}/>
+          </button>)}</div>
+      </aside>
+    </div>}
     {pickerSong&&<div className="panel-backdrop" onClick={()=>setPickerSong(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">YOUR PLAYLISTS</span><h2>Add to playlist</h2></div><button className="icon-button" onClick={()=>setPickerSong(null)}><X size={22}/></button></header><p>{pickerSong.title} · {pickerSong.artist}</p><div className="queue-content">{(home?.playlists||[]).map(p=><button className="queue-item" key={p.id} disabled={playlistBusy} onClick={()=>addToPlaylist(p.id)}><ListMusic size={19}/><div><strong>{p.name}</strong><small>{p.songCount||0} songs</small></div><Plus size={19}/></button>)}{!(home?.playlists||[]).length&&<p>Make your first playlist under Your Library.</p>}</div></aside></div>}
     {panel&&<div className="panel-backdrop" onClick={()=>setPanel(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOW PLAYING</span><h2>{panel==='queue'?'Up next':'Lyrics'}</h2></div><button className="icon-button" onClick={()=>setPanel(null)}><X size={22}/></button></header>{panel==='queue'?<div className="queue-content">{queue.map((s,i)=><button className={`queue-item ${i===currentIndex?'selected':''}`} key={i} onClick={()=>setCurrentIndex(i)}><Art item={s} size="tiny"/><div><strong>{s.title}</strong><small>{s.artist}</small></div>{i===currentIndex&&<Waves size={18}/>}</button>)}</div>:<div className="lyrics-content"><Art item={currentTrack} size="big"/><h3>{currentTrack?.title}</h3><p>{currentTrack?.artist}</p>{(lyrics?.structuredLyrics||[]).length?<div className="lyrics-lines">{lyrics.structuredLyrics.flatMap((o,i)=>(o.line||[]).map((l,j)=><p key={`${i}-${j}`}>{l.value||'♪'}</p>))}</div>:<div className="lyrics-empty"><Mic2 size={24}/><p>No synced lyrics found for this track.</p><small>Your existing LRCLIB downloader may be able to add them.</small></div>}</div>}</aside></div>}
   </div>;
 }
-function Favorites({currentTrack,playTracks,favorite,openAlbum,starred,onAdd,onSave,onArtist,onAlbum}){
+function Favorites({currentTrack,playTracks,favorite,openAlbum,starred,onAdd,onSave,onArtist,onAlbum,onBulkAction,isAdmin}){
   const [data,setData]=useState(null);const[err,setErr]=useState('');useEffect(()=>{api('/api/starred').then(setData).catch(e=>setErr(e.message))},[starred]);
-  return <>{err&&<p>{err}</p>}<AlbumRow items={data?.album||[]} title="Favorite albums" onClick={openAlbum}/><section className="shelf"><div className="shelf-title"><h2>Favorite songs</h2></div>{data?.song?.length?<SongList songs={data.song} currentTrack={currentTrack} onPlay={playTracks} onFavorite={favorite} starred={starred} onAdd={onAdd} onSave={onSave} onArtist={onArtist} onAlbum={onAlbum}/>:<div className="empty-state"><Heart size={28}/><p>Tap a heart on any song to save it here.</p></div>}</section></>;
+  return <>{err&&<p>{err}</p>}<AlbumRow items={data?.album||[]} title="Favorite albums" onClick={openAlbum}/><section className="shelf"><div className="shelf-title"><h2>Favorite songs</h2>
+      <button type="button" className="primary" disabled={!data?.song?.length}
+        onClick={()=>playTracks([...data.song].sort(()=>Math.random()-.5),0)}><Shuffle size={16}/> Shuffle Favorites</button></div>{data?.song?.length?<SongList songs={data.song} currentTrack={currentTrack} onPlay={playTracks} onFavorite={favorite} starred={starred} onAdd={onAdd} onSave={onSave} onArtist={onArtist} onAlbum={onAlbum} selectionKey="favorites" onBulkAction={onBulkAction} isAdmin={isAdmin}/>:<div className="empty-state"><Heart size={28}/><p>Tap a heart on any song to save it here.</p></div>}</section></>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
