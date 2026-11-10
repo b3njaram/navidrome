@@ -416,3 +416,13 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   .music-import-message{flex:1 0 100%}
   .music-import-play,.music-import-aux{flex:1 1 auto;justify-content:center;min-height:40px}
 }
+
+/* The seek bar shares the space between fixed-width timestamps. */
+@media(min-width:721px){.player{grid-template-columns:minmax(180px,1fr) minmax(280px,760px) minmax(150px,1fr)}.player-center{max-width:760px;min-width:0}}
+.seek{display:grid;grid-template-columns:38px minmax(0,1fr) 38px;gap:10px;width:100%;align-items:center}
+.seek small{min-width:0;white-space:nowrap}
+.seek input[type="range"]{appearance:none;-webkit-appearance:none;display:block;min-width:0;width:100%;height:5px;border:0;border-radius:999px;background:linear-gradient(90deg,#f77ba4 0 var(--seek-progress,0%),#88828c var(--seek-progress,0%) 100%);cursor:pointer}
+.seek input[type="range"]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:17px;height:17px;border:2px solid white;border-radius:50%;background:#797582;box-shadow:0 0 0 2px #17151b}
+.seek input[type="range"]::-moz-range-thumb{width:14px;height:14px;border:2px solid white;border-radius:50%;background:#797582}
+.seek input[type="range"]:disabled{opacity:.45;cursor:default}
+.seek input[type="range"]:focus-visible{outline:2px solid #f77ba4;outline-offset:8px}
