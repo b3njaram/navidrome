@@ -501,6 +501,7 @@ test('Favorites page heart and plus icons receive real pointer clicks and update
   const state=await setupMocks(page,{favoriteSongIds:['s1']});
   const pageErrors=[];page.on('pageerror',err=>pageErrors.push(err.message));
   await login(page,'listener');
+  if(await page.locator('.sidebar').isVisible())await page.setViewportSize({width:1646,height:925});
   if(await page.locator('.sidebar').isVisible()){
     await page.locator('.sidebar').getByRole('button',{name:'Favorites',exact:true}).click();
   }else{
