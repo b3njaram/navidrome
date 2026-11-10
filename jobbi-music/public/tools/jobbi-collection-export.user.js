@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jobbi Music — My Collection Exporter
 // @namespace    https://music.jobbisoft.com.mx
-// @version      1.0.0
+// @version      1.1.0
 // @description  Export YOUR currently displayed Spotify or Apple Music playlist metadata to a Jobbi Music JSON manifest; never copies audio or login credentials.
 // @match        https://open.spotify.com/*
 // @match        https://music.apple.com/*
@@ -45,45 +45,70 @@
     return {position:number>0?number-1:null,title,artist,album,sourceUrl:trackUrl,duration,version:''};
   };
   const appleRow=row=>{
-    // Apple Music uses different markup for web playlists and music-library views.
-    // Use only visible song rows; never export suggested songs in other sections.
+    // Apple Music's 2026 web player uses "track-list-item" and
+    // "track-column-secondary" rather than legacy songs-list-row classes.
+    // Read only one row at a time; never scrape sidebar suggestions.
     const title=pick(row,[
-      '[data-testid="track-title"]','.songs-list-row__song-name',
+      '[data-testid="track-title"]','[data-testid="track-column-primary"]',
+      '[data-testid="song-title"]','.songs-list-row__song-name',
       '.songs-list__song-name','.product-lockup__title',
       '[class*="song-name"]','[class*="track-lockup__title"]'
     ]);
     const artist=pick(row,[
+      '[data-testid="track-title-by-line"]','[data-testid="track-column-secondary"]',
       '[data-testid="track-artist"]','.songs-list-row__artist',
       '.songs-list__col-artist','.product-lockup__subtitle',
       '[class*="song-artist"]','[class*="artist-name"]'
     ]);
     const album=pick(row,[
-      '[data-testid="track-album"]','.songs-list__col-album',
-      '[class*="album-name"]'
+      '[data-testid="track-column-tertiary"]','[data-testid="track-album"]',
+      '.songs-list__col-album','[class*="album-name"]'
     ]);
-    const position=Number(row.getAttribute('aria-rowindex')||row.querySelector('[aria-rowindex]')?.getAttribute('aria-rowindex')||0);
+    const rawIndex=row.getAttribute('aria-rowindex')||
+      row.getAttribute('data-row-index')||row.getAttribute('data-index')||
+      row.closest('[aria-rowindex]')?.getAttribute('aria-rowindex')||
+      row.closest('[data-row-index]')?.getAttribute('data-row-index')||
+      row.closest('[data-index]')?.getAttribute('data-index');
+    const index=rawIndex===null?null:Number(rawIndex);
+    const position=Number.isSafeInteger(index)&&index>=0?index:null;
     const link=row.querySelector('a[href*="/song/"],a[href*="?i="],a[href*="/album/"]');
-    const sourceUrl=link?new URL(link.getAttribute('href'),location.origin).href.split('#')[0]:'';
-    const duration=pick(row,['[data-testid="duration"]','[class*="time"]']);
+    const sourceUrl=link?.getAttribute('href')
+      ?new URL(link.getAttribute('href'),location.origin).href.split('#')[0]:'';
+    const duration=pick(row,['[data-testid="track-duration"]',
+      '[data-testid="duration"]','[class*="duration"]']);
     if(!title||!artist)return null;
-    return {position:position>0?position:null,title,artist,album,sourceUrl,duration,version:''};
+    return {position,title,artist,album,sourceUrl,duration,version:''};
   };
   const selectors=provider==='spotify'
     ?'[data-testid="tracklist-row"]'
-    :'[data-testid^="track-item-"], .songs-list-row, [class*="songs-list-row"], [role="row"][aria-label]';
+    :'[data-testid="track-list-item"], [data-testid^="track-item-"], .songs-list-row, [class*="songs-list-row"], [role="row"][aria-label]';
   const readRows=()=>{
-    const rows=[...document.querySelectorAll(selectors)].filter(e=>e.closest('#jobbi-collection-exporter')===null);
-    const results=[],seen=new Set();
+    const all=[...document.querySelectorAll(selectors)]
+      .filter(e=>e.closest('#jobbi-collection-exporter')===null);
+    // Ignore wrapper rows if a nested canonical Apple Music track row exists.
+    const rows=provider==='apple'&&all.some(r=>r.matches('[data-testid="track-list-item"]'))
+      ?all.filter(r=>r.matches('[data-testid="track-list-item"]')):all;
+    const results=[],seen=new Set(),occurrences=new Map();
     for(const row of rows){
       const song=provider==='spotify'?spotifyRow(row):appleRow(row);
       if(!song)continue;
+      const fingerprint=[song.sourceUrl,song.title,song.artist,song.album,song.duration].join('|');
+      const number=(occurrences.get(fingerprint)||0)+1;
+      occurrences.set(fingerprint,number);
+      // An explicit row position is best; same-song playlist duplicates are
+      // preserved when both are visible, even without a stable index.
       const key=song.position!=null?'position:'+song.position:
-        'track:'+[song.sourceUrl,song.title,song.artist,song.album].join('|');
+        'track:'+fingerprint+':occurrence:'+number;
       if(!seen.has(key)){seen.add(key);results.push({key,song})}
     }
     return results;
   };
   function scroller(){
+    // Apple Music scrolls this specific inner pane, not the document/body.
+    if(provider==='apple'){
+      const pane=document.querySelector('#scrollable-page');
+      if(pane)return pane;
+    }
     const first=document.querySelector(selectors);
     if(first){
       for(let element=first.parentElement;element;element=element.parentElement){
@@ -175,7 +200,7 @@
     let previous=0,stall=0,lastTop=-1,steps=0;
     try{
       target.scrollTop=0;
-      await sleep(500);
+      await sleep(650);
       for(steps=0;steps<650&&!stop;steps++){
         for(const {key,song} of readRows())found.set(key,song);
         if(expected&&found.size>=expected)break;
@@ -189,7 +214,7 @@
         if(stall>=14)break;
         previous=count;lastTop=target.scrollTop;
         target.scrollTop=Math.min(maxScroll,target.scrollTop+Math.max(260,target.clientHeight*.72));
-        await sleep(155);
+        await sleep(provider==='apple'?480:180);
       }
       for(const {key,song} of readRows())found.set(key,song);
       const tracks=[...found.values()].sort((a,b)=>{
@@ -198,7 +223,10 @@
       }).map(({position,title,artist,album,duration,sourceUrl,version},i)=>({
         position:position??i+1,title,artist,album,duration,sourceUrl,version
       }));
-      if(!tracks.length)throw new Error('No song rows could be read. Try using the desktop web player, and scroll inside the playlist.');
+      if(!tracks.length)throw new Error(
+        'No songs detected. Apple Music may not have finished loading, or its layout has changed. '+
+        'Verify that songs and artists are visible, refresh the playlist, then capture again.'
+      );
       const incomplete=Boolean(stop||(expected&&tracks.length<expected));
       const item={
         id:currentCollectionId(),provider,
