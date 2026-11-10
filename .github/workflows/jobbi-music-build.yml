@@ -71,7 +71,7 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:e2e
+      - run: HOME=/root npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

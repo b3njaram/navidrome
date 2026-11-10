@@ -76,8 +76,9 @@ function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,o
   return <div className="track-list">{head&&<div className="track-header"><span>#</span><span>TITLE</span><span>ALBUM</span><span className="track-time"><Clock3 size={15}/></span></div>}
     {(songs||[]).map((song,index)=><div className={`track-row ${currentTrack?.id===song.id?'is-playing':''}`} key={song.id||index}
       onClick={event=>{
-        // Row clicks play the recording, while action and navigation controls remain independent.
-        if(event.target.closest('button,a,input,select,textarea'))return;
+        // Never treat action-button clicks as a request to start playback.
+        const clicked=event.target;
+        if(clicked instanceof Element&&clicked.closest('.track-actions,button,a,input,select,textarea'))return;
         onPlay(songs,index);
       }}>
       <button className="track-number" aria-label={'Play '+(song.title||song.name||'track')} onClick={()=>onPlay(songs,index)}>{currentTrack?.id===song.id ? <Waves size={16}/>:<><span className="track-index">{index+1}</span><Play size={14} className="row-play" fill="currentColor"/></>}</button>
@@ -88,9 +89,9 @@ function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,o
         aria-pressed={Boolean(starred?.has(song.id))}
         title={starred?.has(song.id)?'Remove favorite':'Favorite'}
         disabled={busy===song.id}
-        onClick={async()=>{setBusy(song.id);try{await onFavorite(song)}catch{/* App displays the API error. */}finally{setBusy('')}}}>
+        onClick={async event=>{event.stopPropagation();setBusy(song.id);try{await onFavorite(song)}catch{/* App displays the API error. */}finally{setBusy('')}}}>
         <Heart size={15} fill={starred?.has(song.id)?'currentColor':'none'}/></button>
-        {onAdd&&<button type="button" className="icon-button" aria-label={'Add '+(song.title||song.name||'track')+' to playlist'} title="Add to playlist" onClick={()=>onAdd(song)}><Plus size={16}/></button>}{onSave&&<button className="icon-button" title="Save on Android for offline playback" onClick={()=>onSave(song)}><ArrowDownToLine size={16}/></button>}{onRemove&&<button className="icon-button" title="Remove from playlist" onClick={()=>onRemove(index)}><X size={16}/></button>}<span>{duration(song.duration)}</span></div>
+        {onAdd&&<button type="button" className="icon-button" aria-label={'Add '+(song.title||song.name||'track')+' to playlist'} title="Add to playlist" onClick={event=>{event.stopPropagation();onAdd(song)}}><Plus size={16}/></button>}{onSave&&<button className="icon-button" title="Save on Android for offline playback" onClick={()=>onSave(song)}><ArrowDownToLine size={16}/></button>}{onRemove&&<button className="icon-button" title="Remove from playlist" onClick={()=>onRemove(index)}><X size={16}/></button>}<span>{duration(song.duration)}</span></div>
     </div>)}</div>;
 }
 const extractRemote = data => {

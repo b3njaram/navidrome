@@ -186,7 +186,7 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
     .play-round:hover{transform:scale(1.08);box-shadow:0 5px 24px rgba(245,137,184,.28)}
   }
   button:active,.primary:active,.ghost-button:active,.social-primary:active,
-  .social-outline:active,.mobile-nav button:active,.track-row:active,
+  .social-outline:active,.mobile-nav button:active,
   .album-card:active,.social-playlist-tile:active{transform:scale(.96)}
   .album-card img{transition:transform .45s var(--jobbi-spring)}
   .content>section,.social-page,.admin-page,.detail-view,.page-title{
@@ -447,3 +447,12 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   .track-row .track-actions .icon-button{flex-basis:30px;min-width:30px;width:30px;height:32px;padding:5px}
   .track-row .track-actions>span:last-child{flex-basis:33px}
 }
+
+/* A press must never shrink/reposition the whole song row: doing so makes the
+   far-right heart/playlist buttons move between pointerdown and pointerup,
+   cancelling native click in Firefox and Chromium. Animate buttons, not rows. */
+.track-row:active{transform:none}
+.track-row .track-actions button.icon-button{position:relative;z-index:3;min-width:38px;min-height:38px;width:38px;height:38px;flex:0 0 38px;padding:8px;border-radius:10px}
+.track-row .track-actions button.icon-button svg{pointer-events:none}
+.track-row .track-actions button.icon-button:hover,.track-row .track-actions button.icon-button:focus-visible{background:rgba(249,111,151,.12)}
+@media(max-width:720px){.track-row .track-actions button.icon-button{min-width:36px;width:36px;flex-basis:36px}}
