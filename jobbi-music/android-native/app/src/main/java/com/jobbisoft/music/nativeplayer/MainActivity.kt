@@ -169,7 +169,7 @@ private val tabs = listOf(
     Dest("Home", Icons.Rounded.Home),
     Dest("Search", Icons.Rounded.Search),
     Dest("Library", Icons.Rounded.LibraryMusic),
-    Dest("Community", Icons.Rounded.Groups),
+    Dest("Community", Icons.Rounded.PersonAdd),
     Dest("More", Icons.Rounded.MoreHoriz)
 )
 
@@ -486,7 +486,7 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 leadingIcon={Icon(Icons.Rounded.LibraryMusic,null)})
             FilterChip(selected=false,onClick={vm.select("Server")},
                 label={Text("Search server")},
-                leadingIcon={Icon(Icons.Rounded.CloudDownload,null)})
+                leadingIcon={Icon(Icons.Rounded.UploadFile,null)})
         }
         OutlinedTextField(vm.searchQuery,vm::search,
             modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=12.dp),
@@ -723,12 +723,12 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
         Text("Music settings",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
         Text("Signed in as ${vm.account}",color=MaterialTheme.colorScheme.onSurfaceVariant)
         FilledTonalButton(onClick={vm.select("Profile")},modifier=Modifier.fillMaxWidth()){
-            Icon(Icons.Rounded.ManageAccounts,null)
+            Icon(Icons.Rounded.Person,null)
             Spacer(Modifier.width(8.dp))
             Text("Edit my profile")
         }
         FilledTonalButton(onClick={vm.select("Community")},modifier=Modifier.fillMaxWidth()){
-            Icon(Icons.Rounded.Groups,null)
+            Icon(Icons.Rounded.PersonAdd,null)
             Spacer(Modifier.width(8.dp))
             Text("Community & Friends")
         }
@@ -738,12 +738,12 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
             Text("Favorite songs")
         }
         FilledTonalButton(onClick={vm.select("Server")},modifier=Modifier.fillMaxWidth()){
-            Icon(Icons.Rounded.CloudDownload,null)
+            Icon(Icons.Rounded.UploadFile,null)
             Spacer(Modifier.width(8.dp))
             Text("Find and download songs on NAS")
         }
         if(vm.isAdmin)Button(onClick={vm.select("Admin")},modifier=Modifier.fillMaxWidth()){
-            Icon(Icons.Rounded.AdminPanelSettings,null)
+            Icon(Icons.Rounded.Settings,null)
             Spacer(Modifier.width(8.dp))
             Text("Admin console")
         }
