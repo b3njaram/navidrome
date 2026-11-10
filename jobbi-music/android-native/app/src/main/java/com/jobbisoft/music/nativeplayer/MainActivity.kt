@@ -257,7 +257,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     when(page) {
                         "Home" -> HomeScreen(vm,player,onSongAdd={addSong=it})
                         "Search" -> SearchScreen(vm,player,onSongAdd={addSong=it})
-                        "Server" -> ServerDiscoverScreen(onBack={vm.select("Search")})
+                        "Server" -> ServerDiscoverScreen(onBack={vm.select("Search")},initialQuery=vm.serverSearchSeed)
                         "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
                         "Profile" -> ProfileScreen(vm)
                         "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
@@ -589,7 +589,7 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             horizontalArrangement=Arrangement.spacedBy(9.dp)){
             FilterChip(selected=true,onClick={},label={Text("My library")},
                 leadingIcon={Icon(Icons.Rounded.LibraryMusic,null)})
-            FilterChip(selected=false,onClick={vm.select("Server")},
+            FilterChip(selected=false,onClick=vm::openServerSearch,
                 label={Text("Search server")},
                 leadingIcon={Icon(Icons.Rounded.UploadFile,null)})
         }
@@ -598,6 +598,20 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             placeholder={Text("Songs, albums, artists...")},
             leadingIcon={Icon(Icons.Rounded.Search,null)},singleLine=true,
             shape=RoundedCornerShape(28.dp))
+        if(vm.searchQuery.isNotBlank()&&vm.searchResult.albums.isEmpty()&&vm.searchResult.songs.isEmpty()) {
+            Column(Modifier.fillMaxWidth().padding(horizontal=19.dp,vertical=12.dp)){
+                Text("No matches in your indexed library.",
+                    style=MaterialTheme.typography.bodyMedium)
+                Text("This does not mean the song is unavailable on Soulseek. "+
+                    "Search server to check remote peers and connection diagnostics.",
+                    style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick=vm::openServerSearch){
+                    Icon(Icons.Rounded.Cloud,null);Spacer(Modifier.width(6.dp))
+                    Text("Search this song on server")
+                }
+            }
+        }
         LazyColumn(contentPadding=PaddingValues(bottom=20.dp)) {
             if(vm.searchResult.albums.isNotEmpty()) {
                 item { AlbumShelf("Albums",vm.searchResult.albums,vm::openAlbum) }
