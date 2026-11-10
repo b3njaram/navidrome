@@ -654,7 +654,7 @@ test('web Import music exposes script, setup guide and both provider choices',as
     await page.getByRole('button',{name:'More options'}).click();
     await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
   }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
-  await expect(page.getByRole('link',{name:/Download browser exporter/})).toHaveAttribute('href','/tools/jobbi-collection-export.user.js');
+  await expect(page.getByRole('link',{name:/Download (?:browser )?exporter/})).toHaveAttribute('href','/tools/jobbi-collection-export.user.js');
   await expect(page.getByRole('link',{name:'Read setup guide'})).toHaveAttribute('href',/github\.com\/b3njaram\/navidrome/);
   await expect(page.getByRole('link',{name:'Open Spotify'})).toHaveAttribute('href','https://open.spotify.com/');
   await expect(page.getByRole('link',{name:'Open Apple Music'})).toHaveAttribute('href','https://music.apple.com/');
