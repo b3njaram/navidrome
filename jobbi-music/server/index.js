@@ -235,6 +235,9 @@ async function binaryProxy(req,res,name){
   if(!upstream.ok) return res.status(upstream.status).end();
   res.status(upstream.status);
   for(const k of ['content-type','content-length','content-range','accept-ranges','cache-control']){const val=upstream.headers.get(k);if(val)res.setHeader(k,val);}
+  // Navidrome was issuing 429s from repeated artwork requests. Cache private
+  // images per user's cookie while retaining the authenticated proxy.
+  if(name==='getCoverArt'){res.setHeader('Cache-Control','private, max-age=3600');res.setHeader('Vary','Cookie');}
   if(upstream.body)await pipeline(Readable.fromWeb(upstream.body),res);else res.end();
 }
 app.get('/api/cover/:id',mustAuth,route(async(req,res)=>binaryProxy(req,res,'getCoverArt')));
