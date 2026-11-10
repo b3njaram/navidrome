@@ -1,7 +1,12 @@
 name: Build native Material 3 Jobbi Music APK
 on:
   push:
-    branches: [feature/jobbi-native-compose-20261110]
+    branches: [main, feature/native-community-discovery-admin-20261110]
+    paths:
+      - 'jobbi-music/android-native/**'
+      - '.github/workflows/jobbi-native-android.yml'
+  pull_request:
+    branches: [main]
     paths:
       - 'jobbi-music/android-native/**'
       - '.github/workflows/jobbi-native-android.yml'

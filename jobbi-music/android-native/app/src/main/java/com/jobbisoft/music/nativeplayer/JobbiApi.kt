@@ -85,6 +85,8 @@ object JobbiApi {
         private set
     @Volatile var username: String = ""
         private set
+    @Volatile var isAdmin: Boolean = false
+        private set
     @Volatile var quality: String = "balanced"
         private set
 
@@ -123,6 +125,7 @@ object JobbiApi {
         if (newBase != base) {
             synchronized(lock) { cookies.clear() }
             username = ""
+            isAdmin = false
             csrf = ""
         }
         base = newBase
@@ -136,7 +139,7 @@ object JobbiApi {
             .edit().putString("quality", input).apply()
     }
     fun clearSession() {
-        username = ""; csrf = ""
+        username = ""; isAdmin = false; csrf = ""
         synchronized(lock) { cookies.clear() }
     }
     private fun validateUrl(input: String): String {
@@ -191,11 +194,22 @@ object JobbiApi {
         JSONObject(request(path, "POST", payload))
     suspend fun patch(path: String, payload: JSONObject): JSONObject =
         JSONObject(request(path, "PATCH", payload))
+    suspend fun delete(path: String): JSONObject =
+        JSONObject(request(path, "DELETE"))
+    suspend fun uploadAvatar(bytes: ByteArray, mime: String) {
+        require(bytes.size in 16..1_048_576 && mime in listOf("image/jpeg","image/png","image/webp"))
+        request("/api/social/me/avatar", method="POST",bytes=bytes,mime=mime)
+    }
+    fun authenticatedUrl(relative: String): String {
+        require(relative.startsWith("/api/") && !relative.contains("..") && !relative.startsWith("//"))
+        return url(relative)
+    }
 
     suspend fun login(user: String, password: String): String {
         val data = post("/api/login", JSONObject().put("username", user.trim()).put("password", password))
         csrf = data.optStr("csrfToken")
         username = data.optStr("username")
+        isAdmin = data.optBoolean("admin",false)
         check(csrf.isNotBlank() && username.isNotBlank()) { "Login did not return an active session" }
         return username
     }

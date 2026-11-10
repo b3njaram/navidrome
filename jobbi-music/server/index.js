@@ -17,6 +17,7 @@ import {createArtworkRouter} from './artwork.js';
 import {transliterateMusic} from './import-reconcile.js';
 import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
 import {createInvidiousImportRouter} from './invidious-import.js';
+import {countIndexedSongs,countAccountRows} from './admin-stats.js';
 import { promises as fs } from 'node:fs';
 
 const app = express();
@@ -380,6 +381,20 @@ app.delete('/api/playlists/:id',mustAuth,route(async(req,res)=>{
 /** Administrative operations are available only to verified Navidrome admins
  * explicitly allowlisted by ADMIN_USERS. Never mount Docker's socket in this app.
  */
+// Cached by authenticated admin (short TTL): count the complete Navidrome
+// index, not a random/newest sample. If pagination is incomplete, report null.
+const indexedStatsCache=new Map();
+async function indexedStats(user){
+  const key=user.username.toLowerCase(),cached=indexedStatsCache.get(key);
+  if(cached&&Date.now()-cached.at<2*60*1000)return cached.promise;
+  const promise=countIndexedSongs(subsonic,user).catch(err=>{
+    console.warn('Navidrome indexed-track census unavailable:',err?.message);
+    return {indexedSongs:null,indexedAlbums:null,complete:false,
+      indexedSongsSource:'Navidrome indexed census temporarily unavailable'};
+  });
+  indexedStatsCache.set(key,{at:Date.now(),promise});
+  return promise;
+}
 app.get('/api/admin/overview',mustAuth,mustAdmin,route(async(req,res)=>{
   let storage={status:'unavailable',reason:'Storage agent has not provided a snapshot yet'};
   try{
@@ -387,15 +402,33 @@ app.get('/api/admin/overview',mustAuth,mustAdmin,route(async(req,res)=>{
     const obj=JSON.parse(raw);
     if(['ready','unavailable'].includes(obj.status))storage=obj;
   }catch{}
-  let usersCount=null;
-  try{
-    const data=await subsonic(req.user,'getUsers');
-    usersCount=(data.users?.user||[]).length;
-  }catch{}
-  res.json({storage,usersCount,accountManagementEnabled:ACCOUNT_MANAGEMENT_ENABLED,
+  // Prefer the same native accounts source as /api/admin/accounts.
+  // Subsonic getUsers is a supported read-only fallback.
+  let usersCount=null,usersCountSource='unavailable';
+  if(ACCOUNT_MANAGEMENT_ENABLED){
+    try{
+      const accounts=await nativeAccounts(NAVIDROME,req.user,{action:'list'});
+      usersCount=countAccountRows(accounts);
+      if(usersCount!==null)usersCountSource='Navidrome native accounts';
+    }catch(e){console.warn('Native account count unavailable:',e?.message);}
+  }
+  if(usersCount===null){
+    try{
+      const data=await subsonic(req.user,'getUsers');
+      const rows=data.users?.user;
+      if(Array.isArray(rows)||rows&&typeof rows==='object'){
+        usersCount=Array.isArray(rows)?rows.length:1;
+        usersCountSource='Navidrome Subsonic getUsers';
+      }
+    }catch(e){console.warn('Subsonic user census unavailable:',e?.message);}
+  }
+  const index=await indexedStats(req.user);
+  res.json({storage,usersCount,usersCountSource,...index,
+    physicalAudioFiles:storage.status==='ready'?storage.files:null,
+    accountManagementEnabled:ACCOUNT_MANAGEMENT_ENABLED,
     directSearchConfigured:Boolean(SLSKD&&SLSKD_KEY),
     httpsOnlyCookies:SECURE_COOKIE,
-    statsNote:'Capacity reflects the filesystem containing /volume1/music. Music size excludes non-music files.'});
+    statsNote:'Indexed songs count Navidrome tracks across all album pages; NAS audio files count files on disk. These totals can differ while scanning or because of duplicates/unindexed files.'});
 }));
 app.get('/api/admin/accounts',mustAuth,mustAdmin,route(async(req,res)=>{
   if(ACCOUNT_MANAGEMENT_ENABLED){

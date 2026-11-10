@@ -558,12 +558,16 @@ function App() {
       <div className="admin-card"><div className="admin-card-head"><HardDrive size={22}/><h2>NAS storage</h2></div>
         {adminOverview.storage?.status==='ready'?<><div className="storage-figure">{humanBytes(adminOverview.storage.musicBytes)}<small>Music files</small></div>
         <div className="storage-track"><div style={{width:Math.min(100,100*Number(adminOverview.storage.usedBytes||0)/Math.max(1,Number(adminOverview.storage.totalBytes||1)))+'%'}}/></div>
-        <div className="storage-stats"><span>Volume used <b>{humanBytes(adminOverview.storage.usedBytes)}</b></span><span>Available <b>{humanBytes(adminOverview.storage.freeBytes)}</b></span><span>Capacity <b>{humanBytes(adminOverview.storage.totalBytes)}</b></span><span>Audio tracks <b>{Number(adminOverview.storage.files||0).toLocaleString()}</b></span><span>Library folder total <b>{humanBytes(adminOverview.storage.libraryBytes)}</b></span></div>
+        <div className="storage-stats"><span>Volume used <b>{humanBytes(adminOverview.storage.usedBytes)}</b></span><span>Available <b>{humanBytes(adminOverview.storage.freeBytes)}</b></span><span>Capacity <b>{humanBytes(adminOverview.storage.totalBytes)}</b></span><span>Audio files on NAS <b>{adminOverview.storage.files==null?'—':Number(adminOverview.storage.files).toLocaleString()}</b></span><span>Library folder total <b>{humanBytes(adminOverview.storage.libraryBytes)}</b></span></div>
         <p className="admin-help">Library scanning checked at {new Date(adminOverview.storage.checkedAt).toLocaleString()}. Used capacity includes other NAS data, not only music.</p>
         </>:<p className="admin-help">Storage statistics unavailable. Check the isolated storage-agent container and its read-only library mount.</p>}
       </div>
       <div className="admin-card"><div className="admin-card-head"><Library size={22}/><h2>Service access</h2></div>
-        <div className="stat-figure">{adminOverview.usersCount??'—'} <small>Navidrome accounts</small></div>
+        <div className="stat-figure">{adminOverview.usersCount==null?'—':Number(adminOverview.usersCount).toLocaleString()} <small>Navidrome accounts</small></div>
+        <div className="admin-stat"><span>User count source</span><b>{adminOverview.usersCountSource||'Unavailable'}</b></div>
+        <div className="stat-figure">{adminOverview.indexedSongs==null?'—':Number(adminOverview.indexedSongs).toLocaleString()} <small>Songs indexed by Navidrome</small></div>
+        <div className="admin-stat"><span>Indexed albums</span><b>{adminOverview.indexedAlbums==null?'—':Number(adminOverview.indexedAlbums).toLocaleString()}</b></div>
+        <p className="admin-help">{adminOverview.statsNote}</p>
         <div className="admin-stat"><span>Direct Soulseek configured</span><b>{adminOverview.directSearchConfigured?'Yes':'No'}</b></div>
         <div className="admin-stat"><span>HTTPS-only cookies</span><b>{adminOverview.httpsOnlyCookies?'Enabled':'Disabled (private preview)'}</b></div>
         <div className="admin-stat"><span>Account provisioning</span><b>{adminOverview.accountManagementEnabled?'Enabled':'Needs verification'}</b></div>
