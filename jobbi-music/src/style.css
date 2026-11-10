@@ -426,3 +426,8 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
 .seek input[type="range"]::-moz-range-thumb{width:14px;height:14px;border:2px solid white;border-radius:50%;background:#797582}
 .seek input[type="range"]:disabled{opacity:.45;cursor:default}
 .seek input[type="range"]:focus-visible{outline:2px solid #f77ba4;outline-offset:8px}
+
+/* The full track row plays on blank-space clicks; its own buttons keep priority. */
+.track-row{cursor:pointer}
+.track-actions .icon-button{position:relative;z-index:1;min-width:29px;min-height:32px;flex:none;display:inline-grid;place-items:center;padding:6px}
+.track-row:has(.track-actions button:focus-visible){outline:1px solid #ff94b5;outline-offset:2px}
