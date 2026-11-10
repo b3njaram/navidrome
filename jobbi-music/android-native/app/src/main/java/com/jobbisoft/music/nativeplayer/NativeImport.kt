@@ -143,6 +143,11 @@ private suspend fun candidateFor(track:ImportedTrack): Pair<String,ImportCandida
 
 @Composable
 fun ImportScreen(onBack:()->Unit) {
+    var collectionMode by remember { mutableStateOf(false) }
+    if(collectionMode){
+        NativeCollectionsImportScreen(onBack={collectionMode=false})
+        return
+    }
     val context= LocalContext.current
     val scope=rememberCoroutineScope()
     val entries=remember{mutableStateListOf<ImportEntry>()}
@@ -175,6 +180,11 @@ fun ImportScreen(onBack:()->Unit) {
             "Find FLAC first; you approve each download.",
             style=MaterialTheme.typography.bodyMedium,
             color=MaterialTheme.colorScheme.onSurfaceVariant)
+        FilledTonalButton(onClick={collectionMode=true}) {
+            Icon(Icons.Rounded.FileOpen,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Import multiple playlists & Liked Songs (JSON)")
+        }
         FilledTonalButton(onClick={picker.launch(arrayOf("text/*","application/csv","application/octet-stream"))}) {
             Icon(Icons.Rounded.FileOpen,null)
             Spacer(Modifier.width(8.dp))
