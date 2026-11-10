@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useMemo,useState} from 'react';
+import {cappedPosition,progressPercent} from './player-math.js';
 import {ArrowDownToLine,ChevronDown,Disc3,Heart,ListMusic,Maximize2,Mic2,MoreHorizontal,Pause,Play,Plus,Repeat2,Share2,Shuffle,SkipBack,SkipForward,Volume2,Waves,X,Check} from 'lucide-react';
 const duration = s => {
   const x=Math.max(0,Math.floor(Number(s)||0));return `${Math.floor(x/60)}:${String(x%60).padStart(2,'0')}`;
@@ -60,7 +61,7 @@ export default function NowPlaying({
             <div className="immersive-title"><h2 title={track.title}>{track.title||'Unknown track'}</h2><button className="immersive-artist-link" title="More songs by this artist" onClick={onArtist}>{track.artist||'Unknown artist'}</button></div>
             <button className={`immersive-like ${favorited?'hearted':''}`} aria-label={favorited?'Remove favorite':'Add favorite'} onClick={onFavorite}><Heart size={24} fill={favorited?'currentColor':'none'}/></button>
           </div>
-          <div className="immersive-seek"><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={Math.min(position,length||0)} onChange={e=>onSeek(Number(e.target.value))}/><div><span>{duration(position)}</span><span>-{duration(Math.max(0,length-position))}</span></div></div>
+          <div className="immersive-seek"><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={cappedPosition(position,length)} style={{'--seek-progress':progressPercent(position,length)+'%'}} disabled={!length} onChange={e=>onSeek(Number(e.target.value))}/><div><span>{duration(position)}</span><span>-{duration(Math.max(0,length-position))}</span></div></div>
           <div className="immersive-controls">
             <button className={shuffle?'active':''} onClick={onShuffle} title="Shuffle" aria-label="Shuffle"><Shuffle size={19}/></button>
             <button onClick={onPrev} title="Previous" aria-label="Previous song"><SkipBack size={31} fill="currentColor"/></button>
