@@ -358,12 +358,17 @@ app.post('/api/playlists/:id/favorite-all',mustAuth,mustBeLimited,route(async(re
   const existing=new Set((previous.starred2?.song||[]).map(song=>song.id));
   const ids=[...new Set(all.map(song=>song.id).filter(id=>validId(id)&&!existing.has(id)))];
   let added=0,failed=0;
+  const succeeded=new Set(all.map(song=>song.id).filter(id=>existing.has(id)));
   // Small batches avoid triggering Navidrome's per-user rate limits.
   for(let i=0;i<ids.length;i+=3){
-    const outcomes=await Promise.allSettled(ids.slice(i,i+3).map(id=>subsonic(req.user,'star',{id})));
-    for(const outcome of outcomes)outcome.status==='fulfilled'?added++:failed++;
+    const slice=ids.slice(i,i+3);
+    const outcomes=await Promise.allSettled(slice.map(id=>subsonic(req.user,'star',{id})));
+    outcomes.forEach((outcome,index)=>{
+      if(outcome.status==='fulfilled'){added++;succeeded.add(slice[index])}
+      else failed++;
+    });
   }
-  res.json({added,skipped:all.length-ids.length,failed,ids:all.map(song=>song.id)});
+  res.json({added,skipped:all.length-ids.length,failed,ids:[...succeeded]});
 }));
 app.delete('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
