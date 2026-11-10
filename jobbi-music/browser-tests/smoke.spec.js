@@ -478,11 +478,16 @@ test('song rows play on click while favorites and playlist buttons act independe
   expect(state.addedTracks).toEqual([{playlistId:'p1',songId:'s1'}]);
   expect(await page.evaluate(()=>window.__playEvents.length)).toBe(0);
 
-  await row.click({position:{x:6,y:25}});
+  // A synthetic blank-row click tests the delegated handler independent of
+  // layout positioning (the mobile fixed navigation overlaps edge coordinates).
+  await row.evaluate(element=>element.click());
   await expect(page.getByRole('button',{name:'Open now playing for Kino'})).toBeEnabled();
+  expect((await page.evaluate(()=>window.__playEvents)).at(-1).src).toContain('/api/stream/s1');
+
+  // A real click on the title tests that play() retains browser user activation.
+  await row.locator('.track-song-title').click();
   const starts=await page.evaluate(()=>window.__playEvents);
-  expect(starts.length).toBeGreaterThan(0);
-  expect(starts[0].src).toContain('/api/stream/s1');
-  expect(starts[0].userGesture).toBe(true);
+  expect(starts.length).toBeGreaterThanOrEqual(2);
+  expect(starts.at(-1).userGesture).toBe(true);
   expect(errors).toEqual([]);
 });
