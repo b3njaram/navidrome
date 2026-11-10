@@ -278,10 +278,21 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         <p>On your computer, install the free Jobbi browser userscript in a userscript manager.
           Open each Spotify or Apple Music playlist, capture it, then export one combined JSON file.
           Mark Liked Songs or Favorite Songs as Favorites in the exporter.</p>
-        <a className="playlist-tool-button" href="/tools/jobbi-collection-export.user.js" download="jobbi-collection-export.user.js">
-          <Download size={16}/> Download collection exporter
-        </a>
-        <p className="transfer-help">You log in only on the provider’s website. No passwords, audio files,
+        <div className="playlist-tools-row">
+          <a className="playlist-tool-button" href="/tools/jobbi-collection-export.user.js" download="jobbi-collection-export.user.js">
+            <Download size={16}/> Download browser exporter
+          </a>
+          <a className="playlist-tool-button" href="https://github.com/b3njaram/navidrome/blob/main/jobbi-music/tools/README.md" target="_blank" rel="noopener noreferrer">
+            Read setup guide
+          </a>
+        </div>
+        <p className="transfer-help">After installing the script in a desktop browser, choose your source:</p>
+        <div className="playlist-tools-row">
+          <a className="playlist-tool-button" href="https://open.spotify.com/" target="_blank" rel="noopener noreferrer">Open Spotify</a>
+          <a className="playlist-tool-button" href="https://music.apple.com/" target="_blank" rel="noopener noreferrer">Open Apple Music</a>
+        </div>
+        <p className="transfer-help">Capture each playlist and Liked/Favorite Songs, then select “Download all as JSON.”
+          You log in only on the provider’s website. No passwords, audio files,
           or cookies enter your export. Browser-layout changes can cause incomplete captures;
           check the track counts before importing. Desktop browsers work best.</p>
       </div>
