@@ -763,7 +763,7 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        FilledTonalButton(onClick=vm::rescan){
+        if(vm.isAdmin)FilledTonalButton(onClick=vm::rescan){
             Icon(Icons.Rounded.SwapHoriz,null);Spacer(Modifier.width(8.dp));Text("Scan new music")
         }
         FilledTonalButton(onClick={vm.select("Import")}) {
