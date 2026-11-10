@@ -42,6 +42,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var searchQuery by androidx.compose.runtime.mutableStateOf("")
         private set
+    var serverSearchSeed by androidx.compose.runtime.mutableStateOf("")
+        private set
+    fun openServerSearch() {
+        serverSearchSeed = searchQuery.trim()
+        select("Server")
+    }
     var searchResult by androidx.compose.runtime.mutableStateOf(SearchResult(emptyList(),emptyList()))
         private set
     var favoriteIds by androidx.compose.runtime.mutableStateOf<Set<String>>(emptySet())
