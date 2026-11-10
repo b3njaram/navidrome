@@ -186,7 +186,7 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
     .play-round:hover{transform:scale(1.08);box-shadow:0 5px 24px rgba(245,137,184,.28)}
   }
   button:active,.primary:active,.ghost-button:active,.social-primary:active,
-  .social-outline:active,.mobile-nav button:active,.track-row:active,
+  .social-outline:active,.mobile-nav button:active,
   .album-card:active,.social-playlist-tile:active{transform:scale(.96)}
   .album-card img{transition:transform .45s var(--jobbi-spring)}
   .content>section,.social-page,.admin-page,.detail-view,.page-title{
@@ -448,37 +448,11 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   .track-row .track-actions>span:last-child{flex-basis:33px}
 }
 
-/* Favorites and album rows: accessible click targets that cannot be hidden
-   behind the track grid or have their SVG icons steal the browser click. */
-.track-row{position:relative;isolation:isolate}
-.track-row .track-actions{z-index:5}
-.track-row .track-actions button.icon-button{
-  position:relative;z-index:6;pointer-events:auto;
-  flex:0 0 38px;width:38px;min-width:38px;height:38px;min-height:38px;
-  padding:8px;display:grid;place-items:center;border-radius:10px;
-  -webkit-tap-highlight-color:transparent;
-}
+/* A press must never shrink/reposition the whole song row: doing so makes the
+   far-right heart/playlist buttons move between pointerdown and pointerup,
+   cancelling native click in Firefox and Chromium. Animate buttons, not rows. */
+.track-row:active{transform:none}
+.track-row .track-actions button.icon-button{position:relative;z-index:3;min-width:38px;min-height:38px;width:38px;height:38px;flex:0 0 38px;padding:8px;border-radius:10px}
 .track-row .track-actions button.icon-button svg{pointer-events:none}
-.track-row .track-actions button.icon-button:hover,
-.track-row .track-actions button.icon-button:focus-visible{
-  background:rgba(249,111,151,.15);
-  color:#ff9fbd;
-}
-.track-row .track-actions button.hearted{color:#fd6885}
-@media(min-width:721px){
- .track-row,.track-header{grid-template-columns:40px minmax(0,3fr) minmax(0,2fr) minmax(172px,max-content)}
-}
-@media(max-width:720px){
- .track-row,.track-header{grid-template-columns:25px minmax(0,1fr) minmax(145px,max-content)}
- .track-row .track-actions button.icon-button{flex-basis:36px;width:36px;min-width:36px;height:38px}
-}
-
-/* Firefox: don't let the animated action group become an invisible hit target.
-   Only the individual native buttons accept pointers; their boxes stay fixed. */
-.track-row .track-actions{pointer-events:none}
-.track-row .track-actions button.icon-button{
-  pointer-events:auto;transition:none!important;
-  transform:none!important;animation:none!important;
-  isolation:isolate;
-}
-.track-row .track-actions button.icon-button:active{transform:none!important}
+.track-row .track-actions button.icon-button:hover,.track-row .track-actions button.icon-button:focus-visible{background:rgba(249,111,151,.12)}
+@media(max-width:720px){.track-row .track-actions button.icon-button{min-width:36px;width:36px;flex-basis:36px}}
