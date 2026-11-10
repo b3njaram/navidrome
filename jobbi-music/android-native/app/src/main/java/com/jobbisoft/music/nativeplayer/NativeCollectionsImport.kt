@@ -124,7 +124,9 @@ fun restoreNativeCollections(text:String):List<NativeCollection> {
             songs=col.songs.mapIndexed{n,row->
                 val data=rows.optJSONObject(n)
                 if(data==null)row else row.copy(
-                    status=data.optString("status","unsearched"),
+                    status=data.optString("status","unsearched").let {
+                        if(it=="checking"||it=="waiting")"unsearched" else it
+                    },
                     note=data.optString("note"),songId=data.optString("songId"),
                     peer=data.optString("peer"),filename=data.optString("filename"),
                     size=data.optLong("size",0)
@@ -248,7 +250,7 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
                 else "Queued; recheck when Navidrome has indexed the recording")
         }
     }
-    suspend fun checkNext(all:Boolean=false,onlyQueued:Boolean=false){
+    suspend fun checkNext(all:Boolean=false,onlyQueued:Boolean=false,autoQueue:Boolean=false){
         if(busy)return
         busy=true;running=true;stop=false
         var checked=0
@@ -284,6 +286,7 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
                                     note="Matched "+candidate.format.uppercase()+" · "+
                                         candidate.filename.substringAfterLast('/').take(130))
                             }
+                            if(autoQueue&&authorized)queueSong(selected,row,candidate)
                             passed++
                         }
                     }
@@ -458,9 +461,11 @@ fun NativeCollectionsImportScreen(onBack:()->Unit) {
                             (counts["unsearched"]?:0)>0){
                             Icon(Icons.Rounded.Search,null);Text("Check next 3")
                         }
-                        FilledTonalButton(onClick={scope.launch{checkNext(true)}},
-                            enabled=!busy&&(counts["unsearched"]?:0)>0){
-                            Icon(Icons.Rounded.PlayArrow,null);Text("Scan remaining")
+                        FilledTonalButton(onClick={scope.launch{
+                            checkNext(all=true,autoQueue=authorized)
+                        }},enabled=!busy&&(counts["unsearched"]?:0)>0){
+                            Icon(Icons.Rounded.PlayArrow,null)
+                            Text(if(authorized)"Scan & queue matches" else "Scan remaining")
                         }
                     }
                     Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
