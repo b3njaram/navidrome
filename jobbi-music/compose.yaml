@@ -13,6 +13,8 @@ services:
       DOWNLOADER_URL: ${DOWNLOADER_URL:?Set DOWNLOADER_URL in .env}
       SLSKD_URL: ${SLSKD_URL:-}
       SLSKD_API_KEY: ${SLSKD_API_KEY:-}
+      MUSIC_QUARANTINE_URL: ${MUSIC_QUARANTINE_URL:-}
+      MUSIC_QUARANTINE_SECRET: ${MUSIC_QUARANTINE_SECRET:-}
       INVIDIOUS_URL: ${INVIDIOUS_URL:-https://yt.jobbisoft.com.mx}
       INVIDIOUS_BACKUPS: ${INVIDIOUS_BACKUPS:-}
       INVIDIOUS_WORKER_URL: ${INVIDIOUS_WORKER_URL:-}
@@ -21,7 +23,33 @@ services:
       ENABLE_ACCOUNT_MANAGEMENT: ${ENABLE_ACCOUNT_MANAGEMENT:-false}
       SOCIAL_DATABASE_URL: postgresql://jobbi_social:${SOCIAL_DB_PASSWORD:?Set SOCIAL_DB_PASSWORD in .env}@jobbi-social-db:5432/jobbi_social
     depends_on:
-      jobbi-social-db:
+      # Opt-in: docker compose --profile quarantine up -d jobbi-quarantine
+  # This is the only service permitted a writable /music mount. Never expose ports.
+  jobbi-quarantine:
+    profiles: ["quarantine"]
+    image: node:22-alpine
+    container_name: jobbi-quarantine
+    restart: unless-stopped
+    user: "${QUARANTINE_UID:-1000}:${QUARANTINE_GID:-100}"
+    command: ["node", "/worker/music-quarantine-agent.mjs"]
+    environment:
+      PORT: "3137"
+      MUSIC_ROOT: /music
+      MUSIC_QUARANTINE_SECRET: ${MUSIC_QUARANTINE_SECRET:-}
+    volumes:
+      - /volume1/music:/music:rw
+      - ./server/music-quarantine-agent.mjs:/worker/music-quarantine-agent.mjs:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 32
+    mem_limit: 96m
+
+  jobbi-social-db:
         condition: service_healthy
     mem_limit: 512m
     security_opt:
