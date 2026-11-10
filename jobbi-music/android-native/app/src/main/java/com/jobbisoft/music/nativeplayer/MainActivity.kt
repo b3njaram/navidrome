@@ -169,7 +169,7 @@ private val tabs = listOf(
     Dest("Home", Icons.Rounded.Home),
     Dest("Search", Icons.Rounded.Search),
     Dest("Library", Icons.Rounded.LibraryMusic),
-    Dest("Favorites", Icons.Rounded.Favorite),
+    Dest("Community", Icons.Rounded.Groups),
     Dest("More", Icons.Rounded.MoreHoriz)
 )
 
@@ -231,7 +231,9 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     NavigationBar {
                         tabs.forEach { destination ->
                             NavigationBarItem(
-                                selected=vm.selected==destination.name,
+                                selected=vm.selected==destination.name ||
+                                     (destination.name=="Search"&&vm.selected=="Server") ||
+                                     (destination.name=="More"&&vm.selected in listOf("Admin","Profile","Import","Favorites")),
                                 onClick={vm.select(destination.name)},
                                 icon={Icon(destination.icon,contentDescription=null)},
                                 label={Text(destination.name)},
@@ -247,6 +249,10 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     when(page) {
                         "Home" -> HomeScreen(vm,player,onSongAdd={addSong=it})
                         "Search" -> SearchScreen(vm,player,onSongAdd={addSong=it})
+                        "Server" -> ServerDiscoverScreen(onBack={vm.select("Search")})
+                        "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
+                        "Profile" -> ProfileScreen(vm)
+                        "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
                         "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true})
                         "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
                             emptyText="Heart songs to save them here.")
@@ -474,6 +480,14 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
 @Composable
 private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit) {
     Column {
+        Row(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=7.dp),
+            horizontalArrangement=Arrangement.spacedBy(9.dp)){
+            FilterChip(selected=true,onClick={},label={Text("My library")},
+                leadingIcon={Icon(Icons.Rounded.LibraryMusic,null)})
+            FilterChip(selected=false,onClick={vm.select("Server")},
+                label={Text("Search server")},
+                leadingIcon={Icon(Icons.Rounded.CloudDownload,null)})
+        }
         OutlinedTextField(vm.searchQuery,vm::search,
             modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=12.dp),
             placeholder={Text("Songs, albums, artists...")},
@@ -503,6 +517,14 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
 private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit) {
     LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item {
+            FilledTonalButton(onClick={vm.select("Favorites")},
+                modifier=Modifier.fillMaxWidth()){
+                Icon(Icons.Rounded.Favorite,null)
+                Spacer(Modifier.width(8.dp))
+                Text("Favorites · Saved songs")
+            }
+        }
         item {
             Row(verticalAlignment=Alignment.CenterVertically) {
                 Text("Your playlists",style=MaterialTheme.typography.titleLarge,
@@ -700,6 +722,31 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
         .padding(22.dp),verticalArrangement=Arrangement.spacedBy(15.dp)){
         Text("Music settings",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
         Text("Signed in as ${vm.account}",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        FilledTonalButton(onClick={vm.select("Profile")},modifier=Modifier.fillMaxWidth()){
+            Icon(Icons.Rounded.ManageAccounts,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Edit my profile")
+        }
+        FilledTonalButton(onClick={vm.select("Community")},modifier=Modifier.fillMaxWidth()){
+            Icon(Icons.Rounded.Groups,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Community & Friends")
+        }
+        FilledTonalButton(onClick={vm.select("Favorites")},modifier=Modifier.fillMaxWidth()){
+            Icon(Icons.Rounded.Favorite,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Favorite songs")
+        }
+        FilledTonalButton(onClick={vm.select("Server")},modifier=Modifier.fillMaxWidth()){
+            Icon(Icons.Rounded.CloudDownload,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Find and download songs on NAS")
+        }
+        if(vm.isAdmin)Button(onClick={vm.select("Admin")},modifier=Modifier.fillMaxWidth()){
+            Icon(Icons.Rounded.AdminPanelSettings,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Admin console")
+        }
         Text("Streaming quality",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             listOf("original" to "Lossless","balanced" to "High","saver" to "Data saver").forEach { (value,label)->
