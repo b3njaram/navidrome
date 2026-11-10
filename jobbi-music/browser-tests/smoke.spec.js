@@ -1,10 +1,10 @@
 import {test,expect} from '@playwright/test';
 
-async function setupMocks(page,{staleImports=false}={}){
+async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(),addedTracks:[],musicRequests:[],imports:old,fallbackJobs:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],musicRequests:[],imports:old,fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -495,4 +495,41 @@ test('song rows play on click while favorites and playlist buttons act independe
   expect(starts.length).toBeGreaterThanOrEqual(2);
   expect(starts.at(-1).userGesture).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test('Favorites page heart and plus icons receive real pointer clicks and update library',async({page})=>{
+  const state=await setupMocks(page,{favoriteSongIds:['s1']});
+  const pageErrors=[];page.on('pageerror',err=>pageErrors.push(err.message));
+  await login(page,'listener');
+  if(await page.locator('.sidebar').isVisible()){
+    await page.locator('.sidebar').getByRole('button',{name:'Favorites',exact:true}).click();
+  }else{
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:'Favorites'}).click();
+  }
+  const row=page.locator('.track-row').first();
+  await expect(row).toBeVisible();
+  const heart=row.getByRole('button',{name:'Remove favorite Kino'});
+  const plus=row.getByRole('button',{name:'Add Kino to playlist'});
+  await expect(heart).toBeEnabled();
+  await expect(plus).toBeEnabled();
+  const hitInfo=await page.evaluate(()=>{
+    return Array.from(document.querySelectorAll('.track-row .track-actions button')).slice(0,2).map(el=>{
+      const box=el.getBoundingClientRect(),x=box.x+box.width/2,y=box.y+box.height/2;
+      const top=document.elementFromPoint(x,y);
+      return {label:el.getAttribute('aria-label'),hit:el===top||el.contains(top),
+        top:top?.outerHTML?.slice(0,200),bounds:{x,y,width:box.width,height:box.height}};
+    });
+  });
+  expect(hitInfo).toHaveLength(2);
+  expect(hitInfo.every(x=>x.hit),JSON.stringify(hitInfo)).toBe(true);
+  await plus.click();
+  await expect(page.getByRole('heading',{name:'Add to playlist'})).toBeVisible();
+  await page.locator('.side-panel').getByRole('button',{name:/Favorites Mix/}).click();
+  await expect(page.getByRole('heading',{name:'Add to playlist'})).toHaveCount(0);
+  expect(state.addedTracks).toEqual([{playlistId:'p1',songId:'s1'}]);
+  await heart.click();
+  await expect(row).toHaveCount(0);
+  expect(state.stars.has('s1')).toBe(false);
+  expect(pageErrors).toEqual([]);
 });
