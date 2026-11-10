@@ -14,6 +14,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -166,6 +168,8 @@ private fun JobbiTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
+private data class BulkChoice(val songs:List<Song>,val sourceId:String?=null,
+    val indices:List<Int> = emptyList(), val move:Boolean=false)
 private data class Dest(val name: String, val icon: ImageVector)
 private val tabs = listOf(
     Dest("Home", Icons.Rounded.Home),
@@ -185,6 +189,8 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     var addSong by remember { mutableStateOf<Song?>(null) }
     var createPlaylist by remember { mutableStateOf(false) }
     var invite by remember { mutableStateOf(false) }
+    var bulkChoice by remember { mutableStateOf<BulkChoice?>(null) }
+    var quarantineSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
 
     DisposableEffect(player) { onDispose { player.disconnect() } }
     LaunchedEffect(player) {
@@ -257,8 +263,13 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
                         "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true})
                         "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
-                            emptyText="Heart songs to save them here.")
-                        "Detail" -> DetailScreen(vm,player,onSongAdd={addSong=it},onInvite={invite=true})
+                            emptyText="Heart songs to save them here.",isFavorites=true,
+                            onBulkPlaylist={songs->bulkChoice=BulkChoice(songs)},
+                            onQuarantine={quarantineSongs=it})
+                        "Detail" -> DetailScreen(vm,player,onSongAdd={addSong=it},onInvite={invite=true},
+                            onBulkPlaylist={songs,indices,move->
+                                bulkChoice=BulkChoice(songs,if(move)vm.detail?.id else null,indices,move)
+                            },onQuarantine={quarantineSongs=it})
                         "Import" -> ImportScreen(onBack={vm.select("More")})
                         else -> MoreScreen(vm,player)
                     }
@@ -284,6 +295,43 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
             },
             confirmButton={TextButton(onClick={addSong=null}) {Text("Close")}}
         )
+        if(bulkChoice!=null) {
+            val request=bulkChoice!!
+            AlertDialog(onDismissRequest={bulkChoice=null},
+                title={Text(if(request.move)"Move selected songs" else "Add selected to playlist")},
+                text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                    Text("${request.songs.size} selected song(s). "+
+                        (if(request.move)"Move adds to the destination first, then removes source entries."
+                         else "Copies stay in the original collection."),
+                        style=MaterialTheme.typography.bodySmall)
+                    vm.playlists.filter { !request.move || it.id != request.sourceId }.forEach{p->
+                        TextButton(onClick={
+                            vm.copyOrMoveSelected(request.songs,p.id,
+                                if(request.move)request.sourceId else null,request.indices)
+                            bulkChoice=null
+                        }){Text(p.name)}
+                    }
+                }},
+                confirmButton={TextButton(onClick={bulkChoice=null}){Text("Cancel")}}
+            )
+        }
+        if(quarantineSongs.isNotEmpty()) {
+            val chosen=quarantineSongs
+            AlertDialog(onDismissRequest={quarantineSongs=emptyList()},
+                title={Text("Remove recordings from the NAS?")},
+                text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){
+                    Text("Move ${chosen.distinctBy{it.id}.size} recording(s) into a protected quarantine folder. "+
+                        "They disappear from the active music library after reindexing, but can be recovered by an administrator.")
+                    Text("This is NOT the same as removing songs from a playlist. "+
+                        "Only the administrator can perform this action.",color=MaterialTheme.colorScheme.error)
+                    Text(chosen.take(3).joinToString("\n") { it.artist+" — "+it.title })
+                }},
+                confirmButton={TextButton(onClick={
+                    vm.quarantineSelected(chosen);quarantineSongs=emptyList()
+                }){Text("Move to quarantine")}},
+                dismissButton={TextButton(onClick={quarantineSongs=emptyList()}){Text("Cancel")}}
+            )
+        }
         if(createPlaylist) {
             var name by remember { mutableStateOf("") }
             AlertDialog(onDismissRequest={createPlaylist=false},
@@ -437,11 +485,20 @@ private fun Cover(art:String?,size: androidx.compose.ui.unit.Dp,modifier:Modifie
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:()->Unit,add:()->Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick=play).padding(horizontal=13.dp,vertical=7.dp),
-        verticalAlignment=Alignment.CenterVertically) {
-        Text("${index+1}",Modifier.width(23.dp),style=MaterialTheme.typography.labelMedium,
+private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:()->Unit,
+                    add:()->Unit, selected:Boolean=false,selectionMode:Boolean=false,
+                    onSelect:()->Unit={},onLongSelect:()->Unit={}) {
+    Row(Modifier.fillMaxWidth()
+        .background(if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+        .combinedClickable(onClick={if(selectionMode)onSelect()else play()},
+            onLongClick=onLongSelect)
+        .padding(horizontal=13.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+        if(selectionMode){
+            Checkbox(checked=selected,onCheckedChange={onSelect()},
+                modifier=Modifier.width(45.dp))
+        }else Text("${index+1}",Modifier.width(23.dp),style=MaterialTheme.typography.labelMedium,
             color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center)
         Cover(song.cover,52.dp)
         Spacer(Modifier.width(11.dp))
@@ -451,30 +508,76 @@ private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:
             Text(song.artist,maxLines=1,overflow=TextOverflow.Ellipsis,
                 style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        IconButton(onClick=favorite,modifier=Modifier.size(44.dp)) {
-            Icon(if(hearted)Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                contentDescription=if(hearted)"Remove from Favorites" else "Add to Favorites",
-                tint=if(hearted)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        if(!selectionMode){
+            IconButton(onClick=favorite,modifier=Modifier.size(44.dp)) {
+                Icon(if(hearted)Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription=if(hearted)"Remove from Favorites" else "Add to Favorites",
+                    tint=if(hearted)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick=add,modifier=Modifier.size(40.dp)){
+                Icon(Icons.Rounded.Add,contentDescription="Add to playlist")
+            }
         }
-        IconButton(onClick=add,modifier=Modifier.size(40.dp)){
-            Icon(Icons.Rounded.Add,contentDescription="Add to playlist")
+    }
+}
+
+@Composable
+private fun SelectionActions(count:Int,total:Int,onAll:()->Unit,onClear:()->Unit,
+                             onFavorite:()->Unit,onPlaylist:()->Unit,
+                             onMove:(()->Unit)?=null,onRemove:(()->Unit)?=null,
+                             onQuarantine:(()->Unit)?=null) {
+    Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=6.dp)) {
+        Text("$count of $total songs selected",style=MaterialTheme.typography.labelMedium)
+        LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            item{AssistChip(onClick=onAll,label={Text("Select all")})}
+            item{AssistChip(onClick=onClear,label={Text("Clear")})}
+            item{AssistChip(onClick=onFavorite,label={Text("Add to Favorites")},enabled=count>0)}
+            item{AssistChip(onClick=onPlaylist,label={Text("Add to playlist")},enabled=count>0)}
+            if(onMove!=null)item{AssistChip(onClick=onMove,label={Text("Move to playlist")},enabled=count>0)}
+            if(onRemove!=null)item{AssistChip(onClick=onRemove,label={Text("Remove from this list")},enabled=count>0)}
+            if(onQuarantine!=null)item{AssistChip(onClick=onQuarantine,label={Text("Remove from NAS")},enabled=count in 1..20)}
         }
     }
 }
 
 @Composable
 private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
-                        onSongAdd:(Song)->Unit,emptyText:String) {
-    if(songs.isEmpty()) {
+                        onSongAdd:(Song)->Unit,emptyText:String,isFavorites:Boolean=false,
+                        onBulkPlaylist:(List<Song>)->Unit={},
+                        onQuarantine:(List<Song>)->Unit={}) {
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    if(songs.isEmpty()){
         Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
             Text(emptyText,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
-    LazyColumn(contentPadding=PaddingValues(vertical=10.dp)) {
-        itemsIndexed(songs,key={_,s->s.id}){index,song->
-            SongRow(song,index,song.id in vm.favoriteIds,
-                play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)})
+    Column {
+        Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=5.dp),
+            horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+            if(isFavorites)FilledTonalButton(onClick={
+                player.play(songs.shuffled()).invoke()
+            }){Icon(Icons.Rounded.Shuffle,null);Spacer(Modifier.width(6.dp));Text("Shuffle Favorites")}
+            TextButton(onClick={selecting=!selecting;selected=emptySet()}) {
+                Text(if(selecting)"Done" else "Select songs")
+            }
+        }
+        if(selecting)SelectionActions(selected.size,songs.size,
+            onAll={selected=songs.indices.toSet()},onClear={selected=emptySet()},
+            onFavorite={vm.favoriteSelected(selected.sorted().map(songs::get),true)},
+            onPlaylist={onBulkPlaylist(selected.sorted().map(songs::get));selected=emptySet();selecting=false},
+            onRemove=if(isFavorites){{vm.favoriteSelected(selected.sorted().map(songs::get),false);
+                selected=emptySet();selecting=false}}else null,
+            onQuarantine=if(vm.isAdmin){{onQuarantine(selected.sorted().map(songs::get))}}else null)
+        LazyColumn(contentPadding=PaddingValues(vertical=10.dp)) {
+            itemsIndexed(songs,key={i,s->"$i:${s.id}"}){index,song->
+                SongRow(song,index,song.id in vm.favoriteIds,
+                    play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                    selected=index in selected,selectionMode=selecting,
+                    onSelect={selected=if(index in selected)selected-index else selected+index},
+                    onLongSelect={selecting=true;selected=selected+index})
+            }
         }
     }
 }
@@ -572,12 +675,17 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit) {
 
 @Composable
 private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
-                         onInvite:()->Unit) {
+                         onInvite:()->Unit,
+                         onBulkPlaylist:(List<Song>,List<Int>,Boolean)->Unit,
+                         onQuarantine:(List<Song>)->Unit) {
     val detail = vm.detail ?: return
     var filter by remember(detail.id) { mutableStateOf("") }
+    var selecting by remember(detail.id) { mutableStateOf(false) }
+    var selected by remember(detail.id) { mutableStateOf<Set<Int>>(emptySet()) }
     val listed=remember(detail.songs,filter){
-        if(filter.isBlank())detail.songs
-        else detail.songs.filter { it.title.contains(filter,true)||it.artist.contains(filter,true) }
+        detail.songs.mapIndexed {i,s->i to s}.filter { (_,s)->
+            filter.isBlank()||s.title.contains(filter,true)||s.artist.contains(filter,true)
+        }
     }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {uri->
         if(uri!=null)vm.uploadArt(uri)
@@ -606,6 +714,13 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                     }
                     AssistChip(onClick={picker.launch("image/*")},
                         label={Text("Cover")},leadingIcon={Icon(Icons.Rounded.CloudUpload,null)})
+                }
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    TextButton(onClick={selecting=!selecting;selected=emptySet()}){
+                        Text(if(selecting)"Done selecting" else "Select songs")
+                    }
+                    if(!detail.isPlaylist)Text("Long press a song to select",
+                        style=MaterialTheme.typography.bodySmall)
                 }
                 if(detail.isPlaylist) {
                     val canChangeVisibility = detail.owner.isBlank() ||
@@ -650,9 +765,27 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 }
             }
         }
-        itemsIndexed(listed,key={_,s->s.id}){index,song->
+        if(selecting)item {
+            val chosen=selected.sorted().mapNotNull { position->detail.songs.getOrNull(position) }
+            SelectionActions(selected.size,listed.size,
+                onAll={selected=listed.map {it.first}.toSet()},
+                onClear={selected=emptySet()},
+                onFavorite={vm.favoriteSelected(chosen,true)},
+                onPlaylist={onBulkPlaylist(chosen,selected.sorted(),false);selecting=false;selected=emptySet()},
+                onMove=if(detail.isPlaylist){{onBulkPlaylist(chosen,selected.sorted(),true);
+                    selecting=false;selected=emptySet()}}else null,
+                onRemove=if(detail.isPlaylist){{vm.removeSelectedFromPlaylist(selected.toList());
+                    selected=emptySet();selecting=false}}else null,
+                onQuarantine=if(vm.isAdmin){{onQuarantine(chosen)}}else null)
+        }
+        itemsIndexed(listed,key={_,pair->"${pair.first}:${pair.second.id}"}){index,pair->
+            val song=pair.second
+            val playingList=listed.map{it.second}
             SongRow(song,index,song.id in vm.favoriteIds,
-                play={player.play(listed,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)})
+                play={player.play(playingList,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                selected=pair.first in selected,selectionMode=selecting,
+                onSelect={selected=if(pair.first in selected)selected-pair.first else selected+pair.first},
+                onLongSelect={selecting=true;selected=selected+pair.first})
         }
     }
 }
