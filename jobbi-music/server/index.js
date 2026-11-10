@@ -522,6 +522,19 @@ app.post('/api/library/scan',mustAuth,mustAdmin,mustBeLimited,route(async(req,re
 
 const staticDir=path.join(path.dirname(fileURLToPath(import.meta.url)),'../dist');
 app.use('/assets',express.static(path.join(staticDir,'assets'),{index:false,immutable:true,maxAge:'1y',fallthrough:false}));
+// Serve the actual browser userscript instead of the SPA HTML fallback.
+// No provider credentials or account authorization are needed for this public script.
+app.get('/tools/jobbi-collection-export.user.js',(req,res)=>{
+  res.setHeader('Cache-Control','no-store');
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.type('text/javascript; charset=utf-8');
+  res.sendFile(path.join(staticDir,'tools','jobbi-collection-export.user.js'),err=>{
+    if(err){
+      console.error('Browser exporter file missing from deployment:',err.message);
+      if(!res.headersSent)res.status(503).type('text/plain').send('Collection exporter not deployed; update Jobbi Music.');
+    }
+  });
+});
 app.get('*',(req,res)=>{res.setHeader('Cache-Control','no-store');res.sendFile(path.join(staticDir,'index.html'));});
 setInterval(()=>{const now=Date.now();for(const [key,item] of sessions)if(item.expires<now)sessions.delete(key);for(const[key,item]of attempts)if(now-item.start>LOGIN_WINDOW_MS)attempts.delete(key);for(const[key,item]of actionLimits)if(now-item.start>ACTION_WINDOW_MS)actionLimits.delete(key);},60000).unref();
 app.listen(PORT,'0.0.0.0',()=>console.log(`Jobbi Music listening on port ${PORT}`));

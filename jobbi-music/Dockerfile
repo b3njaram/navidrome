@@ -4,7 +4,10 @@ COPY package*.json ./
 RUN npm install --no-audit --no-fund
 COPY index.html vite.config.js ./
 COPY src ./src
+# Vite copies public/tools into dist/tools for the production userscript URL.
+COPY public ./public
 RUN npm run build
+RUN test -s dist/tools/jobbi-collection-export.user.js
 
 FROM node:22-alpine
 ENV NODE_ENV=production
