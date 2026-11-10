@@ -84,9 +84,9 @@ fun parseInvidiousVideos(payload:JSONObject):List<InvidiousVideo> {
     for(i in 0 until minOf(rows.length(),80)){
         val row=rows.optJSONObject(i)?:continue
         val id=row.optString("videoId")
-        if(!VIDEO_ID_PATTERN.matches(id)||!seen.add(id))continue
+        if(!VIDEO_ID_PATTERN.matches(id))continue
         val url=row.optString("url")
-        if(!verifiedWatchUrl(url,id))continue
+        if(!verifiedWatchUrl(url,id)||!seen.add(id))continue
         output.add(InvidiousVideo(
             videoId=id,
             title=row.optString("title","Untitled recording").take(200),
