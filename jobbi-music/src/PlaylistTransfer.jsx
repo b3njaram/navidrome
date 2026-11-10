@@ -94,9 +94,9 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         ' track entries. Favorites remain favorites; playlists remain separate.');
     }catch(e){setError(e.message||'Unable to parse the export');}
   };
-  const fetchLocal=async row=>{
+  const fetchLocal=async(row,{refresh=false}={})=>{
     const key=sameSong(row);
-    if(queryCache.current.has(key))return queryCache.current.get(key);
+    if(!refresh&&queryCache.current.has(key))return queryCache.current.get(key);
     const data=await api('/api/search?q='+encodeURIComponent(row.title.slice(0,100)));
     const song=findLocalSong(row,data.song||[])||null;
     queryCache.current.set(key,song);
@@ -190,7 +190,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
           if(stopRef.current)break;
           try{
             if(recheck){
-              const found=await fetchLocal(row);
+              const found=await fetchLocal(row,{refresh:true});
               if(found?.id){
                 await applyLocal(col,row,found);updated++;
               }else{
@@ -347,7 +347,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
           <button type="button" className="playlist-tool-button"
             disabled={!authorized||working||!candidates.length}
             onClick={async()=>{
-              setWorking(true);setError('');
+              setWorking(true);setError('');stopRef.current=false;
               try{
                 let count=0;
                 for(const row of candidates.slice(0,5)){
