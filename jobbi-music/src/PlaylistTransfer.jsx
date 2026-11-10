@@ -24,7 +24,9 @@ export default function PlaylistTransfer({api,onLibrary}){
   };
   const lookUp=async item=>{
     const query=(item.artist+' '+item.title).slice(0,140);
-    const local=await api('/api/search?q='+encodeURIComponent(query));
+    // Navidrome search3 is title-oriented; a combined artist+title query can
+    // miss local recordings. Search by title then verify artist and title.
+    const local=await api('/api/search?q='+encodeURIComponent(item.title.slice(0,100)));
     const found=findLocalSong(item,local.song||[]);
     if(found?.id)return {status:'available',note:'Already in your Navidrome library',songId:found.id};
     const remote=await api('/api/soulseek/search',{method:'POST',body:JSON.stringify({query})});
