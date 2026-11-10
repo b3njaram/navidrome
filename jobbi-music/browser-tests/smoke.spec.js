@@ -484,8 +484,13 @@ test('song rows play on click while favorites and playlist buttons act independe
   await expect(page.getByRole('button',{name:'Open now playing for Kino'})).toBeEnabled();
   expect((await page.evaluate(()=>window.__playEvents)).at(-1).src).toContain('/api/stream/s1');
 
-  // A real click on the title tests that play() retains browser user activation.
-  await row.locator('.track-song-title').click();
+  // Move the song above fixed player/navigation overlays. Click the actual
+  // rendered title coordinates as a user would, rather than depending on the
+  // locator's center-point actionability in animated desktop/mobile layouts.
+  await row.locator('.track-song-title').evaluate(el=>el.scrollIntoView({block:'center',inline:'nearest'}));
+  const titleBox=await row.locator('.track-song-title').boundingBox();
+  expect(titleBox).not.toBeNull();
+  await page.mouse.click(titleBox.x+Math.min(titleBox.width/2,18),titleBox.y+titleBox.height/2);
   const starts=await page.evaluate(()=>window.__playEvents);
   expect(starts.length).toBeGreaterThanOrEqual(2);
   expect(starts.at(-1).userGesture).toBe(true);
