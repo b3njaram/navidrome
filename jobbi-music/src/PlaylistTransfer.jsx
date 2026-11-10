@@ -32,15 +32,18 @@ export default function PlaylistTransfer({api,onLibrary}){
     if(candidate)return {status:'matched',note:/(\.flac)$/i.test(candidate.filename)?'Matching FLAC found':'Best available matching format',candidate};
     return {status:'review',note:'No safe artist/title match found. Search manually in Discover.'};
   };
-  const scan=async()=>{
+  const scan=async(autoQueue=false)=>{
     if(running.current||!tracks.length||cursor>=tracks.length)return;
     running.current=true;setWorking(true);setNotice('');setError('');
     let processed=0;
     try{
       for(const row of tracks.slice(cursor,cursor+LIMIT)){
         patchRow(row.id,{status:'searching',note:'Searching your library and available peers…'});
-        try{patchRow(row.id,await lookUp(row))}
-        catch(e){patchRow(row.id,{status:'review',note:e.message||'Search unavailable'})}
+        try{
+          const found=await lookUp(row);
+          patchRow(row.id,found);
+          if(autoQueue&&found.status==='matched'&&authorized)await queue({...row,...found});
+        }catch(e){patchRow(row.id,{status:'review',note:e.message||'Search unavailable'})}
         processed++;
       }
       setNotice('Reviewed '+processed+' tracks. FLAC is preferred only when both artist and title match.');
@@ -99,7 +102,7 @@ export default function PlaylistTransfer({api,onLibrary}){
       <div className="transfer-card"><h2><ShieldCheck size={20}/> Review and queue</h2>
         <p>Automatically compares titles and artists; searches the NAS downloader only when a song is missing. Finds FLAC first where a trustworthy match exists.</p>
         <label className="transfer-checkbox"><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/> I have permission to obtain and store the recordings I queue.</label>
-        <p className="transfer-help">Imports are shared on your NAS, subject to Jobbi Music's existing per-user limits (20 tracks/day). Searches run in groups of five while this page remains open. No silent downloads.</p>
+        <p className="transfer-help">Imports are shared on your NAS, subject to Jobbi Music's existing per-user limits (20 tracks/day). Searches run in groups of five while this page remains open. Choose Find and queue only after confirming you have permission to obtain the music.</p>
       </div>
     </div>
     {error&&<p className="inline-error">{error}</p>}
@@ -107,6 +110,7 @@ export default function PlaylistTransfer({api,onLibrary}){
     {!!tracks.length&&<>
       <div className="transfer-controls"><span>{tracks.length} songs · {cursor} checked · {ready} ready to queue</span>
         <button type="button" className="primary" disabled={working||cursor>=tracks.length} onClick={scan}>{working?<LoaderCircle size={17}/>:<Search size={17}/>} Find next {Math.min(LIMIT,tracks.length-cursor)} matches</button>
+        <button type="button" className="playlist-tool-button" disabled={working||!authorized||cursor>=tracks.length} onClick={()=>scan(true)}><ArrowDownToLine size={17}/> Find and queue next {Math.min(LIMIT,tracks.length-cursor)}</button>
         <button type="button" className="playlist-tool-button" disabled={working||!authorized||!ready} onClick={queueMatching}><ArrowDownToLine size={17}/> Queue matched ({Math.min(ready,LIMIT)})</button>
         <button type="button" className="playlist-tool-button" disabled={working||!tracks.some(r=>r.songId)} onClick={makePlaylist}><Music2 size={17}/> Save found songs as playlist</button>
       </div>
