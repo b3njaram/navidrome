@@ -46,6 +46,19 @@ jobs:
         run: |
           test -s jobbi-music/android-native/app/build/outputs/apk/debug/app-debug.apk
           sha256sum jobbi-music/android-native/app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify downloadable playlist exporter
+        run: |
+          node --check jobbi-music/tools/jobbi-collection-export.user.js
+          cmp jobbi-music/tools/jobbi-collection-export.user.js jobbi-music/public/tools/jobbi-collection-export.user.js
+      - name: Upload free Spotify and Apple Music exporter
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jobbi-Music-Spotify-Apple-Exporter
+          path: |
+            jobbi-music/tools/jobbi-collection-export.user.js
+            jobbi-music/tools/README.md
+          if-no-files-found: error
+          retention-days: 30
       - name: Publish Android APK
         uses: actions/upload-artifact@v4
         with:
