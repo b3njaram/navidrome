@@ -34,20 +34,47 @@ data class ServerCandidate(
 }
 
 fun parseServerCandidates(data:JSONObject):List<ServerCandidate>{
-    val results=data.optJSONArray("results") ?: return emptyList()
-    return (0 until results.length()).mapNotNull{i->
-        val row=results.optJSONObject(i)?:return@mapNotNull null
-        val peer=row.optString("username"),file=row.optString("filename")
-        val size=row.optLong("size")
-        if(peer.isBlank()||file.isBlank()||size<1024)return@mapNotNull null
-        val format=row.optString("format").ifBlank{file.substringAfterLast('.')}.uppercase()
-        if(format !in setOf("FLAC","MP3","M4A","AAC","OGG","OPUS","WAV","AIFF","ALAC"))return@mapNotNull null
-        ServerCandidate(peer,file,size,
-            row.optInt("bitrate").takeIf{it>0},format,row.optBoolean("freeUploadSlot"))
-    }.sortedWith(compareByDescending<ServerCandidate>{it.format=="FLAC"}
-        .thenByDescending{it.freeSlot}.thenByDescending{it.bitrate?:0}).take(180)
+    // slskd returns a flat array; older NAS downloader versions may return
+    // nested peers/files. Mirror the web app's bounded flattening here.
+    val found=mutableListOf<ServerCandidate>()
+    val seen=mutableSetOf<String>()
+    fun visit(value:Any?, inheritedPeer:String="",depth:Int=0){
+        if(value==null||depth>8||found.size>=180)return
+        when(value){
+            is org.json.JSONArray -> for(i in 0 until value.length())visit(value.opt(i),inheritedPeer,depth+1)
+            is JSONObject -> {
+                val peer=value.optString("username")
+                    .ifBlank{value.optString("userName")}
+                    .ifBlank{value.optString("peer")}
+                    .ifBlank{inheritedPeer}
+                val filename=value.optString("filename")
+                    .ifBlank{value.optString("fileName")}
+                val size=value.optLong("size",value.optLong("fileSize"))
+                val format=value.optString("format")
+                    .ifBlank{filename.substringAfterLast('.',missingDelimiterValue="")}
+                    .uppercase()
+                if(peer.isNotBlank()&&filename.isNotBlank()&&size>=1024&&
+                    format in setOf("FLAC","MP3","M4A","AAC","OGG","OPUS","WAV","AIFF","ALAC")){
+                    val key=(peer+"|"+filename).lowercase()
+                    if(seen.add(key))found.add(ServerCandidate(peer,filename,size,
+                        value.optInt("bitrate",value.optInt("bitRate")).takeIf{it>0},
+                        format,value.optBoolean("freeUploadSlot",
+                            value.optBoolean("hasFreeUploadSlot"))))
+                }else {
+                    val iterator=value.keys()
+                    while(iterator.hasNext()&&found.size<180){
+                        val key=iterator.next()
+                        val child=value.opt(key)
+                        if(child is JSONObject||child is org.json.JSONArray)visit(child,peer,depth+1)
+                    }
+                }
+            }
+        }
+    }
+    visit(data)
+    return found.sortedWith(compareByDescending<ServerCandidate>{it.format=="FLAC"}
+        .thenByDescending{it.freeSlot}.thenByDescending{it.bitrate?:0})
 }
-
 @Composable
 fun ServerDiscoverScreen(onBack:()->Unit){
     val scope=rememberCoroutineScope()
