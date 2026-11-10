@@ -77,9 +77,9 @@ fun parseServerCandidates(data:JSONObject):List<ServerCandidate>{
         .thenByDescending{it.freeSlot}.thenByDescending{it.bitrate?:0})
 }
 @Composable
-fun ServerDiscoverScreen(onBack:()->Unit){
+fun ServerDiscoverScreen(onBack:()->Unit,initialQuery:String=""){
     val scope=rememberCoroutineScope()
-    var query by remember{mutableStateOf("")}
+    var query by remember(initialQuery){mutableStateOf(initialQuery)}
     var results by remember{mutableStateOf<List<ServerCandidate>>(emptyList())}
     var sourceMessage by remember{mutableStateOf("")}
     var busy by remember{mutableStateOf(false)}
@@ -147,9 +147,24 @@ fun ServerDiscoverScreen(onBack:()->Unit){
                                     val response=JobbiApi.post("/api/soulseek/search",
                                         JSONObject().put("query",term))
                                     results=parseServerCandidates(response)
-                                    sourceMessage=response.optString("message").ifBlank{
-                                        "${results.size} Soulseek recordings found. FLAC first."
+                                    val diagnostics=response.optJSONObject("diagnostics")
+                                    val peers=response.optInt("peerCount",-1)
+                                    val total=response.optInt("total",results.size)
+                                    sourceMessage=when {
+                                        results.isNotEmpty() -> "$total audio files found across $peers peers. FLAC first."
+                                        response.optBoolean("failed") -> "Soulseek search failed. Check the connection."
+                                        peers == 0 -> "Soulseek query completed, but ZERO peers answered. "+
+                                            "This is a peer/connectivity problem or an overly specific query, "+
+                                            "not proof the song is unavailable."
+                                        peers > 0 -> "$peers peers answered, but returned ZERO supported audio files. "+
+                                            "Try the title without accents or search a shorter phrase."
+                                        else -> response.optString("message").ifBlank{
+                                            "No Soulseek audio returned. Check server connection and retry."
+                                        }
                                     }
+                                    if(diagnostics!=null && results.isEmpty())
+                                        sourceMessage+=" "+diagnostics.optString("connectionNote")
+                                    
                                 }catch(e:Exception){
                                     error="Soulseek unavailable: "+(e.message?:"Search failed")+
                                         ". Check the Invidious fallback below."
@@ -166,6 +181,17 @@ fun ServerDiscoverScreen(onBack:()->Unit){
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(error.isNotBlank())Text(error,Modifier.padding(16.dp),
             color=MaterialTheme.colorScheme.error)
+        if(!busy&&results.isEmpty()&&query.isNotBlank()){
+            val withoutAccents=java.text.Normalizer.normalize(query,
+                java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"),"")
+            if(withoutAccents!=query)TextButton(onClick={query=withoutAccents}){
+                Text("Try without accents: $withoutAccents")
+            }
+            Text("For Julieta Venegas – Algo Está Cambiando, try: "+
+                "Julieta Venegas cambiando  or  Algo Esta Cambiando",
+                Modifier.padding(horizontal=19.dp,vertical=4.dp),
+                style=MaterialTheme.typography.bodySmall)
+        }
         LazyColumn(contentPadding=PaddingValues(horizontal=16.dp,vertical=10.dp),
             verticalArrangement=Arrangement.spacedBy(9.dp)){
             if(results.isEmpty()){
