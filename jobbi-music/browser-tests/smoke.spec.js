@@ -534,7 +534,24 @@ test('Favorites page heart and plus icons receive real pointer clicks and update
     return top?.closest('button')?.getAttribute('aria-label')||'NOT_A_BUTTON';
   },{x:pointerX,y:pointerY});
   expect(hoveredTarget).toBe('Add Kino to playlist');
+  await plus.evaluate(button=>{
+    window.__favoritesEvents=[];
+    for(const type of ['pointerdown','pointerup','click']){
+      document.addEventListener(type,e=>{
+        if(e.target.closest?.('.track-actions'))window.__favoritesEvents.push({type,tag:e.target.tagName,label:e.target.closest('button')?.getAttribute('aria-label')||null});
+      },{capture:true,once:false});
+    }
+    window.__plusNativeClicks=0;
+    button.addEventListener('click',()=>{window.__plusNativeClicks++});
+  });
   await page.mouse.click(pointerX,pointerY);
+  const clickDiagnostics=await page.evaluate(()=>({
+    nativeClicks:window.__plusNativeClicks,
+    events:window.__favoritesEvents,
+    panel:!!document.querySelector('.side-panel'),
+    rowActionCount:document.querySelectorAll('.track-actions button').length
+  }));
+  expect(clickDiagnostics.panel,JSON.stringify(clickDiagnostics)).toBe(true);
   await expect(page.getByRole('heading',{name:'Add to playlist'})).toBeVisible();
   await page.locator('.side-panel').getByRole('button',{name:/Favorites Mix/}).click();
   await expect(page.getByRole('heading',{name:'Add to playlist'})).toHaveCount(0);
