@@ -251,6 +251,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
                             emptyText="Heart songs to save them here.")
                         "Detail" -> DetailScreen(vm,player,onSongAdd={addSong=it},onInvite={invite=true})
+                        "Import" -> ImportScreen(onBack={vm.select("More")})
                         else -> MoreScreen(vm,player)
                     }
                 }
