@@ -75,6 +75,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -557,7 +558,7 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
         Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=5.dp),
             horizontalArrangement=Arrangement.spacedBy(9.dp)) {
             if(isFavorites)FilledTonalButton(onClick={
-                player.play(songs.shuffled()).invoke()
+                player.play(songs.shuffled())
             }){Icon(Icons.Rounded.Shuffle,null);Spacer(Modifier.width(6.dp));Text("Shuffle Favorites")}
             TextButton(onClick={selecting=!selecting;selected=emptySet()}) {
                 Text(if(selecting)"Done" else "Select songs")
