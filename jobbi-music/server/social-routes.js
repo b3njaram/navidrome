@@ -268,6 +268,8 @@ export function createSocialRouter({mustAuth,subsonic}){
   r.post('/playlists/import',respond(async(req,res)=>{
     const id=req.body?.navidromePlaylistId,vis=req.body?.visibility??'private';
     if(typeof id!=='string'||!id||id.length>150||!visibility(vis))fail(400,'Invalid import request');
+    const prior=await socialQuery('SELECT id::text FROM social_playlists WHERE owner=$1 AND source_navidrome_id=$2',[req.socialName,id]);
+    if(prior.rows[0])return res.json({id:prior.rows[0].id,existing:true,note:'Collaborative copy is separate from the original Navidrome playlist'});
     const nav=await subsonic(req.user,'getPlaylist',{id});
     const old=nav.playlist;
     if(!old?.id)fail(404,'Navidrome playlist unavailable');
@@ -276,8 +278,8 @@ export function createSocialRouter({mustAuth,subsonic}){
     const name=short(old.name||'Imported playlist',100);
     const newId=crypto.randomUUID();
     await withSocialTransaction(async client=>{
-      await client.query(`INSERT INTO social_playlists(id,owner,title,description,visibility)
-        VALUES($1,$2,$3,$4,$5)`,[newId,req.socialName,name,'Imported from my Navidrome playlist',vis]);
+      await client.query(`INSERT INTO social_playlists(id,owner,title,description,visibility,source_navidrome_id)
+        VALUES($1,$2,$3,$4,$5,$6)`,[newId,req.socialName,name,'Collaborative copy of my Navidrome playlist',vis,id]);
       await addTracks(client,newId,songs.map(s=>({...s,addedBy:req.socialName})));
     });
     res.status(201).json({id:newId,imported:songs.length,note:'Social playlist is a separate copy; edits do not change the original Navidrome playlist.'});
