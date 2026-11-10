@@ -13,6 +13,7 @@ export async function countIndexedSongs(subsonic,user,{pageSize=500,maxPages=100
     const rows=response.albumList2?.album;
     if(!Array.isArray(rows))throw new Error('Navidrome did not provide an album list');
     for(const album of rows){
+      if(album.songCount==null)throw new Error('Navidrome album is missing a usable song count');
       const n=Number(album.songCount);
       if(!Number.isSafeInteger(n)||n<0)throw new Error('Navidrome album is missing a usable song count');
       albums++;songs+=n;
