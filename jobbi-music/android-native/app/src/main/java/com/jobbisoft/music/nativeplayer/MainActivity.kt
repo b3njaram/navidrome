@@ -1,0 +1,727 @@
+package com.jobbisoft.music.nativeplayer
+
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import java.util.Locale
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(
+                android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        setContent { JobbiMaterialApp() }
+    }
+}
+
+private val Rose = Color(0xFFBA4E7D)
+private val Plum = Color(0xFFBBA7D1)
+
+@Composable
+private fun JobbiTheme(content: @Composable () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val ctx = LocalContext.current
+    val colors = if (Build.VERSION.SDK_INT >= 31) {
+        if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+    } else if (dark) {
+        darkColorScheme(primary = Color(0xFFFFADCF), secondary = Color(0xFFDFBED0),
+            surface = Color(0xFF151218), background = Color(0xFF100F14),
+            surfaceContainer = Color(0xFF242029))
+    } else {
+        lightColorScheme(primary = Rose, secondary = Color(0xFF825A89),
+            surface = Color(0xFFFFF7FB), background = Color(0xFFFFFAFD))
+    }
+    MaterialTheme(colorScheme = colors, content = content)
+}
+
+private data class Dest(val name: String, val icon: ImageVector)
+private val tabs = listOf(
+    Dest("Home", Icons.Rounded.Home),
+    Dest("Search", Icons.Rounded.Search),
+    Dest("Library", Icons.Rounded.LibraryMusic),
+    Dest("Favorites", Icons.Rounded.Favorite),
+    Dest("More", Icons.Rounded.MoreHoriz)
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
+    val context = LocalContext.current
+    val player = remember { NativePlayer(context.applicationContext).also { it.connect() } }
+    val snack = remember { SnackbarHostState() }
+    var showNowPlaying by remember { mutableStateOf(false) }
+    var addSong by remember { mutableStateOf<Song?>(null) }
+    var createPlaylist by remember { mutableStateOf(false) }
+    var invite by remember { mutableStateOf(false) }
+
+    DisposableEffect(player) { onDispose { player.disconnect() } }
+    LaunchedEffect(player) {
+        while (isActive) { player.tick(); delay(450) }
+    }
+    LaunchedEffect(vm.error,vm.message,player.error) {
+        val value = vm.error.ifBlank { vm.message }.ifBlank { player.error }
+        if(value.isNotBlank())snack.showSnackbar(value,withDismissAction=true)
+    }
+    JobbiTheme {
+        if (!vm.signedIn) {
+            LoginScreen(vm)
+            return@JobbiTheme
+        }
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Text(if(vm.selected=="Detail")vm.detail?.title ?: "Collection"
+                            else if(vm.selected=="More") "Jobbi Music"
+                            else vm.selected, fontWeight=FontWeight.Bold)
+                    },
+                    navigationIcon = {
+                        if(vm.selected=="Detail") IconButton(onClick=vm::back) {
+                            Icon(Icons.Rounded.ArrowBack,contentDescription="Back to library")
+                        }
+                    },
+                    actions = {
+                        if(vm.selected=="Library")IconButton(onClick={createPlaylist=true}){
+                            Icon(Icons.Rounded.Add,contentDescription="Create playlist")
+                        }
+                        if(vm.selected=="Home")IconButton(onClick=vm::refresh){
+                            Icon(Icons.Rounded.AutoAwesome,contentDescription="Refresh music")
+                        }
+                    }
+                )
+            },
+            snackbarHost = { SnackbarHost(snack) },
+            bottomBar = {
+                Column {
+                    AnimatedVisibility(player.active!=null,enter=slideInVertically{it}+fadeIn(),
+                        exit=slideOutVertically{it}+fadeOut()) {
+                        MiniPlayer(player,onOpen={showNowPlaying=true})
+                    }
+                    NavigationBar {
+                        tabs.forEach { destination ->
+                            NavigationBarItem(
+                                selected=vm.selected==destination.name,
+                                onClick={vm.select(destination.name)},
+                                icon={Icon(destination.icon,contentDescription=null)},
+                                label={Text(destination.name)},
+                                alwaysShowLabel=false
+                            )
+                        }
+                    }
+                }
+            }
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                AnimatedContent(targetState = vm.selected, label="material navigation") { page ->
+                    when(page) {
+                        "Home" -> HomeScreen(vm,player,onSongAdd={addSong=it})
+                        "Search" -> SearchScreen(vm,player,onSongAdd={addSong=it})
+                        "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true})
+                        "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
+                            emptyText="Heart songs to save them here.")
+                        "Detail" -> DetailScreen(vm,player,onSongAdd={addSong=it},onInvite={invite=true})
+                        else -> MoreScreen(vm,player)
+                    }
+                }
+                if(vm.busy) LinearProgressIndicator(modifier=Modifier.fillMaxWidth().align(Alignment.TopCenter))
+            }
+        }
+        if(showNowPlaying) ModalBottomSheet(onDismissRequest={showNowPlaying=false}) {
+            NowPlayingScreen(vm,player)
+        }
+        if(addSong!=null) AlertDialog(
+            onDismissRequest={addSong=null}, title={Text("Add to playlist")},
+            text={
+                Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    if(vm.playlists.isEmpty())Text("Create a playlist in Library first.")
+                    vm.playlists.forEach { playlist ->
+                        TextButton(onClick={
+                            addSong?.let { vm.addToPlaylist(it,playlist.id) }
+                            addSong=null
+                        }) { Icon(Icons.Rounded.PlaylistAdd,null); Spacer(Modifier.width(8.dp)); Text(playlist.name) }
+                    }
+                }
+            },
+            confirmButton={TextButton(onClick={addSong=null}) {Text("Close")}}
+        )
+        if(createPlaylist) {
+            var name by remember { mutableStateOf("") }
+            AlertDialog(onDismissRequest={createPlaylist=false},
+                title={Text("Create a playlist")},
+                text={OutlinedTextField(name,{name=it},label={Text("Playlist name")},singleLine=true)},
+                confirmButton={TextButton(onClick={vm.createPlaylist(name);createPlaylist=false},enabled=name.isNotBlank()){
+                    Text("Create")
+                }},
+                dismissButton={TextButton(onClick={createPlaylist=false}){Text("Cancel")}}
+            )
+        }
+        if(invite) {
+            var username by remember { mutableStateOf("") }
+            AlertDialog(onDismissRequest={invite=false},
+                title={Text("Invite a collaborator")},
+                text={Column {
+                    Text("Jobbi Music creates a separate shared playlist. The original stays yours.",
+                        style=MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(username,{username=it},label={Text("Jobbi username")},singleLine=true)
+                }},
+                confirmButton={TextButton(onClick={vm.invite(username);invite=false},enabled=username.isNotBlank()){Text("Invite")}},
+                dismissButton={TextButton(onClick={invite=false}){Text("Cancel")}}
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoginScreen(vm: MusicViewModel) {
+    var user by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var server by remember { mutableStateOf(vm.server) }
+    Box(Modifier.fillMaxSize().background(
+        Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface,
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha=.5f),
+            MaterialTheme.colorScheme.background))
+    ),contentAlignment=Alignment.Center){
+        Column(Modifier.fillMaxWidth().widthIn(max=440.dp).padding(28.dp),
+            horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){
+            Surface(shape=RoundedCornerShape(28.dp),
+                color=MaterialTheme.colorScheme.primaryContainer,modifier=Modifier.size(86.dp)){
+                Box(contentAlignment=Alignment.Center){ Icon(Icons.Rounded.MusicNote,null,Modifier.size(46.dp),
+                    tint=MaterialTheme.colorScheme.onPrimaryContainer) }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Jobbi Music",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)
+            Text("Your music. Made for Android.",style=MaterialTheme.typography.bodyLarge,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(server,{server=it},label={Text("Music server (HTTPS)")},
+                singleLine=true,modifier=Modifier.fillMaxWidth())
+            OutlinedTextField(user,{user=it},label={Text("Navidrome username")},
+                singleLine=true,modifier=Modifier.fillMaxWidth())
+            OutlinedTextField(password,{password=it},label={Text("Password")},
+                visualTransformation=PasswordVisualTransformation(),
+                singleLine=true,modifier=Modifier.fillMaxWidth())
+            Button(onClick={vm.login(user,password,server)},
+                enabled=!vm.busy&&user.isNotBlank()&&password.isNotBlank(),
+                modifier=Modifier.fillMaxWidth().height(54.dp)) {
+                Icon(Icons.Rounded.PlayArrow,null); Spacer(Modifier.width(9.dp)); Text("Listen now")
+            }
+            Text("Native playback · No WebView · Secured HTTPS",
+                style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(vm.error.isNotBlank())Text(vm.error,color=MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)->Unit) {
+    LazyColumn(contentPadding=PaddingValues(bottom=25.dp),
+        verticalArrangement=Arrangement.spacedBy(22.dp)) {
+        item {
+            Column(Modifier.padding(horizontal=22.dp,vertical=10.dp)){
+                Text("Made for your ears",style=MaterialTheme.typography.labelMedium,
+                    color=MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(8.dp))
+                Text("Your soundtrack.",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)
+                Spacer(Modifier.height(14.dp))
+                Card(
+                    modifier=Modifier.fillMaxWidth(),
+                    colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer),
+                    shape=RoundedCornerShape(28.dp)
+                ){
+                    Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Rounded.AutoAwesome,null,Modifier.size(32.dp),
+                            tint=MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Good music. Beautifully yours.",style=MaterialTheme.typography.headlineSmall,
+                            fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Pick up where the music left off.",
+                            color=MaterialTheme.colorScheme.onPrimaryContainer)
+                        Button(onClick={player.play(vm.home.songs)},
+                            enabled=vm.home.songs.isNotEmpty()) {
+                            Icon(Icons.Rounded.PlayArrow,null)
+                            Spacer(Modifier.width(6.dp));Text("Play something good")
+                        }
+                    }
+                }
+            }
+        }
+        item { AlbumShelf("Fresh in your library",vm.home.recent,vm::openAlbum) }
+        item { AlbumShelf("Explore something new",vm.home.featured,vm::openAlbum) }
+        item { Text("Quick picks",Modifier.padding(horizontal=22.dp),
+            style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold) }
+        itemsIndexed(vm.home.songs,key={_,s->s.id}) { index,song ->
+            SongRow(song,index,vm.favoriteIds.contains(song.id),
+                play={player.play(vm.home.songs,index)},favorite={vm.toggleFavorite(song)},
+                add={onSongAdd(song)})
+        }
+    }
+}
+
+@Composable
+private fun AlbumShelf(title:String,albums:List<Album>,open:(String)->Unit) {
+    if(albums.isEmpty())return
+    Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Text(title,Modifier.padding(horizontal=22.dp),style=MaterialTheme.typography.titleLarge,
+            fontWeight=FontWeight.Bold)
+        LazyRow(horizontalArrangement=Arrangement.spacedBy(12.dp),contentPadding=PaddingValues(horizontal=20.dp)){
+            items(albums,key={it.id}) { album ->
+                Column(Modifier.width(156.dp).clip(RoundedCornerShape(18.dp))
+                    .clickable{open(album.id)},verticalArrangement=Arrangement.spacedBy(7.dp)){
+                    Cover(album.cover,156.dp)
+                    Text(album.name,maxLines=1,overflow=TextOverflow.Ellipsis,
+                        fontWeight=FontWeight.SemiBold)
+                    Text(album.artist,maxLines=1,overflow=TextOverflow.Ellipsis,
+                        style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Cover(art:String?,size: androidx.compose.ui.unit.Dp,modifier:Modifier=Modifier) {
+    val context=LocalContext.current
+    val loader=remember { ImageLoader.Builder(context.applicationContext).okHttpClient(JobbiApi.client).build() }
+    Box(modifier.size(size).clip(RoundedCornerShape(18.dp))
+        .background(MaterialTheme.colorScheme.secondaryContainer),contentAlignment=Alignment.Center) {
+        Icon(Icons.Rounded.Album,null,Modifier.size(size*.38f),
+            tint=MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha=.65f))
+        if(art!=null) {
+            AsyncImage(
+                model=ImageRequest.Builder(context).data(JobbiApi.coverUrl(art))
+                    .crossfade(true).build(),
+                contentDescription="Album cover",imageLoader=loader,
+                contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+@Composable
+private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:()->Unit,add:()->Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick=play).padding(horizontal=13.dp,vertical=7.dp),
+        verticalAlignment=Alignment.CenterVertically) {
+        Text("${index+1}",Modifier.width(23.dp),style=MaterialTheme.typography.labelMedium,
+            color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center)
+        Cover(song.cover,52.dp)
+        Spacer(Modifier.width(11.dp))
+        Column(Modifier.weight(1f)) {
+            Text(song.title,maxLines=1,overflow=TextOverflow.Ellipsis,
+                style=MaterialTheme.typography.bodyLarge,fontWeight=FontWeight.SemiBold)
+            Text(song.artist,maxLines=1,overflow=TextOverflow.Ellipsis,
+                style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick=favorite,modifier=Modifier.size(44.dp)) {
+            Icon(if(hearted)Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription=if(hearted)"Remove from Favorites" else "Add to Favorites",
+                tint=if(hearted)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick=add,modifier=Modifier.size(40.dp)){
+            Icon(Icons.Rounded.Add,contentDescription="Add to playlist")
+        }
+    }
+}
+
+@Composable
+private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
+                        onSongAdd:(Song)->Unit,emptyText:String) {
+    if(songs.isEmpty()) {
+        Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+            Text(emptyText,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    LazyColumn(contentPadding=PaddingValues(vertical=10.dp)) {
+        itemsIndexed(songs,key={_,s->s.id}){index,song->
+            SongRow(song,index,song.id in vm.favoriteIds,
+                play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)})
+        }
+    }
+}
+
+@Composable
+private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit) {
+    Column {
+        OutlinedTextField(vm.searchQuery,vm::search,
+            modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=12.dp),
+            placeholder={Text("Songs, albums, artists...")},
+            leadingIcon={Icon(Icons.Rounded.Search,null)},singleLine=true,
+            shape=RoundedCornerShape(28.dp))
+        LazyColumn(contentPadding=PaddingValues(bottom=20.dp)) {
+            if(vm.searchResult.albums.isNotEmpty()) {
+                item { AlbumShelf("Albums",vm.searchResult.albums,vm::openAlbum) }
+                item { Spacer(Modifier.height(14.dp)) }
+            }
+            if(vm.searchResult.songs.isNotEmpty()) {
+                item {
+                    Text("Tracks",Modifier.padding(18.dp),style=MaterialTheme.typography.titleLarge,
+                        fontWeight=FontWeight.Bold)
+                }
+                itemsIndexed(vm.searchResult.songs,key={_,s->s.id}) {index,song->
+                    SongRow(song,index,song.id in vm.favoriteIds,
+                        play={player.play(vm.searchResult.songs,index)},
+                        favorite={vm.toggleFavorite(song)},add={onSongAdd(song)})
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit) {
+    LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
+        verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Text("Your playlists",style=MaterialTheme.typography.titleLarge,
+                    fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+                FilledTonalButton(onClick=onCreate){Icon(Icons.Rounded.Add,null);Text("New")}
+            }
+        }
+        items(vm.playlists,key={it.id}){playlist->
+            Card(Modifier.fillMaxWidth().clickable{vm.openPlaylist(playlist.id)},
+                shape=RoundedCornerShape(18.dp)) {
+                Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Surface(color=MaterialTheme.colorScheme.secondaryContainer,shape=RoundedCornerShape(16.dp)){
+                        Icon(Icons.Rounded.LibraryMusic,null,Modifier.padding(13.dp),
+                            tint=MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(playlist.name,fontWeight=FontWeight.Bold)
+                        Text("${playlist.count} tracks · ${if(playlist.public)"Public" else "Private"}",
+                            color=MaterialTheme.colorScheme.onSurfaceVariant,
+                            style=MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        item { Text("Albums",style=MaterialTheme.typography.titleLarge,
+            modifier=Modifier.padding(top=15.dp),fontWeight=FontWeight.Bold) }
+        items(vm.albums,key={it.id}) {album ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                .clickable{vm.openAlbum(album.id)}.padding(5.dp),verticalAlignment=Alignment.CenterVertically){
+                Cover(album.cover,65.dp)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(album.name,fontWeight=FontWeight.SemiBold,maxLines=1,
+                        overflow=TextOverflow.Ellipsis)
+                    Text(album.artist,style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
+                         onInvite:()->Unit) {
+    val detail = vm.detail ?: return
+    var filter by remember(detail.id) { mutableStateOf("") }
+    val listed=remember(detail.songs,filter){
+        if(filter.isBlank())detail.songs
+        else detail.songs.filter { it.title.contains(filter,true)||it.artist.contains(filter,true) }
+    }
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {uri->
+        if(uri!=null)vm.uploadArt(uri)
+    }
+    LazyColumn(contentPadding=PaddingValues(bottom=36.dp)) {
+        item {
+            Column(Modifier.padding(19.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Cover(detail.songs.firstOrNull()?.cover,122.dp)
+                    Spacer(Modifier.width(17.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if(detail.isPlaylist)"PLAYLIST" else "ALBUM",
+                            style=MaterialTheme.typography.labelMedium,
+                            color=MaterialTheme.colorScheme.primary)
+                        Text(detail.title,style=MaterialTheme.typography.headlineMedium,
+                            fontWeight=FontWeight.Bold,maxLines=3)
+                        Text("${detail.songs.size} tracks",
+                            style=MaterialTheme.typography.bodyMedium,
+                            color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Row(horizontalArrangement=Arrangement.spacedBy(9.dp),
+                    verticalAlignment=Alignment.CenterVertically) {
+                    Button(onClick={player.play(detail.songs)},enabled=detail.songs.isNotEmpty()){
+                        Icon(Icons.Rounded.PlayArrow,null);Text("Play all")
+                    }
+                    AssistChip(onClick={picker.launch("image/*")},
+                        label={Text("Cover")},leadingIcon={Icon(Icons.Rounded.CloudUpload,null)})
+                }
+                if(detail.isPlaylist) {
+                    Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                        FilterChip(selected=detail.public,onClick={vm.setPlaylistPublic(!detail.public)},
+                            label={Text(if(detail.public)"Public" else "Private")},
+                            leadingIcon={Icon(if(detail.public)Icons.Rounded.Public else Icons.Rounded.Lock,null)})
+                        AssistChip(onClick=onInvite,label={Text("Collaborate")},
+                            leadingIcon={Icon(Icons.Rounded.PersonAdd,null)})
+                    }
+                    FilledTonalButton(onClick=vm::heartAll) {
+                        Icon(Icons.Rounded.Favorite,null)
+                        Spacer(Modifier.width(7.dp))
+                        Text("Heart all songs")
+                    }
+                    OutlinedTextField(filter,{filter=it},label={Text("Find a song in playlist")},
+                        leadingIcon={Icon(Icons.Rounded.Search,null)},singleLine=true,
+                        modifier=Modifier.fillMaxWidth())
+                }
+            }
+        }
+        itemsIndexed(listed,key={_,s->s.id}){index,song->
+            SongRow(song,index,song.id in vm.favoriteIds,
+                play={player.play(listed,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)})
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
+    val song=player.active ?: return
+    Surface(tonalElevation=6.dp,shadowElevation=3.dp,
+        modifier=Modifier.padding(horizontal=9.dp,vertical=4.dp).clip(RoundedCornerShape(22.dp)),
+        shape=RoundedCornerShape(22.dp),color=MaterialTheme.colorScheme.secondaryContainer) {
+        Column {
+            Row(Modifier.fillMaxWidth().height(72.dp).clickable(onClick=onOpen).padding(9.dp),
+                verticalAlignment=Alignment.CenterVertically) {
+                Cover(song.cover,53.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(song.title,maxLines=1,overflow=TextOverflow.Ellipsis,
+                        fontWeight=FontWeight.Bold)
+                    Text(song.artist,maxLines=1,overflow=TextOverflow.Ellipsis,
+                        style=MaterialTheme.typography.bodySmall)
+                }
+                IconButton(onClick=player::previous) {
+                    Icon(Icons.Rounded.SkipPrevious,"Previous track")
+                }
+                FilledIconButton(onClick=player::toggle) {
+                    Icon(if(player.playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        if(player.playing)"Pause" else "Play")
+                }
+                IconButton(onClick=player::next) { Icon(Icons.Rounded.SkipNext,"Next track") }
+            }
+            if(player.duration>0){
+                LinearProgressIndicator(progress={ (player.position.toFloat()/player.duration)
+                    .coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth().height(3.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer) {
+    val song=player.active ?:return
+    var drag by remember(song.id) { mutableFloatStateOf(-1f) }
+    val max=player.duration.coerceAtLeast(1L).toFloat()
+    Column(Modifier.fillMaxWidth().fillMaxHeight(.83f).padding(horizontal=27.dp),
+        horizontalAlignment=Alignment.CenterHorizontally,
+        verticalArrangement=Arrangement.spacedBy(22.dp)) {
+        Spacer(Modifier.height(10.dp))
+        Cover(song.cover,258.dp)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment=Alignment.CenterVertically){
+            Column(Modifier.weight(1f)){
+                Text(song.title,style=MaterialTheme.typography.headlineSmall,
+                    fontWeight=FontWeight.Bold,maxLines=2)
+                Text(song.artist,style=MaterialTheme.typography.titleMedium,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick={vm.toggleFavorite(song)}) {
+                Icon(if(song.id in vm.favoriteIds)Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    "Favorite",tint=MaterialTheme.colorScheme.primary)
+            }
+        }
+        Slider(value=(if(drag>=0f)drag else player.position.toFloat()).coerceIn(0f,max),
+            onValueChange={drag=it},onValueChangeFinished={player.seek(drag.toLong());drag=-1f},
+            valueRange=0f..max,modifier=Modifier.fillMaxWidth())
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+            Text(time((if(drag>=0f)drag.toLong() else player.position)/1000),
+                style=MaterialTheme.typography.labelMedium)
+            Text(time(player.duration/1000),style=MaterialTheme.typography.labelMedium)
+        }
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,
+            verticalAlignment=Alignment.CenterVertically) {
+            IconButton(onClick=player::previous,modifier=Modifier.size(64.dp)){
+                Icon(Icons.Rounded.SkipPrevious,"Previous track",Modifier.size(38.dp))
+            }
+            FilledIconButton(onClick=player::toggle,modifier=Modifier.size(86.dp)){
+                Icon(if(player.playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if(player.playing)"Pause" else "Play",Modifier.size(46.dp))
+            }
+            IconButton(onClick=player::next,modifier=Modifier.size(64.dp)){
+                Icon(Icons.Rounded.SkipNext,"Next track",Modifier.size(38.dp))
+            }
+        }
+        Text("High fidelity playback · Android Media3",style=MaterialTheme.typography.bodySmall,
+            color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+private fun time(seconds:Long): String =
+    "${seconds.coerceAtLeast(0)/60}:${(seconds.coerceAtLeast(0)%60).toString().padStart(2,'0')}"
+
+@Composable
+private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        .padding(22.dp),verticalArrangement=Arrangement.spacedBy(15.dp)){
+        Text("Music settings",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
+        Text("Signed in as ${vm.account}",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Streaming quality",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            listOf("original" to "Lossless","balanced" to "High","saver" to "Data saver").forEach { (value,label)->
+                FilterChip(selected=vm.quality==value,onClick={vm.setQuality(value)},label={Text(label)})
+            }
+        }
+        Card(shape=RoundedCornerShape(22.dp)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                Text("Native Android",style=MaterialTheme.typography.titleLarge,
+                    fontWeight=FontWeight.SemiBold)
+                Text("Built with Jetpack Compose and Material 3. Playback runs in Media3 with true background audio, headset controls, and a native system notification.")
+                Text("Server: ${vm.server}",style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        FilledTonalButton(onClick=vm::rescan){
+            Icon(Icons.Rounded.SwapHoriz,null);Spacer(Modifier.width(8.dp));Text("Scan new music")
+        }
+        FilledTonalButton(onClick={vm.select("Import")}) {
+            Icon(Icons.Rounded.UploadFile,null);Spacer(Modifier.width(8.dp));Text("Import track list")
+        }
+        OutlinedButton(onClick={vm.logout {player.stop()}},modifier=Modifier.fillMaxWidth()){
+            Text("Sign out")
+        }
+    }
+}
