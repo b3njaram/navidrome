@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -196,6 +197,7 @@ fun NativeAdminScreen(vm:MusicViewModel,onBack:()->Unit){
                         label={Text("Display name")},singleLine=true)
                     OutlinedTextField(password,{password=it.take(128)},
                         label={Text("Temporary password (12+ characters)")},
+                        visualTransformation=PasswordVisualTransformation(),
                         singleLine=true)
                     Text("New accounts are listeners, never administrators.",
                         style=MaterialTheme.typography.bodySmall)
