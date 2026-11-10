@@ -280,7 +280,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
           Mark Liked Songs or Favorite Songs as Favorites in the exporter.</p>
         <div className="playlist-tools-row">
           <a className="playlist-tool-button" href="/tools/jobbi-collection-export.user.js" download="jobbi-collection-export.user.js">
-            <Download size={16}/> Download browser exporter
+            <Download size={16}/> Download exporter v1.2.0
           </a>
           <a className="playlist-tool-button" href="https://github.com/b3njaram/navidrome/blob/main/jobbi-music/tools/README.md" target="_blank" rel="noopener noreferrer">
             Read setup guide
@@ -293,7 +293,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         </div>
         <p className="transfer-help">Capture each playlist and Liked/Favorite Songs, then select “Download all as JSON.”
           You log in only on the provider’s website. No passwords, audio files,
-          or cookies enter your export. Browser-layout changes can cause incomplete captures;
+          or cookies enter your export. Use exporter v1.2.0 with Violentmonkey or Tampermonkey on desktop. Reinstall if an earlier version is already installed. Browser-layout changes can cause incomplete captures;
           check the track counts before importing. Desktop browsers work best.</p>
       </div>
       <div className="transfer-card">
