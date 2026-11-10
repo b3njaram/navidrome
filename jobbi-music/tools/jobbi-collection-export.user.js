@@ -99,7 +99,7 @@
       '.songs-list__col-album','[class*="album-name"]'
     ]);
     const rawIndex=row.getAttribute('aria-rowindex')||
-      row.getAttribute('data-row-index')||row.getAttribute('data-index')||
+      row.getAttribute('data-row')||row.getAttribute('data-row-index')||row.getAttribute('data-index')||
       row.closest('[aria-rowindex]')?.getAttribute('aria-rowindex')||
       row.closest('[data-row-index]')?.getAttribute('data-row-index')||
       row.closest('[data-index]')?.getAttribute('data-index');
@@ -127,6 +127,11 @@
     const scope=document.querySelector('#scrollable-page main, [data-testid="main-view-container"], #scrollable-page, main')||document;
     const candidates=[...scope.querySelectorAll(selectors)]
       .filter(e=>!e.closest('#jobbi-collection-exporter'));
+    if(!candidates.length&&scope!==document){
+      for(const row of document.querySelectorAll(selectors)){
+        if(!row.closest('#jobbi-collection-exporter'))candidates.push(row);
+      }
+    }
     if(provider==='apple'&&!candidates.length){
       // Row class names occasionally change, but song links are still present.
       for(const link of scope.querySelectorAll('a[href*="?i="],a[href*="/song/"]')){
