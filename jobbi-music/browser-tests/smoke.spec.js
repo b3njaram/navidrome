@@ -580,7 +580,7 @@ test('playlist tools search tracks, change privacy, heart songs and upload album
   await page.locator('.playlist-grid').getByRole('button',{name:/Favorites Mix/}).click();
   await expect(page.getByRole('button',{name:/Invite collaborators/})).toBeVisible();
   await expect(page.getByRole('button',{name:/Private · Make public/})).toBeVisible();
-  await page.getByRole('textbox',{name:'Find a song in this playlist'}).fill('Kino');
+  await page.getByRole('searchbox',{name:'Find a song in this playlist'}).fill('Kino');
   await expect(page.locator('.track-row')).toHaveCount(1);
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:/Private · Make public/}).click();
