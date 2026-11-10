@@ -13,6 +13,7 @@ import { androidLatest } from './android-update.js';
 import { createSocialRouter } from './social-routes.js';
 import { createMusicRequestsRouter } from './music-requests.js';
 import {createMusicImportRouter,checkStorageStats} from './music-import.js';
+import {createArtworkRouter} from './artwork.js';
 import {transliterateMusic} from './import-reconcile.js';
 import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
 import {createInvidiousImportRouter} from './invidious-import.js';
@@ -335,15 +336,34 @@ app.post('/api/playlists',mustAuth,route(async(req,res)=>{
 }));
 app.patch('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
-  const {name,addSongId,removeIndex}=req.body||{};
+  const {name,addSongId,removeIndex,public:publicVisibility}=req.body||{};
   const changes={playlistId:req.params.id};
   if(name!==undefined){if(!validName(name))return res.status(400).json({error:'Invalid playlist name'});changes.name=name.trim();}
+  if(publicVisibility!==undefined){if(typeof publicVisibility!=='boolean')return res.status(400).json({error:'Visibility must be public or private'});changes.public=publicVisibility;}
   if(addSongId!==undefined){if(!validId(addSongId))return res.status(400).json({error:'Invalid song'});changes.songIdToAdd=addSongId;}
   if(removeIndex!==undefined){if(!Number.isInteger(removeIndex)||removeIndex<0)return res.status(400).json({error:'Invalid song position'});changes.songIndexToRemove=removeIndex;}
   if(Object.keys(changes).length===1)return res.status(400).json({error:'No playlist changes supplied'});
   await subsonic(req.user,'updatePlaylist',changes);
   const updated=await subsonic(req.user,'getPlaylist',{id:req.params.id});
   res.json({playlist:updated.playlist||null});
+}));
+app.post('/api/playlists/:id/favorite-all',mustAuth,mustBeLimited,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
+  // The caller's Navidrome account must be allowed to read every selected
+  // song; never take arbitrary song IDs or a different owner's credentials.
+  const result=await subsonic(req.user,'getPlaylist',{id:req.params.id});
+  const all=result.playlist?.entry||[];
+  if(all.length>250)return res.status(400).json({error:'Favorite all supports up to 250 tracks per playlist'});
+  const previous=await subsonic(req.user,'getStarred2');
+  const existing=new Set((previous.starred2?.song||[]).map(song=>song.id));
+  const ids=[...new Set(all.map(song=>song.id).filter(id=>validId(id)&&!existing.has(id)))];
+  let added=0,failed=0;
+  // Small batches avoid triggering Navidrome's per-user rate limits.
+  for(let i=0;i<ids.length;i+=3){
+    const outcomes=await Promise.allSettled(ids.slice(i,i+3).map(id=>subsonic(req.user,'star',{id})));
+    for(const outcome of outcomes)outcome.status==='fulfilled'?added++:failed++;
+  }
+  res.json({added,skipped:all.length-ids.length,failed,ids:all.map(song=>song.id)});
 }));
 app.delete('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
@@ -410,6 +430,7 @@ app.delete('/api/admin/accounts/:id',mustAuth,mustAdmin,mustBeLimited,route(asyn
 // Social features reuse Navidrome's authenticated session but store sharing and
 // friendship relationships in an isolated, persistent private PostgreSQL database.
 app.use('/api/social',createSocialRouter({mustAuth,subsonic}));
+app.use('/api/artwork',createArtworkRouter({mustAuth,subsonic}));
 app.use('/api/music-requests',createMusicRequestsRouter({mustAuth,mustAdmin,downloader:DOWNLOADER}));
 app.use('/api/music-imports',createMusicImportRouter({
   mustAuth,downloader:DOWNLOADER,statsFile:STORAGE_STATS_PATH,subsonic
