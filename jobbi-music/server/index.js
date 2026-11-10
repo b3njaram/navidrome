@@ -344,8 +344,31 @@ app.patch('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   if(addSongId!==undefined){if(!validId(addSongId))return res.status(400).json({error:'Invalid song'});changes.songIdToAdd=addSongId;}
   if(removeIndex!==undefined){if(!Number.isInteger(removeIndex)||removeIndex<0)return res.status(400).json({error:'Invalid song position'});changes.songIndexToRemove=removeIndex;}
   if(Object.keys(changes).length===1)return res.status(400).json({error:'No playlist changes supplied'});
-  await subsonic(req.user,'updatePlaylist',changes);
+  // Navidrome lets listeners read public playlists but only their owners may
+  // edit them through the Subsonic API. Make this failure actionable in clients.
+  if(publicVisibility!==undefined){
+    const existing=await subsonic(req.user,'getPlaylist',{id:req.params.id});
+    const owner=existing.playlist?.owner;
+    if(typeof owner==='string'&&owner.trim()&&
+      owner.trim().toLowerCase()!==req.user.username.toLowerCase()){
+      return res.status(403).json({error:'Only the playlist owner ('+owner+') can change its visibility.'});
+    }
+    if(existing.playlist?.public===publicVisibility && Object.keys(changes).length===2)
+      return res.json({playlist:existing.playlist});
+  }
+  try{
+    await subsonic(req.user,'updatePlaylist',changes);
+  }catch(err){
+    if(publicVisibility!==undefined&&/owner|permission|not allowed|unauthorized|forbidden|access denied/i.test(String(err?.message))){
+      return res.status(403).json({error:'Only the playlist owner can change its visibility.'});
+    }
+    throw err;
+  }
   const updated=await subsonic(req.user,'getPlaylist',{id:req.params.id});
+  if(publicVisibility!==undefined && (!updated.playlist||
+    updated.playlist.public!==publicVisibility)){
+    return res.status(502).json({error:'The music server did not confirm the visibility change. Please retry.'});
+  }
   res.json({playlist:updated.playlist||null});
 }));
 app.post('/api/playlists/:id/favorite-all',mustAuth,mustBeLimited,route(async(req,res)=>{
