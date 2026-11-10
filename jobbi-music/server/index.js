@@ -26,6 +26,8 @@ const NAVIDROME = (process.env.NAVIDROME_URL || 'http://127.0.0.1:4533').replace
 const DOWNLOADER = (process.env.DOWNLOADER_URL || '').replace(/\/$/, '');
 const SLSKD = (process.env.SLSKD_URL || '').replace(/\/$/, '');
 const SLSKD_KEY = process.env.SLSKD_API_KEY || '';
+const MUSIC_QUARANTINE_URL = (process.env.MUSIC_QUARANTINE_URL || '').replace(/\/$/,'');
+const MUSIC_QUARANTINE_SECRET = process.env.MUSIC_QUARANTINE_SECRET || '';
 const INVIDIOUS_WORKER_URL=(process.env.INVIDIOUS_WORKER_URL||'').replace(/\/$/,'');
 const INVIDIOUS_WORKER_SECRET=process.env.INVIDIOUS_WORKER_SECRET||'';
 const SECURE_COOKIE = process.env.PUBLIC_HTTPS === 'true';
@@ -177,6 +179,40 @@ app.get('/api/library/artists',mustAuth,route(async(req,res)=>{
   res.json({artists,count:artists.length});
 }));
 app.get('/api/albums/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getAlbum',{id:req.params.id});res.json(d.album||null);}));
+// NAS removal means reversible quarantine, NEVER deleting a file immediately.
+// A separate opt-in worker owns the writable mount. Normal listeners have no access.
+app.post('/api/admin/songs/:id/quarantine',mustAuth,mustAdmin,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid song identifier'});
+  if(req.body?.confirm!=='QUARANTINE')
+    return res.status(400).json({error:'Confirm removal from NAS storage before proceeding'});
+  if(!MUSIC_QUARANTINE_URL || MUSIC_QUARANTINE_SECRET.length<32)
+    return res.status(503).json({error:'NAS file quarantine is not enabled. Configure the isolated Jobbi quarantine worker on the NAS.'});
+  const {song}=await subsonic(req.user,'getSong',{id:req.params.id});
+  if(!song?.id || !song?.path || typeof song.path!=='string')
+    return res.status(409).json({error:'Navidrome has no verified relative file path for this recording; cannot quarantine it.'});
+  if(song.path.startsWith('/')||song.path.includes('\\')||song.path.split('/').some(part=>part==='..'||part==='.'||!part))
+    return res.status(409).json({error:'Navidrome reported an unsafe recording path; no file changed.'});
+  let response;
+  try{
+    response=await fetch(MUSIC_QUARANTINE_URL+'/quarantine',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Jobbi-Quarantine-Key':MUSIC_QUARANTINE_SECRET},
+      body:JSON.stringify({path:song.path,confirm:'QUARANTINE'}),
+      signal:AbortSignal.timeout(9000)
+    });
+  }catch{
+    return res.status(503).json({error:'NAS quarantine worker is unreachable. No file removed; check its container and permissions.'});
+  }
+  const outcome=await response.json().catch(()=>({}));
+  if(!response.ok)return res.status(409).json({error:'NAS quarantine failed: '+String(outcome.error||'Check NAS folder permissions').slice(0,180)});
+  // The hidden quarantine directory is outside the active music index on most
+  // installations. Indexing is separate so a move is not misreported as indexed.
+  let scanRequested=false;
+  try{await subsonic(req.user,'startScan');scanRequested=true;}catch{}
+  res.json({quarantined:true,id:song.id,title:song.title,
+    message:'Recording moved to protected NAS quarantine. '+(scanRequested?'Navidrome scan requested.':'Trigger a Navidrome rescan to update library views.'),
+    scanRequested});
+}));
 app.get('/api/songs/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid song'});
   const data=await subsonic(req.user,'getSong',{id:req.params.id});
