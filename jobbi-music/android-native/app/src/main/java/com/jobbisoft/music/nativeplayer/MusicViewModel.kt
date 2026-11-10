@@ -130,7 +130,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         selected = "Library"
         loadLibrary()
     }
-    fun setQuality(value: String) {
+    fun updateQuality(value: String) {
         JobbiApi.changeQuality(getApplication(), value)
         quality = JobbiApi.quality
         message = "Quality applies to newly started tracks."
