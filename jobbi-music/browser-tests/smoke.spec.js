@@ -524,7 +524,17 @@ test('Favorites page heart and plus icons receive real pointer clicks and update
   });
   expect(hitInfo).toHaveLength(2);
   expect(hitInfo.every(x=>x.hit),JSON.stringify(hitInfo)).toBe(true);
-  await plus.click();
+  // Test exactly what a person does: move onto the icon, then press it.
+  const plusBox=await plus.boundingBox();
+  expect(plusBox).not.toBeNull();
+  const pointerX=plusBox.x+plusBox.width/2,pointerY=plusBox.y+plusBox.height/2;
+  await page.mouse.move(pointerX,pointerY);
+  const hoveredTarget=await page.evaluate(({x,y})=>{
+    const top=document.elementFromPoint(x,y);
+    return top?.closest('button')?.getAttribute('aria-label')||'NOT_A_BUTTON';
+  },{x:pointerX,y:pointerY});
+  expect(hoveredTarget).toBe('Add Kino to playlist');
+  await page.mouse.click(pointerX,pointerY);
   await expect(page.getByRole('heading',{name:'Add to playlist'})).toBeVisible();
   await page.locator('.side-panel').getByRole('button',{name:/Favorites Mix/}).click();
   await expect(page.getByRole('heading',{name:'Add to playlist'})).toHaveCount(0);
