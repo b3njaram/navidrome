@@ -199,6 +199,78 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    fun favoriteSelected(songs: List<Song>, value: Boolean) = execute {
+        val unique = songs.distinctBy { it.id }
+        require(unique.isNotEmpty() && unique.size <= 500) { "Select 1–500 songs." }
+        var changed = 0
+        val failed = mutableListOf<String>()
+        for(song in unique){
+            try { JobbiApi.setFavorite(song.id,value); changed++ }
+            catch(e: Exception){ failed.add(song.title+": "+(e.message ?: "failed")) }
+        }
+        favoriteIds = if(value) favoriteIds + unique.map { it.id }
+            .filterNot { id -> failed.any { it.startsWith(unique.first { s -> s.id == id }.title+":") } }
+            else favoriteIds - unique.map { it.id }.toSet()
+        favorites = JobbiApi.favorites()
+        favoriteIds = favorites.map(Song::id).toSet()
+        message = "$changed of ${unique.size} songs ${if(value) "added to" else "removed from"} Favorites."
+        if(failed.isNotEmpty())error = "${failed.size} failed. First: ${failed.first()}"
+    }
+    fun copyOrMoveSelected(songs: List<Song>, destinationId: String,
+                           sourceId: String? = null, sourceIndices: List<Int> = emptyList()) = execute {
+        require(songs.isNotEmpty() && songs.size <= 500) { "Select 1–500 songs." }
+        require(sourceId == null || sourceId != destinationId) { "Choose another playlist to move songs." }
+        var added = 0
+        for (song in songs) {
+            try {
+                JobbiApi.editPlaylist(destinationId, JSONObject().put("addSongId", song.id))
+                added++
+            } catch(e:Exception){
+                throw JobbiException("Added $added of ${songs.size}; stopped on '${song.title}': ${e.message}. No source songs were removed.")
+            }
+        }
+        if(sourceId != null){
+            for(position in sourceIndices.distinct().sortedDescending()){
+                try{JobbiApi.editPlaylist(sourceId,JSONObject().put("removeIndex",position))}
+                catch(e:Exception){ throw JobbiException("Copied $added songs but could not finish removing the originals: ${e.message}") }
+            }
+            if(detail?.id == sourceId)detail = JobbiApi.openPlaylist(sourceId)
+        }
+        playlists = JobbiApi.playlists()
+        message = if(sourceId == null) "Added $added songs to playlist."
+            else "Moved $added songs to another playlist."
+    }
+    fun removeSelectedFromPlaylist(indices: List<Int>) = execute {
+        val listing = detail ?: return@execute
+        require(listing.isPlaylist) { "Open a playlist first." }
+        val ordered = indices.distinct().sortedDescending()
+        require(ordered.isNotEmpty() && ordered.size <= 500) { "Select 1–500 songs." }
+        var removed = 0
+        for(index in ordered){
+            try { JobbiApi.editPlaylist(listing.id, JSONObject().put("removeIndex", index)); removed++ }
+            catch(e:Exception) { throw JobbiException("Removed $removed songs. The next removal failed: ${e.message}. Reload playlist to reconcile.") }
+        }
+        detail = JobbiApi.openPlaylist(listing.id)
+        playlists = JobbiApi.playlists()
+        message = "Removed $removed entries from this playlist. Audio files are untouched."
+    }
+    fun quarantineSelected(songs: List<Song>) = execute {
+        require(isAdmin) { "Administrator access required." }
+        val unique = songs.distinctBy { it.id }
+        require(unique.isNotEmpty() && unique.size <= 20) { "Select 1–20 tracks for NAS quarantine." }
+        var moved = 0
+        for(song in unique){
+            try {
+                JobbiApi.post("/api/admin/songs/"+Uri.encode(song.id)+"/quarantine",
+                    JSONObject().put("confirm","QUARANTINE"))
+                moved++
+            }catch(e:Exception){
+                throw JobbiException("Moved $moved of ${unique.size} files. Stopped at ${song.title}: ${e.message}")
+            }
+        }
+        message = "Quarantined $moved recording(s). Audio was moved out of the active library, not permanently erased. It may take a scan to disappear."
+        if(detail?.isPlaylist == true)detail = JobbiApi.openPlaylist(detail!!.id)
+    }
     fun addToPlaylist(song: Song, id: String) = execute {
         JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
         message = "Added ${song.title} to playlist."
