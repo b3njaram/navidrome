@@ -54,6 +54,22 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run build
       - run: docker build -t jobbi-music:ci .
+      - name: Verify production Docker serves actual userscript, never HTML
+        run: |
+          set -eu
+          docker run --rm -d --name jobbi-userscript-test -p 127.0.0.1:31992:3131 jobbi-music:ci
+          trap 'docker rm -f jobbi-userscript-test >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 2 http://127.0.0.1:31992/tools/jobbi-collection-export.user.js -o /tmp/jobbi-userscript.user.js; then break; fi
+            sleep 1
+          done
+          test -s /tmp/jobbi-userscript.user.js
+          head -n 1 /tmp/jobbi-userscript.user.js | grep -Fqx '// ==UserScript=='
+          grep -Fq '@name         Jobbi Music' /tmp/jobbi-userscript.user.js
+          grep -Fq '@match        https://music.apple.com/*' /tmp/jobbi-userscript.user.js
+          if grep -iq '<!doctype html>' /tmp/jobbi-userscript.user.js; then exit 1; fi
+          curl -fsSI http://127.0.0.1:31992/tools/jobbi-collection-export.user.js |
+            grep -iq '^content-type:.*javascript'
 
   browser-smoke:
     runs-on: ubuntu-latest
