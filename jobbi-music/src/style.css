@@ -472,3 +472,13 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
  .track-row,.track-header{grid-template-columns:25px minmax(0,1fr) minmax(145px,max-content)}
  .track-row .track-actions button.icon-button{flex-basis:36px;width:36px;min-width:36px;height:38px}
 }
+
+/* Firefox: don't let the animated action group become an invisible hit target.
+   Only the individual native buttons accept pointers; their boxes stay fixed. */
+.track-row .track-actions{pointer-events:none}
+.track-row .track-actions button.icon-button{
+  pointer-events:auto;transition:none!important;
+  transform:none!important;animation:none!important;
+  isolation:isolate;
+}
+.track-row .track-actions button.icon-button:active{transform:none!important}
