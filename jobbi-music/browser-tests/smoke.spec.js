@@ -611,13 +611,13 @@ test('playlist migration import parses Spotify CSV locally',async({page})=>{
     await page.getByRole('button',{name:'More options'}).click();
     await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
   }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
-  await expect(page.getByRole('heading',{name:/Import a playlist/})).toBeVisible();
-  await page.getByLabel('Upload music playlist export').setInputFiles({
+  await expect(page.getByRole('heading',{name:/Bring your music/})).toBeVisible();
+  await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
     name:'Spotify Favorites.csv',mimeType:'text/csv',
     buffer:Buffer.from('Track Name,Artist Name,Album Name\\nKino,Test Artist,Test Album\\nRoving Gambler,The Country Gentlemen,Vintage\\n'.replace(/\\n/g,'\n'))
   });
-  await expect(page.getByText('2 songs')).toBeVisible();
-  await expect(page.getByRole('button',{name:/Find next 2 matches/})).toBeEnabled();
+  await expect(page.getByText(/Loaded 1 collection\(s\), 2 track entries/)).toBeVisible();
+  await expect(page.getByRole('button',{name:/Check next 2/})).toBeEnabled();
   expect(errors).toEqual([]);
 });
 
@@ -643,5 +643,36 @@ test('collaborate button opens a private reusable invite-enabled copy',async({pa
   await page.getByRole('button',{name:/Invite collaborators/}).click();
   await expect(page.getByText('Sharing & collaborators')).toBeVisible();
   await expect(page.getByRole('button',{name:/Send invitation/})).toBeDisabled();
+  expect(errors).toEqual([]);
+});
+
+test('combined collection JSON automatically hearts Liked Songs and builds a separate playlist',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const state=await setupMocks(page);
+  await login(page,'listener');
+  if(await page.locator('.mobile-nav').isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
+  }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
+  const manifest={format:'jobbi-collection-export/v1',exportedAt:'2026-11-10',
+    collections:[
+      {id:'spotify:favorites',kind:'favorites',name:'Liked Songs',provider:'spotify',
+        tracks:[{title:'Kino',artist:'Test Artist',album:'Test Album'}]},
+      {id:'spotify:road',kind:'playlist',name:'Road Trip',provider:'spotify',
+        tracks:[{title:'Kino',artist:'Test Artist',album:'Test Album'}]}
+    ]};
+  await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
+    name:'jobbi-music-collections.json',mimeType:'application/json',
+    buffer:Buffer.from(JSON.stringify(manifest))
+  });
+  await expect(page.locator('.transfer-collection')).toHaveCount(2);
+  await expect(page.getByText(/Favorites remain favorites; playlists remain separate/)).toBeVisible();
+  await page.getByRole('button',{name:'Check next 1'}).click();
+  await expect.poll(()=>state.stars.has('s1')).toBe(true);
+  await expect(page.getByText('Saved in your Jobbi Music Favorites')).toBeVisible();
+  await page.locator('.transfer-collection').filter({hasText:'Road Trip'}).click();
+  await page.getByRole('button',{name:'Check next 1'}).click();
+  await expect.poll(()=>state.playlists.some(p=>p.name==='Road Trip')).toBe(true);
+  await expect.poll(()=>state.addedTracks.some(x=>x.songId==='s1'&&x.playlistId==='p2')).toBe(true);
   expect(errors).toEqual([]);
 });

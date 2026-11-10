@@ -528,3 +528,31 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   .player .seek small{font-size:10px;text-align:center;white-space:nowrap}
   .player .player-extras{display:none!important}
 }
+
+/* Multi-collection migration: separate playlist and Favorites destinations. */
+.transfer-summary{display:flex;gap:10px;overflow-x:auto;padding:8px 0 18px;scroll-snap-type:x proximity}
+.transfer-collection{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;
+  gap:5px;flex:0 0 215px;scroll-snap-align:start;min-height:105px;padding:14px 16px;
+  background:#261d2b;color:#f3ddea;border:1px solid #654b63;border-radius:15px;
+  text-align:left;cursor:pointer;transition:background .18s,border-color .18s}
+.transfer-collection:hover{background:#38263b;border-color:#a87598}
+.transfer-collection.selected{background:#493043;border-color:#f496b9;box-shadow:inset 0 0 0 1px #f496b9}
+.transfer-collection span{font-weight:750;font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.transfer-collection small{font-size:11px;color:#dbc2d0}
+.transfer-main{padding:22px 0 15px}
+.transfer-main h2{display:flex;align-items:center;gap:10px;font-size:22px}
+.transfer-stats{display:flex;flex-wrap:wrap;gap:9px;margin:15px 0}
+.transfer-stats span{display:flex;align-items:center;gap:6px;border:1px solid #60465b;
+  border-radius:9px;background:#28202e;padding:10px 12px;font-size:11px;color:#cfb9c7}
+.transfer-stats b{font-size:15px;color:#fff}
+.transfer-main .transfer-row{gap:12px}
+.transfer-main .transfer-row .playlist-tool-button{flex:none}
+.transfer-card a.playlist-tool-button{text-decoration:none;display:inline-flex;width:max-content;max-width:100%}
+.transfer-page .inline-error{display:flex;align-items:center;gap:8px}
+@media(max-width:720px){
+  .transfer-summary{margin:0 -14px;padding:7px 14px 16px}
+  .transfer-collection{flex-basis:185px}
+  .transfer-main{padding-top:16px}
+  .transfer-stats span{padding:8px 10px}
+  .transfer-main .transfer-row>div{flex:1 1 100%}
+}

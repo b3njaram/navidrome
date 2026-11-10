@@ -1,0 +1,33 @@
+name: Validate and bundle Jobbi Music collection exporter
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'jobbi-music/tools/**'
+      - 'jobbi-music/public/tools/**'
+      - '.github/workflows/jobbi-exporter-bundle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exporter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate exported script
+        run: |
+          node --check jobbi-music/tools/jobbi-collection-export.user.js
+          cmp jobbi-music/tools/jobbi-collection-export.user.js jobbi-music/public/tools/jobbi-collection-export.user.js
+          grep -q 'jobbi-collection-export/v1' jobbi-music/tools/jobbi-collection-export.user.js
+      - name: Upload user-installable script and guide
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jobbi-Music-Spotify-Apple-Exporter
+          path: |
+            jobbi-music/tools/jobbi-collection-export.user.js
+            jobbi-music/tools/README.md
+          if-no-files-found: error
+          retention-days: 30
