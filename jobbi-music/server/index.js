@@ -416,8 +416,9 @@ app.get('/api/admin/overview',mustAuth,mustAdmin,route(async(req,res)=>{
     try{
       const data=await subsonic(req.user,'getUsers');
       const rows=data.users?.user;
-      if(Array.isArray(rows)){
-        usersCount=rows.length;usersCountSource='Navidrome Subsonic getUsers';
+      if(Array.isArray(rows)||rows&&typeof rows==='object'){
+        usersCount=Array.isArray(rows)?rows.length:1;
+        usersCountSource='Navidrome Subsonic getUsers';
       }
     }catch(e){console.warn('Subsonic user census unavailable:',e?.message);}
   }
