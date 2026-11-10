@@ -1,0 +1,41 @@
+# Jobbi Music — fully native Android (Material 3)
+
+**This is a new Kotlin/Jetpack Compose application, not a WebView.** It builds its own UI, uses OkHttp to access the existing Jobbi Music JSON API, and uses a real Media3 ExoPlayer/MediaSessionService for background audio. The previous hybrid Android project in `../android/` is untouched.
+
+## Install the development APK
+
+Open the latest successful **Build native Material 3 Jobbi Music APK** workflow on GitHub Actions, download the `Jobbi-Music-Native-Material3-APK` artifact, unzip it, and install `app-debug.apk` on Android 8.0+.
+
+The debug application ID is `com.jobbisoft.music.nativeplayer.debug`, so this edition installs alongside the existing hybrid app. Debug builds are for private testing; a production store release needs a controlled release keystore and testing on real Pixel devices. The workflow preserves its debug signing key for compatible APK updates.
+
+## Features
+
+- Material You dynamic color on Android 12+, responsive native Compose layouts with minimal screen transitions.
+- Native sign-in to your existing account over HTTPS (`https://music.jobbisoft.com.mx` by default).
+- Home, albums, search, library, favorites, playlists, playlist-local search, playlist visibility, bulk favorites, collaborator invitations, and personal album/playlist artwork.
+- Full native queue, seek bar, quality options (original / 320 kbps / 128 kbps), play/pause/previous/next controls.
+- Android Media3 foreground playback, notification/lock-screen/headphone controls, and audio-focus handling.
+- CSV/TSV playlist metadata import from Spotify and Apple Music with checked artist/title matching, FLAC preference, and explicit approval before each Soulseek queue operation.
+
+## Network/security model
+
+- Account credentials are sent only to the HTTPS Jobbi Music server. The app never saves your password.
+- An in-process, host-restricted HttpOnly session-cookie jar is reused by media streaming, album images, and JSON API calls.
+- The player can continue in the background while the app process stays active. Restarting the process currently requires signing in again; future versions can add an Android Keystore-backed session persistence mechanism.
+- Streaming, album covers, playlists and imports come from **your existing authenticated server**. No Soulseek API key, database password, or admin token is included in the APK.
+- No arbitrary HTTP endpoints, SSL bypasses, WebView, browser automation, or public file-sharing permissions.
+- Import only recordings you own or have permission to obtain.
+
+## Known beta differences from the web app
+
+Social feed/advanced admin dashboards, offline download management, real-time lyrics, and automatic cross-device synchronization have not been fully ported yet. This native beta focuses on reliable listening and the everyday library/playlist flows. Existing web app remains fully functional.
+
+## Build locally
+
+Requires Android SDK Platform 36, JDK 17, Gradle 8.11.1. From this directory:
+
+```bash
+gradle :app:testDebugUnitTest :app:assembleDebug
+```
+
+The APK appears in `app/build/outputs/apk/debug/app-debug.apk`.

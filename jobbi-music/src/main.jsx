@@ -222,12 +222,13 @@ function App() {
     const handlers={
       play:()=>audio.current?.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false)),
       pause:()=>{audio.current?.pause();setPlaying(false);},
-      previoustrack:()=>prev(),
+      // Advertise previous/next tracks instead of podcast-style +/-10 seconds.
+      previoustrack:()=>{if(queue.length)setCurrentIndex(i=>(i-1+queue.length)%queue.length);},
       nexttrack:()=>next(),
-      seekbackward:({seekOffset}={})=>{if(audio.current)audio.current.currentTime=Math.max(0,audio.current.currentTime-(seekOffset||10));},
-      seekforward:({seekOffset}={})=>{if(audio.current)audio.current.currentTime=Math.min(audio.current.duration||Infinity,audio.current.currentTime+(seekOffset||10));},
       seekto:({seekTime})=>{if(audio.current&&Number.isFinite(seekTime))audio.current.currentTime=Math.max(0,seekTime);}
     };
+    // Explicitly remove old skip handlers installed by earlier versions.
+    for(const action of ['seekbackward','seekforward']){try{session.setActionHandler(action,null);}catch{}}
     for(const [action,handler] of Object.entries(handlers)){try{session.setActionHandler(action,handler);}catch{}}
     return()=>{for(const action of Object.keys(handlers)){try{session.setActionHandler(action,null);}catch{}}};
   },[currentTrack?.id,queue.length,shuffle,repeat]);
