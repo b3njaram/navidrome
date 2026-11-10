@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS social_playlists (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK(kind <> 'blend' OR visibility = 'private')
 );
+ALTER TABLE social_playlists ADD COLUMN IF NOT EXISTS source_navidrome_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS social_playlist_native_copy_uniq ON social_playlists(owner,source_navidrome_id) WHERE source_navidrome_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS social_members (
   playlist_id UUID NOT NULL REFERENCES social_playlists(id) ON DELETE CASCADE,
   username TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
@@ -123,6 +125,15 @@ CREATE TABLE IF NOT EXISTS invidious_imports (
 );
 CREATE INDEX IF NOT EXISTS invidious_imports_user_idx
   ON invidious_imports(requester,created_at DESC);
+CREATE TABLE IF NOT EXISTS personalized_cover_art (
+  username TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('album','playlist')),
+  entity_id TEXT NOT NULL CHECK(length(entity_id) BETWEEN 1 AND 150),
+  mime TEXT NOT NULL CHECK(mime IN ('image/jpeg','image/png','image/webp')),
+  bytes BYTEA NOT NULL CHECK(octet_length(bytes) BETWEEN 16 AND 1048576),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(username,kind,entity_id)
+);
 CREATE INDEX IF NOT EXISTS social_playlists_public_idx ON social_playlists(updated_at DESC) WHERE visibility='public';
 CREATE INDEX IF NOT EXISTS social_playlists_owner_idx ON social_playlists(owner);
 CREATE INDEX IF NOT EXISTS social_members_username_idx ON social_members(username);

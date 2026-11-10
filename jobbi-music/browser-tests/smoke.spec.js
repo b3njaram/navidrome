@@ -4,7 +4,7 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],musicRequests:[],imports:old,fallbackJobs:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -28,6 +28,7 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
       const id=pathname.split('/')[3],p=state.playlists.find(x=>x.id===id);
       if(!p)return reply({error:'Playlist not found'},404);
       if(body.addSongId){state.addedTracks.push({playlistId:id,songId:body.addSongId});p.songCount++;}
+      if(typeof body.public==='boolean')p.public=body.public;
       return reply({playlist:{...p}});
     }
     if(pathname==='/api/lyrics/s1')return reply({available:true,synced:true,source:'Navidrome',lines:[{at:0,text:'First line of the song'},{at:4500,text:'Second line of the song'}]});
@@ -36,6 +37,21 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
     if(pathname==='/api/library/artists')return reply({artists:[{id:'artist1',name:'Test Artist'}],count:1});
     if(pathname==='/api/albums/a1')return reply({id:'a1',name:'Test Album',artist:'Test Artist',song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
     if(pathname==='/api/artists/artist1')return reply({id:'artist1',name:'Test Artist',album:[{id:'a1',name:'Test Album'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
+    if(pathname==='/api/playlists/p1'&&method==='GET')return reply({id:'p1',name:'Favorites Mix',public:state.playlists[0].public||false,entry:[
+      {id:'s1',title:'Kino',artist:'Test Artist',duration:180,album:'Test Album'},
+      {id:'s2',title:'Another Song',artist:'Other Artist',duration:210,album:'Different Album'}]});
+    if(pathname==='/api/playlists/p1/favorite-all'&&method==='POST'){
+      state.stars.add('s1');state.stars.add('s2');
+      return reply({added:2,skipped:0,failed:0,ids:['s1','s2']});
+    }
+    if(pathname.startsWith('/api/artwork/')&&method==='POST'){state.artworkUploads.push(pathname);return reply({saved:true});}
+    if(pathname.startsWith('/api/artwork/')&&method==='GET')return route.fulfill({status:404,body:''});
+    if(pathname==='/api/social/playlists/import'&&method==='POST')return reply({id:'00000000-0000-0000-0000-000000000222',imported:2});
+    if(pathname==='/api/social/home')return reply({me:{username:'listener',display_name:'Listener'},friends:[],incoming:[],outgoing:[],playlists:[],discover:[],playlistInvitations:[]});
+    if(pathname==='/api/social/playlists/00000000-0000-0000-0000-000000000222')return reply({
+      playlist:{id:'00000000-0000-0000-0000-000000000222',title:'Favorites Mix',owner:'listener',description:'Collaborative copy',kind:'manual',visibility:'private'},
+      tracks:[],members:[],pendingInvitations:[]
+    });
     if(pathname==='/api/playlists'&&method==='GET')return reply(state.playlists);
     if(pathname==='/api/playlists'&&method==='POST'){state.playlists.push({id:'p2',name:body.name,songCount:0});return reply({playlist:state.playlists.at(-1)},201);}
 
@@ -560,4 +576,72 @@ test('Favorites page heart and plus icons receive real pointer clicks and update
   await expect(row).toHaveCount(0);
   expect(state.stars.has('s1')).toBe(false);
   expect(pageErrors).toEqual([]);
+});
+
+test('playlist tools search tracks, change privacy, heart songs and upload album artwork',async({page})=>{
+  const state=await setupMocks(page),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.locator('.playlist-grid').getByRole('button',{name:/Favorites Mix/}).click();
+  await expect(page.getByRole('button',{name:/Invite collaborators/})).toBeVisible();
+  await expect(page.getByRole('button',{name:/Private · Make public/})).toBeVisible();
+  await page.getByRole('searchbox',{name:'Find a song in this playlist'}).fill('Kino');
+  await expect(page.locator('.track-row')).toHaveCount(1);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:/Private · Make public/}).click();
+  await expect(page.getByRole('button',{name:/Public · Make private/})).toBeVisible();
+  expect(state.playlists[0].public).toBe(true);
+  await page.getByRole('button',{name:'Heart all songs'}).click();
+  await expect.poll(()=>state.stars.size).toBe(2);
+  await page.getByRole('button',{name:/Back to library/}).click();
+  await page.locator('.album-grid .album-card').first().click();
+  await expect(page.getByText('Upload album picture')).toBeVisible();
+  await page.locator('.artwork-upload input[type=file]').setInputFiles({
+    name:'my-cover.png',mimeType:'image/png',
+    buffer:Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(64)])
+  });
+  await expect.poll(()=>state.artworkUploads.length).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('playlist migration import parses Spotify CSV locally',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await login(page,'listener');
+  if(await page.locator('.mobile-nav').isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
+  }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
+  await expect(page.getByRole('heading',{name:/Import a playlist/})).toBeVisible();
+  await page.getByLabel('Upload music playlist export').setInputFiles({
+    name:'Spotify Favorites.csv',mimeType:'text/csv',
+    buffer:Buffer.from('Track Name,Artist Name,Album Name\\nKino,Test Artist,Test Album\\nRoving Gambler,The Country Gentlemen,Vintage\\n'.replace(/\\n/g,'\n'))
+  });
+  await expect(page.getByText('2 songs')).toBeVisible();
+  await expect(page.getByRole('button',{name:/Find next 2 matches/})).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test('mobile player shows previous and separate seek timeline',async({page,isMobile})=>{
+  if(!isMobile)return;
+  await setupMocks(page);await login(page,'listener');
+  await page.getByRole('button',{name:'Play something good'}).click();
+  const previous=page.getByRole('button',{name:'Previous song'});
+  await expect(previous).toBeVisible();
+  const play=page.locator('.player .play-round');
+  const seek=page.locator('.player .seek');
+  await expect(seek).toBeVisible();
+  const p=await play.boundingBox(),bar=await seek.boundingBox();
+  expect(p&&bar).toBeTruthy();
+  expect(bar.y).toBeGreaterThan(p.y+p.height-3);
+});
+
+test('collaborate button opens a private reusable invite-enabled copy',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.locator('.playlist-grid').getByRole('button',{name:/Favorites Mix/}).click();
+  await page.getByRole('button',{name:/Invite collaborators/}).click();
+  await expect(page.getByText('Sharing & collaborators')).toBeVisible();
+  await expect(page.getByRole('button',{name:/Send invitation/})).toBeDisabled();
+  expect(errors).toEqual([]);
 });
