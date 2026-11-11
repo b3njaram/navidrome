@@ -158,20 +158,7 @@ struct CollectionView: View {
                 }
                 if kind == .playlist {
                     Section("Playlist controls") {
-                        if detail.owner == nil || detail.owner?.lowercased() == api.user?.username.lowercased() {
-                            Toggle("Public playlist", isOn: Binding(
-                                get: { self.detail?.isPublic ?? false },
-                                set: { value in
-                                    Task {
-                                        do {
-                                            let result: PlaylistMutation = try await api.send(
-                                                "/api/playlists/" + JobbiAPI.encode(id),
-                                                method: "PATCH", json: ["public": value])
-                                            self.detail = result.playlist ?? self.detail
-                                        } catch { error = error.localizedDescription }
-                                    }
-                                }))
-                        }
+                        if mayChangeVisibility { visibilityToggle }
                         Button("Download playlist") {
                             Task { await offline.downloadAll(detail.tracks, api: api) }
                         }
@@ -181,7 +168,7 @@ struct CollectionView: View {
                                     try await api.send("/api/playlists/" + JobbiAPI.encode(id)
                                         + "/favorite-all")
                                     await library.refresh(api: api)
-                                } catch { error = error.localizedDescription }
+                                } catch { self.error = error.localizedDescription }
                             }
                         }
                         Button("Rename playlist") {
@@ -219,7 +206,7 @@ struct CollectionView: View {
                             method: "PATCH", json: ["name": rename])
                         await reload()
                         await library.refresh(api: api)
-                    } catch { error = error.localizedDescription }
+                    } catch { self.error = error.localizedDescription }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -232,7 +219,7 @@ struct CollectionView: View {
                             method: "DELETE")
                         await library.refresh(api: api)
                         dismiss()
-                    } catch { error = error.localizedDescription }
+                    } catch { self.error = error.localizedDescription }
                 }
             }
         } message: { Text("Music files will not be deleted from the NAS.") }
@@ -243,9 +230,30 @@ struct CollectionView: View {
         } message: { Text(error ?? "") }
     }
 
+    private var mayChangeVisibility: Bool {
+        guard let owner = detail?.owner, !owner.isEmpty else { return true }
+        return owner.lowercased() == api.user?.username.lowercased()
+    }
+
+    private var visibilityToggle: some View {
+        Toggle("Public playlist", isOn: Binding(
+            get: { self.detail?.isPublic ?? false },
+            set: { desired in
+                Task {
+                    do {
+                        let result: PlaylistMutation = try await api.send(
+                            "/api/playlists/" + JobbiAPI.encode(id), method: "PATCH",
+                            json: ["public": desired])
+                        self.detail = result.playlist ?? self.detail
+                    } catch { self.error = error.localizedDescription }
+                }
+            }
+        ))
+    }
+
     private func reload() async {
         do { detail = try await api.get("/api/" + kind.path + "/" + JobbiAPI.encode(id)) }
-        catch { error = error.localizedDescription }
+        catch { self.error = error.localizedDescription }
     }
 }
 
