@@ -26,6 +26,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var visibilityUpdating by androidx.compose.runtime.mutableStateOf(false)
         private set
+    var removalBusy by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    var removalPreviews by androidx.compose.runtime.mutableStateOf<List<JSONObject>>(emptyList())
+        private set
     var error by androidx.compose.runtime.mutableStateOf("")
         private set
     var message by androidx.compose.runtime.mutableStateOf("")
@@ -346,22 +350,67 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playlists = JobbiApi.playlists()
         message = "Removed $removed entries from this playlist. Audio files are untouched."
     }
-    fun quarantineSelected(songs: List<Song>) = execute {
-        require(isAdmin) { "Administrator access required." }
-        val unique = songs.distinctBy { it.id }
-        require(unique.isNotEmpty() && unique.size <= 20) { "Select 1–20 tracks for NAS quarantine." }
-        var moved = 0
-        for(song in unique){
-            try {
-                JobbiApi.post("/api/admin/songs/"+Uri.encode(song.id)+"/quarantine",
-                    JSONObject().put("confirm","QUARANTINE"))
-                moved++
+    fun prepareSongRemoval(songs: List<Song>) {
+        if(removalBusy)return
+        val unique=songs.distinctBy(Song::id)
+        if(unique.isEmpty()||unique.size>20){
+            error="Select 1–20 recordings to remove from the shared NAS library."
+            return
+        }
+        viewModelScope.launch {
+            removalBusy=true
+            error=""
+            removalPreviews=emptyList()
+            try{
+                val reviewed=mutableListOf<JSONObject>()
+                for(song in unique){
+                    reviewed.add(JobbiApi.getObject("/api/songs/"+
+                        Uri.encode(song.id)+"/removal-impact"))
+                }
+                removalPreviews=reviewed
             }catch(e:Exception){
-                throw JobbiException("Moved $moved of ${unique.size} files. Stopped at ${song.title}: ${e.message}")
+                error="Could not review playlist usage. Nothing removed: "+
+                    (e.message?:"Server unavailable")
+            }finally{removalBusy=false}
+        }
+    }
+    fun dismissSongRemoval(){ if(!removalBusy)removalPreviews=emptyList() }
+    fun confirmSongRemoval() {
+        if(removalBusy||removalPreviews.isEmpty())return
+        val confirmed=removalPreviews
+        viewModelScope.launch {
+            removalBusy=true
+            error=""
+            var moved=0
+            try{
+                for(impact in confirmed){
+                    val songId=impact.getJSONObject("song").getString("id")
+                    JobbiApi.post("/api/songs/"+Uri.encode(songId)+"/quarantine",
+                        JSONObject().put("ticket",impact.getString("ticket"))
+                            .put("confirm","REMOVE_FROM_SHARED_LIBRARY"))
+                    moved++
+                }
+                message="Moved $moved recording(s) to recoverable NAS quarantine. "+
+                    "Other listeners' playlists may be affected."
+            }catch(e:Exception){
+                error="Moved $moved of ${confirmed.size} recordings. Remaining "+
+                    "recordings were NOT removed: ${e.message}"
+            }finally{
+                removalPreviews=emptyList()
+                removalBusy=false
+                // Refresh to show current Navidrome library/index state.
+                runCatching {
+                    home=JobbiApi.home()
+                    playlists=home.playlists
+                    favorites=JobbiApi.favorites()
+                    favoriteIds=favorites.map(Song::id).toSet()
+                    if(detail?.id?.isNotBlank()==true){
+                        detail=if(detail!!.isPlaylist)JobbiApi.openPlaylist(detail!!.id)
+                            else JobbiApi.openAlbum(detail!!.id)
+                    }
+                }
             }
         }
-        message = "Quarantined $moved recording(s). Audio was moved out of the active library, not permanently erased. It may take a scan to disappear."
-        if(detail?.isPlaylist == true)detail = JobbiApi.openPlaylist(detail!!.id)
     }
     fun addToPlaylist(song: Song, id: String) = execute {
         JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
