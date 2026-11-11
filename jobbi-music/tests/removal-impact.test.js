@@ -14,6 +14,7 @@ function fixtures({playlists=[{id:'mine',name:'My Playlist',owner:'alice'},
   const subsonic=async(_user,method,params)=>{
     if(method==='getSong')return {song};
     if(method==='getPlaylists')return {playlists:{playlist:playlists}};
+    if(method==='getStarred2')return {starred2:{song:[]}};
     if(method==='getPlaylist')return {playlist:{...playlists.find(p=>p.id===params.id),entry:[{id:'s1'}]}};
     throw Error('Unexpected '+method);
   };
@@ -39,6 +40,15 @@ test('review warns about visible and hidden song references, without leaking pri
   assert.equal(verifyRemovalTicket(token,{username:'bob',id:'s1',signature:impact.signature},secret),false);
   assert.equal(verifyRemovalTicket(token,{username:'alice',id:'s2',signature:impact.signature},secret),false);
   assert.equal(verifyRemovalTicket(token,{username:'alice',id:'s1',signature:'changed'},secret),false);
+});
+test('listener Favorites are included in removal impact',async()=>{
+  const base=fixtures({playlists:[],social:[]});
+  const impact=await collectRemovalImpact({user,id:'s1',...base,
+    subsonic:async(u,method,args)=>method==='getStarred2'
+      ?{starred2:{song:[{id:'s1'}]}}:base.subsonic(u,method,args)});
+  assert.equal(impact.referenceCount,1);
+  assert.equal(impact.references[0].name,'Favorites');
+  assert.equal(impact.references[0].own,true);
 });
 test('confirmation tokens expire and cannot be modified',async()=>{
   const secret=crypto.randomBytes(32),args={username:'alice',id:'s1',signature:'hash'};
