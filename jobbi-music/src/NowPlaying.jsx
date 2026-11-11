@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useMemo,useState} from 'react';
 import {cappedPosition,progressPercent} from './player-math.js';
-import {ArrowDownToLine,ChevronDown,Disc3,Heart,ListMusic,Maximize2,Mic2,MoreHorizontal,Pause,Play,Plus,Repeat2,Share2,Shuffle,SkipBack,SkipForward,Volume2,Waves,X,Check} from 'lucide-react';
+import {ArrowDown,ArrowDownToLine,ArrowUp,ChevronDown,Disc3,Heart,ListMusic,Maximize2,Mic2,MoreHorizontal,Pause,Play,Plus,Repeat2,Share2,Shuffle,SkipBack,SkipForward,Volume2,Waves,X,Check} from 'lucide-react';
 const duration = s => {
   const x=Math.max(0,Math.floor(Number(s)||0));return `${Math.floor(x/60)}:${String(x%60).padStart(2,'0')}`;
 };
@@ -15,7 +15,8 @@ const activeLineAt=(lines,sec)=>{
 export default function NowPlaying({
   track,queue=[],currentIndex=0,playing,position=0,length=0,
   lyrics,lyricsLoading=false,mode,setMode,onClose,onToggle,onNext,onPrev,
-  onSeek,onSelect,onFavorite,favorited,onAdd,onDownload,
+  onSeek,onSelect,onMove,onRemove,onClear,onPlayNext,onAddToQueue,
+  onFavorite,favorited,onAdd,onDownload,
   shuffle,repeat,onShuffle,onRepeat,onShare,onArtist,onAlbum
 }){
   const lines=lyrics?.lines||[];
@@ -48,6 +49,8 @@ export default function NowPlaying({
       {menuOpen&&<div className="immersive-actions-menu">
         <button onClick={()=>{onFavorite();setMenuOpen(false)}}><Heart size={18}/> {favorited?'Remove favorite':'Add to favorites'}</button>
         <button onClick={()=>{onAdd();setMenuOpen(false)}}><Plus size={18}/> Add to playlist</button>
+        <button onClick={()=>{onPlayNext?.(track);setMenuOpen(false)}}><ListMusic size={18}/> Play next</button>
+        <button onClick={()=>{onAddToQueue?.(track);setMenuOpen(false)}}><ListMusic size={18}/> Add to queue</button>
         {onDownload&&<button onClick={()=>{onDownload();setMenuOpen(false)}}><ArrowDownToLine size={18}/> Save offline</button>}
         <button onClick={()=>{onShare();setMenuOpen(false)}}><Share2 size={18}/> Copy track details</button>
       </div>}
@@ -88,12 +91,27 @@ export default function NowPlaying({
               <div className="immersive-lyrics-empty"><Mic2 size={40}/><h3>No lyrics available yet</h3><p>Navidrome can read embedded lyrics and matching .lrc files beside music tracks. If lyrics aren't indexed yet, refresh the library after adding them.</p></div>}
             <div className="immersive-lyrics-foot">Lyrics supplied by your private Navidrome library</div>
           </div>:mode==='queue'?<div className="immersive-queue">
-            <div className="immersive-detail-label"><ListMusic size={17}/> UP NEXT <span>{queue.length} SONGS</span></div>
-            <div className="immersive-queue-items">{queue.map((item,i)=><button key={item.id+'-'+i} className={i===currentIndex?'current':''} onClick={()=>onSelect(i)}>
-              {artUrl(item)?<img src={artUrl(item)} alt=""/>:<Disc3 size={27}/>}
-              <span><strong>{item.title||'Unknown'}</strong><small>{item.artist||'Unknown artist'}</small></span>
-              {i===currentIndex&&<Waves size={17}/>}
-            </button>)}</div>
+            <div className="immersive-detail-label"><ListMusic size={17}/> UP NEXT <span>{Math.max(0,queue.length-currentIndex-1)} UPCOMING</span></div>
+            <div className="immersive-queue-toolbar"><span>{queue.length} tracks · songs added manually play in order</span>
+              <button type="button" onClick={onClear} disabled={currentIndex>=queue.length-1}>Clear upcoming</button>
+            </div>
+            <div className="immersive-queue-items">{queue.map((item,i)=><div key={item.id+'-'+i}
+              className={'immersive-queue-row '+(i===currentIndex?'current':'')}>
+              <button type="button" className="immersive-queue-track" onClick={()=>onSelect(i)}
+                aria-label={'Play '+item.title+' from queue'}>
+                {artUrl(item)?<img src={artUrl(item)} alt=""/>:<Disc3 size={27}/>}
+                <span><strong>{item.title||'Unknown'}</strong><small>{item.artist||'Unknown artist'}</small></span>
+                {i===currentIndex&&<Waves size={17}/>}
+              </button>
+              {i>currentIndex&&<div className="immersive-queue-controls">
+                <button type="button" aria-label={'Move '+item.title+' up'} disabled={i===currentIndex+1}
+                  onClick={()=>onMove?.(i,i-1)}><ArrowUp size={17}/></button>
+                <button type="button" aria-label={'Move '+item.title+' down'} disabled={i===queue.length-1}
+                  onClick={()=>onMove?.(i,i+1)}><ArrowDown size={17}/></button>
+                <button type="button" aria-label={'Remove '+item.title+' from queue'}
+                  onClick={()=>onRemove?.(i)}><X size={16}/></button>
+              </div>}
+            </div>)}</div>
           </div>:<div className="immersive-art-caption"><Waves size={46}/><h3>Every note, your way.</h3><p>Beautiful music, from your personal collection.</p></div>}
         </section>
       </div>
