@@ -4,6 +4,14 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.ContextCompat
+import android.os.SystemClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.util.TimeZone
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -29,6 +37,74 @@ import androidx.compose.runtime.setValue
  */
 class MusicPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    // Account-aware listening history must live with the playback service,
+    // not only the activity. Background playback still gets counted.
+    private val scrobbleScope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
+    private var activeSongId:String?=null
+    private var activeDurationMs:Long=0L
+    private var listenedMs:Long=0L
+    private var lastClockMs=0L
+    private var wasPlaying=false
+    private var counted=false
+    private var failed=false
+
+    private fun sampleClock(){
+        val now=SystemClock.elapsedRealtime()
+        if(wasPlaying&&lastClockMs>0L)
+            listenedMs+=(now-lastClockMs).coerceIn(0L,10L*60L*1000L)
+        lastClockMs=now
+    }
+    private fun recordIfQualified(){
+        val songId=activeSongId?.takeIf{it.isNotBlank()}?:return
+        if(counted||failed)return
+        val target=if(activeDurationMs>0)
+            minOf(4L*60L*1000L,maxOf(30_000L,activeDurationMs/2))
+            else 30_000L
+        if(listenedMs<target)return
+        counted=true
+        val offset=-TimeZone.getDefault().getOffset(System.currentTimeMillis())/60000
+        scrobbleScope.launch {
+            runCatching {
+                JobbiApi.post("/api/scrobble",JSONObject().put("id",songId)
+                    .put("source","android").put("timezoneOffsetMinutes",offset))
+            }
+            // Offline play is local and no session can submit this event. It
+            // never blocks playback, and errors aren't mistaken for song errors.
+        }
+    }
+    private fun listenTo(player:ExoPlayer) {
+        player.addListener(object:Player.Listener {
+            override fun onIsPlayingChanged(isPlaying:Boolean){
+                sampleClock()
+                wasPlaying=isPlaying
+            }
+            override fun onEvents(player:Player,events:Player.Events){
+                if(player.duration>0&&player.duration!=androidx.media3.common.C.TIME_UNSET)
+                    activeDurationMs=player.duration
+            }
+            override fun onMediaItemTransition(mediaItem:MediaItem?,reason:Int){
+                sampleClock()
+                if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_AUTO||
+                    reason==Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
+                    recordIfQualified()
+                activeSongId=mediaItem?.mediaId?.takeIf{it.isNotBlank()}
+                activeDurationMs=0L
+                listenedMs=0L
+                lastClockMs=SystemClock.elapsedRealtime()
+                wasPlaying=player.isPlaying
+                counted=false
+                failed=false
+            }
+            override fun onPlaybackStateChanged(playbackState:Int){
+                sampleClock()
+                if(playbackState==Player.STATE_ENDED)recordIfQualified()
+            }
+            override fun onPlayerError(error:androidx.media3.common.PlaybackException){
+                sampleClock()
+                failed=true
+            }
+        })
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -41,12 +117,14 @@ class MusicPlaybackService : MediaSessionService() {
         player.setHandleAudioBecomingNoisy(true)
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.repeatMode = Player.REPEAT_MODE_OFF
+        listenTo(player)
         session = MediaSession.Builder(this, player).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        scrobbleScope.cancel()
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()
