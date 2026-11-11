@@ -86,15 +86,45 @@ struct RootView: View {
     @State private var restoring = true
     @State private var selectedTab = 0
     @State private var showingPlayer = false
+    @State private var offlineOnly = false
 
     var body: some View {
         Group {
             if restoring {
                 ProgressView("Restoring secure session…")
             } else if api.user == nil {
-                LoginView(onSuccess: {
-                    await initializeSession()
-                })
+                if offlineOnly {
+                    NavigationStack {
+                        OfflineView()
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Sign in") {
+                                        player.stop()
+                                        offlineOnly = false
+                                    }
+                                }
+                            }
+                    }
+                    .safeAreaInset(edge: .bottom) {
+                        if player.hasMusic {
+                            MiniPlayerView(onOpen: { showingPlayer = true })
+                                .padding(.horizontal, 10)
+                        }
+                    }
+                    .sheet(isPresented: $showingPlayer) {
+                        NowPlayingView().presentationDragIndicator(.visible)
+                    }
+                } else {
+                    LoginView(onSuccess: {
+                        offlineOnly = false
+                        await initializeSession()
+                    }, onOffline: {
+                        guard let remembered = CredentialVault.load() else { return }
+                        offline.configure(server: remembered.server,
+                            username: remembered.username)
+                        offlineOnly = true
+                    })
+                }
             } else {
                 TabView(selection: $selectedTab) {
                     Tab("Listen Now", systemImage: "house.fill", value: 0) {
@@ -148,6 +178,7 @@ struct RootView: View {
 struct LoginView: View {
     @EnvironmentObject private var api: JobbiAPI
     let onSuccess: () async -> Void
+    let onOffline: () -> Void
     @State private var server = UserDefaults.standard.string(forKey: "jobbi.server")
         ?? "https://music.jobbisoft.com.mx"
     @State private var username = ""
@@ -210,6 +241,13 @@ struct LoginView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(working || username.isEmpty || password.isEmpty)
+                    if CredentialVault.load() != nil {
+                        Button(action: onOffline) {
+                            Label("Listen to downloaded music offline",
+                                  systemImage: "arrow.down.to.line.compact")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                     if let error = api.error {
                         Label(error, systemImage: "exclamationmark.triangle")
                             .font(.footnote)
