@@ -427,7 +427,7 @@ function App() {
     // Browser streams directly to its download manager; never buffer a ZIP in JS.
     const link=document.createElement('a');
     link.href='/api/download/collection?'+query.toString();
-    link.download='Jobbi-Music.zip';
+    link.download='';
     link.rel='nofollow';
     document.body.appendChild(link);
     link.click();
