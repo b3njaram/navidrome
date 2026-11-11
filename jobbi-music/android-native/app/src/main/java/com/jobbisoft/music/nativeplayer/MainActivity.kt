@@ -257,7 +257,8 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                 AnimatedContent(targetState = vm.selected, label="material navigation") { page ->
                     when(page) {
                         "Home" -> HomeScreen(vm,player,onSongAdd={addSong=it})
-                        "Search" -> SearchScreen(vm,player,onSongAdd={addSong=it})
+                        "Search" -> SearchScreen(vm,player,onSongAdd={addSong=it},
+                            onBulkPlaylist={bulkChoice=BulkChoice(it)},onQuarantine={quarantineSongs=it})
                         "Server" -> ServerDiscoverScreen(onBack={vm.select("Search")},initialQuery=vm.serverSearchSeed)
                         "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
                         "Profile" -> ProfileScreen(vm)
@@ -584,7 +585,11 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
 }
 
 @Composable
-private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit) {
+private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
+                         onBulkPlaylist:(List<Song>)->Unit,
+                         onQuarantine:(List<Song>)->Unit) {
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<Set<Int>>(emptySet()) }
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=7.dp),
             horizontalArrangement=Arrangement.spacedBy(9.dp)){
@@ -599,7 +604,10 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             placeholder={Text("Songs, albums, artists...")},
             leadingIcon={Icon(Icons.Rounded.Search,null)},singleLine=true,
             shape=RoundedCornerShape(28.dp))
-        if(vm.searchQuery.isNotBlank()&&vm.searchResult.albums.isEmpty()&&vm.searchResult.songs.isEmpty()) {
+        if(vm.searchingLibrary)LinearProgressIndicator(Modifier.fillMaxWidth())
+        if(!vm.searchingLibrary&&vm.searchQuery.isNotBlank()&&
+            vm.lastSearchedTerm==vm.searchQuery.trim()&&
+            vm.searchResult.albums.isEmpty()&&vm.searchResult.songs.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(horizontal=19.dp,vertical=12.dp)){
                 Text("No matches in your indexed library.",
                     style=MaterialTheme.typography.bodyMedium)
@@ -620,13 +628,31 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             }
             if(vm.searchResult.songs.isNotEmpty()) {
                 item {
-                    Text("Tracks",Modifier.padding(18.dp),style=MaterialTheme.typography.titleLarge,
-                        fontWeight=FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=7.dp),
+                        verticalAlignment=Alignment.CenterVertically){
+                        Text("Tracks",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge,
+                            fontWeight=FontWeight.Bold)
+                        TextButton(onClick={selecting=!selecting;selected=emptySet()}){
+                            Text(if(selecting)"Done" else "Select songs")
+                        }
+                    }
                 }
-                itemsIndexed(vm.searchResult.songs,key={_,s->s.id}) {index,song->
+                if(selecting)item {
+                    val chosen=selected.sorted().mapNotNull(vm.searchResult.songs::getOrNull)
+                    SelectionActions(selected.size,vm.searchResult.songs.size,
+                        onAll={selected=vm.searchResult.songs.indices.toSet()},
+                        onClear={selected=emptySet()},
+                        onFavorite={vm.favoriteSelected(chosen,true)},
+                        onPlaylist={onBulkPlaylist(chosen);selected=emptySet();selecting=false},
+                        onQuarantine=if(vm.isAdmin){{onQuarantine(chosen)}}else null)
+                }
+                itemsIndexed(vm.searchResult.songs,key={i,s->"$i:${s.id}"}) {index,song->
                     SongRow(song,index,song.id in vm.favoriteIds,
                         play={player.play(vm.searchResult.songs,index)},
-                        favorite={vm.toggleFavorite(song)},add={onSongAdd(song)})
+                        favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                        selected=index in selected,selectionMode=selecting,
+                        onSelect={selected=if(index in selected)selected-index else selected+index},
+                        onLongSelect={selecting=true;selected=selected+index})
                 }
             }
         }
