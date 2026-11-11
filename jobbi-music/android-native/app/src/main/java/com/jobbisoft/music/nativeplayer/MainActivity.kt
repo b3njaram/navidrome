@@ -145,10 +145,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(
-                android.Manifest.permission.POST_NOTIFICATIONS)
-        }
+        // A MediaSession playback notification is exempt from Android 13's
+        // general POST_NOTIFICATIONS permission prompt. Never interrupt first
+        // launch (and UI tests) with an OS permission dialog before Compose
+        // has even rendered the login screen.
         setContent { JobbiMaterialApp() }
     }
 }
