@@ -45,8 +45,9 @@ object JobbiImageUpload {
             }
         }
         val bounds = BitmapFactory.Options().also { it.inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val boundsStream = resolver.openInputStream(uri)
             ?: throw IllegalArgumentException("Cannot open the selected picture")
+        boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
         require(bounds.outWidth in 1..30000 && bounds.outHeight in 1..30000) {
             "Picture format or dimensions are unsupported"
         }
