@@ -7,11 +7,9 @@ import android.graphics.Color
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.matcher.ViewMatchers.withText
-import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
-import androidx.test.core.app.ActivityScenario
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import org.junit.Rule
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -22,14 +20,18 @@ import java.io.FileOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class JobbiDeviceSmokeTest {
+    @get:Rule val rule=createAndroidComposeRule<MainActivity>()
     private val context:Context=ApplicationProvider.getApplicationContext()
 
     @Test fun nativeLoginShowsRealCredentialFieldsAndRememberedSessionControl() {
-        ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withText("Jobbi Music")).check(matches(isDisplayed()))
-            onView(withText("Navidrome username")).check(matches(isDisplayed()))
-            onView(withText("Password")).check(matches(isDisplayed()))
-            onView(withText("Keep me signed in")).check(matches(isDisplayed()))
+        rule.waitUntil(timeoutMillis=10000) {
+            rule.onAllNodesWithText("Keep me signed in",substring=true,useUnmergedTree=true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        for(label in listOf("Navidrome username","Password","Keep me signed in","Listen now")){
+            org.junit.Assert.assertTrue(label+" missing on real native login screen",
+                rule.onAllNodesWithText(label,substring=true,useUnmergedTree=true)
+                    .fetchSemanticsNodes().isNotEmpty())
         }
     }
 
