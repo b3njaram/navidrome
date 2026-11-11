@@ -35,6 +35,11 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
       state.quarantined.push({username:state.session?.username,id:'s1'});
       return reply({quarantined:true,id:'s1',message:'Moved to quarantine'});
     }
+    if(pathname==='/api/download/collection'){
+      return route.fulfill({status:200,contentType:'application/zip',
+        headers:{'Content-Disposition':'attachment; filename="Jobbi-Music-Collection.zip"'},
+        body:'PK-test-archive'});
+    }
     if(pathname==='/api/starred')return reply({song:[...state.stars].map(id=>({id,title:'Kino',artist:'Test Artist',duration:180})),album:[]});
     if(pathname==='/api/star'&&method==='POST'){
       if(body.starred)state.stars.add(body.id);else state.stars.delete(body.id);
@@ -157,6 +162,31 @@ test('ordinary listener sees playlist owners before removing a NAS recording',as
   expect(state.quarantined[0]).toEqual({username:'listener',id:'s1'});
   expect(errors).toEqual([]);
 });
+
+test('web can download individual playlists, all playlists, and Favorites as ZIP files',async({page})=>{
+  await setupMocks(page);
+  await login(page,'listener');
+  await navigate(page,'Your Library');
+
+  page.once('dialog',dialog=>dialog.accept());
+  const individualEvent=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download Favorites Mix'}).click();
+  const individual=await individualEvent;
+  expect(individual.url()).toContain('scope=playlist');
+  expect(individual.url()).toContain('playlistId=p1');
+
+  page.once('dialog',dialog=>dialog.accept());
+  const allEvent=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download all playlists'}).click();
+  expect((await allEvent).url()).toContain('scope=all-playlists');
+
+  await navigate(page,'Favorites');
+  page.once('dialog',dialog=>dialog.accept());
+  const favoritesEvent=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download all Favorite songs'}).click();
+  expect((await favoritesEvent).url()).toContain('scope=favorites');
+});
+
 test('listener can sign in, browse, search and manage own playlist without admin access',async({page})=>{
   const errors=[];page.on('pageerror',err=>errors.push(err.message));
   await setupMocks(page);await login(page,'listener');
