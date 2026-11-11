@@ -1,3 +1,7 @@
+### Native offline collection downloads (v1.0.5)
+
+The app has playlist, all-playlists and Favorites download buttons. Background downloads are handled by Android DownloadManager in per-account, app-private Music directories. Wi-Fi-only is enabled by default. Completed files play through Media3 without contacting Navidrome. More → Offline downloads opens the local library. If auto-login fails for network reasons, a securely remembered account can unlock its previously downloaded tracks; changing or revoking credentials still requires a new login. Web supports an original-audio ZIP archive instead of the APK's local offline queue.
+
 # Jobbi Music — fully native Android (Material 3)
 
 **This is a new Kotlin/Jetpack Compose application, not a WebView.** It builds its own UI, uses OkHttp to access the existing Jobbi Music JSON API, and uses a real Media3 ExoPlayer/MediaSessionService for background audio. The previous hybrid Android project in `../android/` is untouched.
