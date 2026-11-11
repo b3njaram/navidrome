@@ -18,7 +18,7 @@ export function safeArchiveName(value,limit=85){
   const out=String(value||'Untitled').normalize('NFKC')
     .replace(/[\\/<>:"|?*\x00-\x1f\x7f]/g,' ')
     .replace(/\.+/g,'.').replace(/\s+/g,' ').trim()
-    .replace(/^\.+|\.+$/g,'').slice(0,limit).trim();
+    .replace(/^[.\s]+|[.\s]+$/g,'').slice(0,limit).trim();
   return out||'Untitled';
 }
 export async function buildCollectionPlan(user,{scope,playlistId},subsonic){
