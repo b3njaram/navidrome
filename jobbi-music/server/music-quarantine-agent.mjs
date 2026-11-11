@@ -33,9 +33,17 @@ export async function quarantineFile(root,relative){
   await fs.mkdir(quarantine,{recursive:true,mode:0o700});
   const qstat=await fs.lstat(quarantine);
   if(!qstat.isDirectory()||qstat.isSymbolicLink())throw new Error('Unsafe quarantine directory');
+  // Ignore this folder even if the Navidrome hidden-directory default is changed.
+  await fs.writeFile(path.join(quarantine,'.ndignore'),'',{flag:'a',mode:0o600});
   const stored=randomUUID()+'-'+path.basename(file);
   const dest=path.join(quarantine,stored);
-  await fs.rename(file,dest);
+  const journal=path.join(quarantine,stored+'.json');
+  // Write a recovery map before moving; if the move fails, discard the map.
+  await fs.writeFile(journal,JSON.stringify({
+    original:relative,stored,bytes:stat.size,movedAt:new Date().toISOString()
+  },null,2),{flag:'wx',mode:0o600});
+  try{await fs.rename(file,dest)}
+  catch(e){await fs.unlink(journal).catch(()=>{});throw e}
   return {stored,bytes:stat.size,original:relative};
 }
 
