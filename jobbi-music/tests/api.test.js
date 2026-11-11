@@ -48,6 +48,7 @@ before(async()=>{
     if(name==='getPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')||'Road trip',entry:[]}}));
     if(name==='createPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')}}));
     if(name==='getAlbumList2')return json(res,ok({albumList2:{album:[{id:'album-1',name:'Album'}]}}));
+    if(name==='getAlbum')return json(res,ok({album:{id:u.searchParams.get('id')||'album-1',name:'Album',song:[]}}));
     if(name==='getArtists')return json(res,ok({artists:{index:[{name:'A',artist:[{id:'artist-1',name:'Artist'}]}]}}));
     if(name==='getRandomSongs')return json(res,ok({randomSongs:{song:[]}}));
     if(name==='getStarred2')return json(res,ok({starred2:{song:[]}}));
@@ -414,4 +415,33 @@ test('admin-initiated library scan',async()=>{
   const res=await post('/api/library/scan',{});
   assert.equal(res.status,200);
   assert.equal((await res.json()).scanStatus.scanning,true);
+});
+
+test('real authenticated cover upload: JPEG bytes round-trip, invalid image and CSRF are blocked', {skip:!process.env.SOCIAL_TEST_DATABASE_URL},async()=>{
+  const path='/api/artwork/album/album-1';
+  const jpg=Buffer.alloc(256,16);
+  jpg[0]=0xff;jpg[1]=0xd8;jpg[2]=0xff;
+  const options=(bytes,contentType='image/jpeg',csrf=csrfToken)=>({
+    method:'POST',headers:{cookie,'x-csrf-token':csrf,'Content-Type':contentType},body:bytes
+  });
+  const missingCsrf=await fetch(base+path,options(jpg,'image/jpeg',''));
+  assert.equal(missingCsrf.status,403);
+  const uploaded=await fetch(base+path,options(jpg));
+  assert.equal(uploaded.status,200);
+  assert.equal((await uploaded.json()).saved,true);
+  const retrieved=await get(path);
+  assert.equal(retrieved.status,200);
+  assert.match(retrieved.headers.get('content-type'),/image\/jpeg/);
+  assert.deepEqual(Buffer.from(await retrieved.arrayBuffer()),jpg);
+
+  const svg=Buffer.from('<svg onload="alert(1)"></svg>');
+  const invalid=await fetch(base+path,options(svg,'image/jpeg'));
+  assert.equal(invalid.status,400);
+  const wrongMime=await fetch(base+path,options(jpg,'image/png'));
+  assert.equal(wrongMime.status,400);
+  const oversized=Buffer.alloc(1_048_577,2);
+  oversized[0]=0xff;oversized[1]=0xd8;oversized[2]=0xff;
+  const tooBig=await fetch(base+path,options(oversized));
+  assert.equal(tooBig.status,413);
+  assert.equal((await get(path)).status,200,'Rejected uploads must not remove valid existing cover');
 });
