@@ -7,6 +7,16 @@ Apple Music-inspired dark UI, Navidrome login, album and artist browser, search,
 
 Soulseek downloads are now queued via the existing custom Flask downloader at `/api/download` and transfers are read at `/api/downloads`. **Important:** the request body uses the inferred fields `username,filename,size,artist,title` based on your earlier NAS output. The live Flask handler has NOT yet been reviewed; verify it before considering Soulseek production-ready. Only acquire music you have permission to access.
 
+## Shared song removal for all authenticated listeners (APK v1.0.4 and web)
+
+Every signed-in listener can now use the **trash icon next to a song** in search results, Favorites, album views and playlists. Selected-song bulk removal also works for ordinary listeners (up to 20 tracks per review). This is intentionally different from **Remove from playlist**, which changes only the playlist entry.
+
+Before the shared audio file can be moved, the app requests `GET /api/songs/:id/removal-impact` and displays what is known: "You have this song in Favorites Mix" or "bob has this song in Public Mix". References in private social playlists **not shared with the requester** are counted and warned about without revealing their owners, titles or IDs. A user's own Favorites are checked too. Other users' private Navidrome playlists and Favorites cannot all be enumerated, so the warning explicitly states that some references may be unknown.
+
+The user must type **REMOVE** in the confirmation dialog. The app then presents the short-lived review ticket to `POST /api/songs/:id/quarantine`. The backend rechecks the shared playlist references immediately before accepting the ticket, refuses stale reviews, serializes concurrent removals of the same song, limits each account to 20 successful removals per day, and moves the file to recoverable quarantine via the isolated worker. If the social database or accessible playlist check is unavailable, removal fails safely and nothing moves. This does **not** permanently delete files or erase the playlists themselves, but it can make other users' saved songs unplayable.
+
+The worker still must be explicitly enabled on the NAS; normal browsers and the Android APK never gain direct NAS filesystem access. Do not disable the shared impact check when changing permissions. Accounts still need to be signed in to Jobbi Music, and private playlist names remain protected.
+
 ## Playlist management and reversible NAS recording removal
 
 Jobbi Music's native Android APK (v1.0.2) and web app support selecting multiple tracks. **Long-press** a track on Android or mobile web, or choose **Select songs** / **Select all** to select a collection. Actions include favorite/unfavorite, copy into a playlist, move between playlists (copies first, then removes original entries), and remove entries from a playlist without deleting audio. Favorites has a **Shuffle Favorites** button.
