@@ -8,6 +8,7 @@ import PlaylistTools from './PlaylistTools.jsx';
 import PlaylistTransfer from './PlaylistTransfer.jsx';
 import {preferredDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds} from './player-math.js';
 import './nowplaying.css';
+import {prepareImageUpload} from './image-upload.js';
 
 let currentCsrfToken='';
 const api = async (url, opts={}) => {
@@ -491,8 +492,9 @@ function App() {
   };
   const uploadCover=async file=>{
     const kind=page.id==='album'?'album':'playlist';
+    const picture=await prepareImageUpload(file);
     const res=await fetch('/api/artwork/'+kind+'/'+encodeURIComponent(page.idValue),{
-      method:'POST',credentials:'same-origin',headers:{'Content-Type':file.type,'X-CSRF-Token':currentCsrfToken},body:file
+      method:'POST',credentials:'same-origin',headers:{'Content-Type':picture.type,'X-CSRF-Token':currentCsrfToken},body:picture
     });
     const body=await res.json().catch(()=>({}));
     if(!res.ok)throw new Error(body.error||'Artwork upload failed');
