@@ -66,3 +66,40 @@ jobs:
           path: jobbi-music/android-native/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+  # Real emulator checks: verifies Android screens and gallery conversion in
+  # addition to the JVM suite above. Still not a substitute for a live NAS test.
+  emulator-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Enable hardware acceleration for emulator
+        run: |
+          if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; else echo "::error::KVM is not available on the GitHub runner"; exit 1; fi
+      - name: Run native login and picture processing tests on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          disable-animations: true
+          script: gradle --no-daemon -p jobbi-music/android-native :app:connectedDebugAndroidTest
+      - name: Upload Android instrumented test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jobbi-Native-Emulator-Test-Results
+          path: |
+            jobbi-music/android-native/app/build/reports/androidTests/
+            jobbi-music/android-native/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+          retention-days: 14
