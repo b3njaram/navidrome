@@ -580,6 +580,74 @@ test('older Kino import attempts are grouped, can be hidden, and do not claim th
   expect(errors).toEqual([]);
 });
 
+test('web song menu Play Next/Add to Queue and Up Next reorder/remove/clear work without restarting music',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);
+  await page.addInitScript(()=>{
+    window.__plays=[];
+    HTMLMediaElement.prototype.play=function(){
+      window.__plays.push(this.getAttribute('src'));return Promise.resolve();
+    };
+  });
+  await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.getByRole('button',{name:/Favorites Mix/}).first().click();
+  const tracks=page.locator('.track-row');
+  await expect(tracks).toHaveCount(2);
+  await tracks.first().getByRole('button',{name:'Play Kino'}).first().click();
+  await expect(page.getByRole('button',{name:'Open now playing for Kino'})).toBeEnabled();
+  const countBefore=await page.evaluate(()=>window.__plays.length);
+
+  await tracks.nth(1).getByLabel('Queue options for Another Song').click();
+  await tracks.nth(1).getByRole('button',{name:'Play next'}).click();
+  const mobileQueue=page.locator('.player .queue-mobile-open');
+  if(await mobileQueue.isVisible())await mobileQueue.click();
+  else await page.locator('.player-extras').getByRole('button',{name:'Open queue'}).click();
+  const sidebar=page.locator('.side-panel');
+  await expect(sidebar.getByRole('heading',{name:'Up next'})).toBeVisible();
+  await expect(sidebar.locator('.queue-manage-row')).toHaveCount(3);
+  expect(await page.evaluate(()=>window.__plays.length)).toBe(countBefore);
+
+  await sidebar.getByRole('button',{name:'Move Another Song down'}).first().click();
+  await sidebar.getByRole('button',{name:'Remove Another Song from queue'}).last().click();
+  await expect(sidebar.locator('.queue-manage-row')).toHaveCount(2);
+  await sidebar.getByRole('button',{name:'Clear upcoming'}).click();
+  await expect(sidebar.locator('.queue-manage-row')).toHaveCount(1);
+  await sidebar.getByRole('button',{name:'Close'}).last().click();
+
+  await tracks.nth(1).getByLabel('Queue options for Another Song').click();
+  await tracks.nth(1).getByRole('button',{name:'Add to queue'}).click();
+  if(await mobileQueue.isVisible())await mobileQueue.click();
+  else await page.locator('.player-extras').getByRole('button',{name:'Open queue'}).click();
+  await expect(page.locator('.side-panel .queue-manage-row')).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test('web queue survives refresh without autoplay, and sleep timer is available in Now Playing',async({page})=>{
+  await setupMocks(page);
+  await page.addInitScript(()=>{
+    window.__plays=0;
+    HTMLMediaElement.prototype.play=function(){window.__plays++;return Promise.resolve()};
+  });
+  await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.getByRole('button',{name:/Favorites Mix/}).first().click();
+  const tracks=page.locator('.track-row');
+  await tracks.first().getByRole('button',{name:'Play Kino'}).first().click();
+  await tracks.nth(1).getByLabel('Queue options for Another Song').click();
+  await tracks.nth(1).getByRole('button',{name:'Add to queue'}).click();
+  await page.reload();
+  await expect(page.getByRole('button',{name:'Open now playing for Kino'})).toBeEnabled();
+  const plays=await page.evaluate(()=>window.__plays);
+  expect(plays).toBe(0);
+  await page.getByRole('button',{name:'Open now playing for Kino'}).click();
+  await page.getByRole('button',{name:'Show queue'}).click();
+  await expect(page.locator('.immersive-queue-row')).toHaveCount(3);
+  await page.getByRole('button',{name:'Track options'}).click();
+  await page.getByLabel('Sleep timer').selectOption('15');
+  await expect(page.getByLabel('Sleep timer')).toHaveValue('15');
+});
+
 test('song rows play on click while favorites and playlist buttons act independently',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const state=await setupMocks(page);
