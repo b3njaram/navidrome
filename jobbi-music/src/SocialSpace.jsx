@@ -3,6 +3,7 @@ import {Users,UserPlus,UserCheck,UserX,Search,Globe2,LockKeyhole,HeartHandshake,
   Plus,Music2,Play,Trash2,RefreshCw,Camera,Upload,Check,ArrowLeft,ShieldCheck,
   ListMusic,Settings2,X,Image as ImageIcon,Share2,Sparkles,Heart,UserRound,ChevronRight} from 'lucide-react';
 import './social.css';
+import {prepareImageUpload} from './image-upload.js';
 
 const root='/api/social';
 const apiPath=(suffix)=>root+suffix;
@@ -169,9 +170,9 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
   });
   const uploadAvatar=e=>{
     const f=e.target.files?.[0];if(!f)return;
-    if(f.size>1024*1024||!['image/png','image/jpeg','image/webp'].includes(f.type)){setError('Choose a PNG, JPEG or WebP image under 1 MB');return}
     act(async()=>{
-      await api(apiPath('/me/avatar'),{method:'POST',body:f,headers:{'Content-Type':f.type}});
+      const picture=await prepareImageUpload(f);
+      await api(apiPath('/me/avatar'),{method:'POST',body:picture,headers:{'Content-Type':picture.type}});
       setAvatarVersion(Date.now());await refresh();await openProfile(user.username);onProfileUpdate();setNotice('Profile picture saved');
     });
   };
@@ -325,7 +326,7 @@ export default function SocialSpace({api,user,playTracks,onSave,nativePlaylists=
           <div className="social-stat-grid"><div><b>{profile.stats.playlists_created}</b><span>Visible playlists created</span></div><div><b>{profile.stats.songs_added}</b><span>Songs added to visible playlists</span></div></div>
           {profile.profile.username!==user.username.toLowerCase()&&!profile.isFriend&&<button className="social-primary" onClick={()=>sendRequest(profile.profile.username)} disabled={busy}><UserPlus size={16}/> Send friend request</button>}
           {profile.profile.username===user.username.toLowerCase()&&<><div className="social-divider"/>
-            <label className="social-avatar-upload"><Camera size={16}/> Change profile picture<input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadAvatar} disabled={busy}/></label>
+            <label className="social-avatar-upload"><Camera size={16}/> Change profile picture<input type="file" accept="image/*,.heic,.heif" onChange={uploadAvatar} disabled={busy}/></label>
             {profile.profile.has_avatar&&<button className="social-outline" onClick={removeAvatar} disabled={busy}>Remove picture</button>}
             <div className="social-form"><label>Display name<input maxLength={80} value={profileDraft?.displayName||''} onChange={e=>setProfileDraft(p=>({...p,displayName:e.target.value}))}/></label>
               <label>About you<textarea rows={3} maxLength={300} value={profileDraft?.bio||''} onChange={e=>setProfileDraft(p=>({...p,bio:e.target.value}))}/></label>
