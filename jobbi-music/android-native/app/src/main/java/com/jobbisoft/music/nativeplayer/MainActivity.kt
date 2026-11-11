@@ -784,47 +784,94 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
 
 @Composable
 private fun DownloadedSongsScreen(vm:MusicViewModel,player:NativePlayer) {
+    val collection=vm.offlineCollections.firstOrNull{it.id==vm.offlineCollectionId}
+    val visibleSongs=collection?.songs ?: vm.downloadedSongs
     Column {
         Column(Modifier.padding(horizontal=18.dp,vertical=13.dp),
             verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("Downloaded music",style=MaterialTheme.typography.headlineMedium,
-                fontWeight=FontWeight.Bold)
-            Text("Original audio saved on this device · ${vm.downloadStats.saved} songs",
-                style=MaterialTheme.typography.bodySmall,
-                color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment=Alignment.CenterVertically){
+                if(collection!=null)IconButton(onClick=vm::closeOfflineCollection){
+                    Icon(Icons.Rounded.ArrowBack,contentDescription="All downloads")
+                }
+                Column(Modifier.weight(1f)){
+                    Text(collection?.title ?: "Downloaded music",
+                        style=MaterialTheme.typography.headlineMedium,
+                        fontWeight=FontWeight.Bold)
+                    Text("Original recordings on this device · ${visibleSongs.size} songs",
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                 OutlinedButton(onClick=vm::refreshDownloadedSongs){
                     Icon(Icons.Rounded.Refresh,null);Spacer(Modifier.width(6.dp))
                     Text("Refresh")
                 }
                 if(vm.offlineMode)FilledTonalButton(onClick=vm::retrySavedSignIn,
-                    enabled=!vm.restoringSession) {
+                    enabled=!vm.restoringSession){
                     Icon(Icons.Rounded.Cloud,null);Spacer(Modifier.width(6.dp))
                     Text("Reconnect")
                 }
             }
-            if(vm.offlineMode)Text("Offline mode: only saved recordings play. "+
-                "Online playlists and account settings will resume after reconnecting.",
+            if(vm.offlineMode)Text("Offline mode: only downloaded recordings play. "+
+                "Online library features will return after reconnecting.",
                 style=MaterialTheme.typography.bodySmall,
                 color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${vm.downloadStats.queued} queued · ${vm.downloadStats.failed} failed",
+                style=MaterialTheme.typography.bodySmall)
         }
-        if(vm.downloadedSongs.isEmpty()) {
-            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+        if(vm.downloadedSongs.isEmpty()){
+            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
                 Text("No completed downloads yet. "+
                     "Use Download on a playlist or Favorites while connected.",
                     Modifier.padding(22.dp),textAlign=TextAlign.Center)
             }
         }else{
-            LazyColumn(contentPadding=PaddingValues(bottom=30.dp)) {
-                itemsIndexed(vm.downloadedSongs,key={_,s->s.id}){index,song->
-                    Row(Modifier.fillMaxWidth().clickable {
-                        player.play(vm.downloadedSongs,index)
+            LazyColumn(contentPadding=PaddingValues(bottom=30.dp),
+                verticalArrangement=Arrangement.spacedBy(3.dp)){
+                if(collection==null && vm.offlineCollections.isNotEmpty()){
+                    item {
+                        Text("Downloaded playlists and Favorites",
+                            Modifier.padding(horizontal=20.dp,vertical=10.dp),
+                            fontWeight=FontWeight.SemiBold,
+                            style=MaterialTheme.typography.titleMedium)
+                    }
+                    items(vm.offlineCollections,key={it.id}){entry->
+                        Card(Modifier.fillMaxWidth()
+                            .padding(horizontal=16.dp,vertical=2.dp)
+                            .clickable{vm.viewOfflineCollection(entry.id)},
+                            shape=RoundedCornerShape(16.dp)){
+                            Row(Modifier.padding(13.dp),
+                                verticalAlignment=Alignment.CenterVertically){
+                                Icon(if(entry.id=="favorites")Icons.Rounded.Favorite
+                                    else Icons.Rounded.PlaylistPlay,
+                                    contentDescription=null)
+                                Spacer(Modifier.width(11.dp))
+                                Column(Modifier.weight(1f)){
+                                    Text(entry.title,fontWeight=FontWeight.SemiBold)
+                                    Text("${entry.songs.size} downloaded songs",
+                                        style=MaterialTheme.typography.bodySmall)
+                                }
+                                Icon(Icons.Rounded.ChevronRight,contentDescription=null)
+                            }
+                        }
+                    }
+                }
+                if(collection==null)item{
+                    Text("All downloaded songs",
+                        Modifier.padding(horizontal=20.dp,vertical=10.dp),
+                        fontWeight=FontWeight.SemiBold,
+                        style=MaterialTheme.typography.titleMedium)
+                }
+                itemsIndexed(visibleSongs,key={_,song->song.id}){index,song->
+                    Row(Modifier.fillMaxWidth().clickable{
+                        player.play(visibleSongs,index)
                     }.padding(horizontal=20.dp,vertical=11.dp),
-                        verticalAlignment=Alignment.CenterVertically) {
+                        verticalAlignment=Alignment.CenterVertically){
                         Icon(Icons.Rounded.MusicNote,null,
                             tint=MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f)){
                             Text(song.title,maxLines=1,overflow=TextOverflow.Ellipsis,
                                 fontWeight=FontWeight.SemiBold)
                             Text(song.artist,style=MaterialTheme.typography.bodySmall,
