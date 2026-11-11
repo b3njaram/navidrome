@@ -42,6 +42,11 @@ export async function collectRemovalImpact({user,id,subsonic,socialQuery}){
   const rs=await socialQuery(sql,[id,user.username.toLowerCase()]);
   if(!Array.isArray(rs.rows)||rs.rows.length>MAX_SOCIAL_REFERENCES)
     throw new Error('Too many social playlist references to inspect safely.');
+  const starData=await json(user,'getStarred2',{},subsonic);
+  const personalStars=starData.starred2?.song||[];
+  const favorited=Array.isArray(personalStars)&&personalStars.some(t=>t.id===id);
+  if(favorited)personal.push({kind:'favorites',id:'favorites',name:'Favorites',
+    owner:user.username,own:true,private:true,restricted:false});
   const social=rs.rows.map(p=>{
     const own=String(p.owner).toLowerCase()===user.username.toLowerCase();
     const restricted=p.visibility!=='public'&&!p.visible_to_user&&!own;
