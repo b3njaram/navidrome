@@ -128,7 +128,16 @@ function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,o
         onChange={()=>choose(index)}/></label>:
       <button className="track-number" aria-label={'Play '+(song.title||song.name||'track')} onClick={()=>onPlay(rows,index)}>
         {currentTrack?.id===song.id ? <Waves size={16}/>:<><span className="track-index">{index+1}</span><Play size={14} className="row-play" fill="currentColor"/></>}</button>}
-      <div className="track-main"><button className="track-art-click" aria-label={'Play '+(song.title||song.name)} onClick={()=>selecting?choose(index):onPlay(rows,index)}><Art item={song} size="tiny"/></button><span className="track-meta"><button className="track-song-title" onClick={()=>selecting?choose(index):onPlay(rows,index)}>{song.title||song.name}</button><button className="track-artist-link" title={'More songs by '+(song.artist||'this artist')} onClick={()=>onArtist?.(song)}>{song.artist||'Unknown artist'}</button></span></div>
+      <div className="track-main"><button className="track-art-click" aria-label={'Play '+(song.title||song.name)} onClick={event=>{
+        if(held.current){held.current=false;event.stopPropagation();return}
+        selecting?choose(index):onPlay(rows,index)
+      }}><Art item={song} size="tiny"/></button><span className="track-meta"><button className="track-song-title" onClick={event=>{
+        if(held.current){held.current=false;event.stopPropagation();return}
+        selecting?choose(index):onPlay(rows,index)
+      }}>{song.title||song.name}</button><button className="track-artist-link" title={'More songs by '+(song.artist||'this artist')} onClick={event=>{
+        if(held.current){held.current=false;event.stopPropagation();return}
+        onArtist?.(song)
+      }}>{song.artist||'Unknown artist'}</button></span></div>
       <span className="track-album">{song.album&&<button className="track-album-link" title={'View '+song.album+' album'} onClick={()=>onAlbum?.(song)}>{song.album}</button>}</span>
       {!selecting&&<div className="track-actions"><button className={`icon-button ${starred?.has(song.id)?'hearted':''}`}
         type="button" aria-label={(starred?.has(song.id)?'Remove favorite ':'Favorite ')+(song.title||song.name||'track')}
