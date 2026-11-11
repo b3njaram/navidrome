@@ -261,11 +261,14 @@ class NativePlayer(private val context: Context) {
 
     fun play(songs: List<Song>, start: Int = 0) {
         if (songs.isEmpty()) return
-        queue = songs
         val chosen = start.coerceIn(0, songs.lastIndex)
+        val ordered = if(shuffleEnabled)
+            songs.take(chosen+1)+songs.drop(chosen+1).shuffled()
+            else songs
+        queue = ordered
         val c = controller
-        if (c == null) { pending = songs to chosen; connect(); return }
-        val items = songs.map(::mediaItem)
+        if (c == null) { pending = ordered to chosen; connect(); return }
+        val items = ordered.map(::mediaItem)
         error = ""
         c.setMediaItems(items,chosen,0)
         c.prepare()
@@ -287,7 +290,8 @@ class NativePlayer(private val context: Context) {
             return
         }
         if(c.mediaItemCount==0){play(listOf(song));return}
-        c.addMediaItem((c.currentMediaItemIndex+1).coerceIn(0,c.mediaItemCount),mediaItem(song))
+        c.addMediaItem(UpcomingQueuePolicy.nextInsertIndex(c.currentMediaItemIndex,c.mediaItemCount),
+            mediaItem(song))
         syncFromPlayer(c)
     }
     fun addToQueue(song:Song){
@@ -308,14 +312,13 @@ class NativePlayer(private val context: Context) {
     }
     fun moveUpcoming(from:Int,to:Int){
         val c=controller?:return
-        if(from<=c.currentMediaItemIndex||to<=c.currentMediaItemIndex||
-            from<0||to<0||from>=c.mediaItemCount||to>=c.mediaItemCount)return
+        if(!UpcomingQueuePolicy.canMove(c.currentMediaItemIndex,c.mediaItemCount,from,to))return
         c.moveMediaItem(from,to)
         syncFromPlayer(c)
     }
     fun removeUpcoming(index:Int){
         val c=controller?:return
-        if(index<=c.currentMediaItemIndex||index>=c.mediaItemCount)return
+        if(!UpcomingQueuePolicy.canRemove(c.currentMediaItemIndex,c.mediaItemCount,index))return
         c.removeMediaItem(index)
         syncFromPlayer(c)
     }
