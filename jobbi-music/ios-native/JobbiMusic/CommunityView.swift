@@ -81,7 +81,7 @@ struct CommunityView: View {
                                             + JobbiAPI.encode(person.username) + "/respond",
                                             json: ["accept": true])
                                         await reload()
-                                    } catch { error = error.localizedDescription }
+                                    } catch { self.error = error.localizedDescription }
                                 }
                             }
                             .buttonStyle(.bordered)
@@ -149,7 +149,7 @@ struct CommunityView: View {
             let response: PeopleResponse = try await api.get(
                 "/api/social/people?q=" + JobbiAPI.encode(query))
             people = response.users ?? []
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 
     private func reload() async {
@@ -158,7 +158,7 @@ struct CommunityView: View {
         do {
             overview = try await api.get("/api/social/home")
             error = nil
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 }
 
@@ -199,7 +199,7 @@ struct SocialPlaylistView: View {
         .navigationTitle("Shared Playlist")
         .task {
             do { detail = try await api.get("/api/social/playlists/" + JobbiAPI.encode(id)) }
-            catch { error = error.localizedDescription }
+            catch { self.error = error.localizedDescription }
         }
     }
 }
