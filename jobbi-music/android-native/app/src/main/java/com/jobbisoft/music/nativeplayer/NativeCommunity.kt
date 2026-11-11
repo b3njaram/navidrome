@@ -35,7 +35,7 @@ private fun JSONObject.str(key:String):String = optString(key,"").takeUnless{it=
 private fun JSONObject.titleName():String = str("display_name").ifBlank{str("username")}
 
 @Composable
-private fun SocialAvatar(user:JSONObject,modifier:Modifier=Modifier) {
+private fun SocialAvatar(user:JSONObject,modifier:Modifier=Modifier,revision:Int=0) {
     val context=LocalContext.current
     val name=user.str("username")
     val loader=remember { ImageLoader.Builder(context).okHttpClient(JobbiApi.client).build() }
@@ -45,7 +45,7 @@ private fun SocialAvatar(user:JSONObject,modifier:Modifier=Modifier) {
             Icon(Icons.Rounded.Person,null,Modifier.size(23.dp))
             if(user.optBoolean("has_avatar")&&name.isNotBlank()){
                 AsyncImage(model=ImageRequest.Builder(context)
-                    .data(JobbiApi.authenticatedUrl("/api/social/profiles/"+Uri.encode(name)+"/avatar"))
+                    .data(JobbiApi.authenticatedUrl("/api/social/profiles/"+Uri.encode(name)+"/avatar")+"?v="+revision)
                     .crossfade(true).build(),imageLoader=loader,contentDescription="Profile picture",
                     contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize())
             }
@@ -344,14 +344,16 @@ fun ProfileScreen(vm:MusicViewModel,targetUser:String=vm.account,onUpdated:()->U
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->
         if(uri!=null)scope.launch{
             busy=true
+            error=""
             try{
-                val type=context.contentResolver.getType(uri)?:"image/jpeg"
-                val content=context.contentResolver.openInputStream(uri)?.use{it.readNBytes(1_048_577)}
-                    ?:error("Unable to open image")
-                JobbiApi.uploadAvatar(content,type)
-                avatarVersion++;reload();onUpdated()
-            }catch(e:Exception){error=e.message?:"Avatar upload failed"}
-            finally{busy=false}
+                val image=JobbiImageUpload.prepare(context,uri)
+                JobbiApi.uploadAvatar(image.bytes,image.mime)
+                avatarVersion++
+                reload()
+                onUpdated()
+            }catch(e:Exception){
+                error="Profile picture wasn't uploaded: "+(e.message?:"Please try again.")
+            }finally{busy=false}
         }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -360,7 +362,7 @@ fun ProfileScreen(vm:MusicViewModel,targetUser:String=vm.account,onUpdated:()->U
             style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
         data?.optJSONObject("profile")?.let{user->
             Row(verticalAlignment=Alignment.CenterVertically){
-                key(avatarVersion){SocialAvatar(user,Modifier.size(80.dp))}
+                key(avatarVersion){SocialAvatar(user,Modifier.size(80.dp),revision=avatarVersion)}
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(user.titleName(),style=MaterialTheme.typography.titleLarge)
@@ -393,8 +395,12 @@ fun ProfileScreen(vm:MusicViewModel,targetUser:String=vm.account,onUpdated:()->U
                         Text("Let other listeners find me")
                     }
                     FilledTonalButton(onClick={picker.launch("image/*")},enabled=!busy){
-                        Icon(Icons.Rounded.PhotoCamera,null);Text("Change profile picture")
+                        Icon(Icons.Rounded.PhotoCamera,null)
+                        Text(if(busy)"Uploading…" else "Change profile picture")
                     }
+                    Text("Camera photos, HEIC, PNG and WebP are resized to fit the server's 1 MB limit.",
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick={scope.launch{
                         busy=true
                         try{
