@@ -5,7 +5,7 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -20,6 +20,21 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
     if(pathname==='/api/login'){const isAdmin=body.username==='testadmin';state.session={username:body.username,admin:isAdmin,csrfToken:'test-csrf-token'};return reply(state.session);}
     if(pathname==='/api/logout'){state.session=null;return reply({ok:true});}
     if(pathname==='/api/home')return reply({recent:[{id:'a1',name:'Test Album',artist:'Test Artist'}],featured:[],played:[],songs:[{id:'s1',title:'Kino',artist:'Test Artist',duration:180}],playlists:state.playlists});
+    if(pathname==='/api/songs/s1/removal-impact'&&method==='GET')
+      return reply({song:{id:'s1',title:'Kino',artist:'Test Artist'},
+        references:[
+          {id:'p1',kind:'navidrome',name:'Favorites Mix',owner:'listener',own:true,private:true,restricted:false},
+          {id:'p-other',kind:'navidrome',name:'Shared Hits',owner:'bob',own:false,private:false,restricted:false},
+          {id:null,kind:'social',name:'Private playlist (name hidden)',owner:null,own:false,private:true,restricted:true}
+        ],referenceCount:3,hiddenPrivateCount:1,incompleteScope:true,
+        warning:'Other users may have private Navidrome playlists that cannot be inspected.',
+        ticket:'test-signed-removal-ticket',confirmation:'REMOVE_FROM_SHARED_LIBRARY'});
+    if(pathname==='/api/songs/s1/quarantine'&&method==='POST'){
+      if(body.ticket!=='test-signed-removal-ticket'||body.confirm!=='REMOVE_FROM_SHARED_LIBRARY')
+        return reply({error:'Confirmation missing'},400);
+      state.quarantined.push({username:state.session?.username,id:'s1'});
+      return reply({quarantined:true,id:'s1',message:'Moved to quarantine'});
+    }
     if(pathname==='/api/starred')return reply({song:[...state.stars].map(id=>({id,title:'Kino',artist:'Test Artist',duration:180})),album:[]});
     if(pathname==='/api/star'&&method==='POST'){
       if(body.starred)state.stars.add(body.id);else state.stars.delete(body.id);
@@ -116,6 +131,32 @@ async function navigate(page,label){
   if(await mobile.isVisible()){await mobile.getByRole('button',{name:label,exact:true}).click();}
   else{await page.locator('.sidebar').getByRole('button',{name:label,exact:true}).click();}
 }
+
+test('ordinary listener sees playlist owners before removing a NAS recording',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const state=await setupMocks(page);
+  await login(page,'listener');
+  await navigate(page,'Discover');
+  await page.getByPlaceholder('Songs, artists, albums...').fill('Kino');
+  const row=page.locator('.track-row').first();
+  await expect(row).toBeVisible();
+  await row.getByRole('button',{name:/Remove Kino.*from shared server/}).click();
+  const dialog=page.getByRole('dialog',{name:'Review shared recording removal'});
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/You have this song in Favorites Mix/)).toBeVisible();
+  await expect(dialog.getByText(/bob has this song in Shared Hits/)).toBeVisible();
+  await expect(dialog.getByText(/private playlist \(name hidden\)/)).toBeVisible();
+  await expect(dialog.getByText(/private Navidrome playlists that cannot be inspected/)).toBeVisible();
+  expect(state.quarantined).toHaveLength(0);
+  await dialog.getByRole('button',{name:'Cancel removal'}).click();
+  expect(state.quarantined).toHaveLength(0);
+  await row.getByRole('button',{name:/Remove Kino.*from shared server/}).click();
+  await dialog.getByRole('textbox',{name:'Type REMOVE to confirm'}).fill('REMOVE');
+  await dialog.getByRole('button',{name:'Move to quarantine'}).click();
+  await expect.poll(()=>state.quarantined.length).toBe(1);
+  expect(state.quarantined[0]).toEqual({username:'listener',id:'s1'});
+  expect(errors).toEqual([]);
+});
 test('listener can sign in, browse, search and manage own playlist without admin access',async({page})=>{
   const errors=[];page.on('pageerror',err=>errors.push(err.message));
   await setupMocks(page);await login(page,'listener');
