@@ -645,7 +645,7 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
             onPlaylist={onBulkPlaylist(selected.sorted().map(songs::get));selected=emptySet();selecting=false},
             onRemove=if(isFavorites){{vm.favoriteSelected(selected.sorted().map(songs::get),false);
                 selected=emptySet();selecting=false}}else null,
-            onQuarantine={{onQuarantine(selected.sorted().map(songs::get))}}else null)
+            onQuarantine={onQuarantine(selected.sorted().map(songs::get))})
         LazyColumn(contentPadding=PaddingValues(vertical=10.dp)) {
             itemsIndexed(songs,key={i,s->"$i:${s.id}"}){index,song->
                 SongRow(song,index,song.id in vm.favoriteIds,
@@ -718,12 +718,13 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                         onClear={selected=emptySet()},
                         onFavorite={vm.favoriteSelected(chosen,true)},
                         onPlaylist={onBulkPlaylist(chosen);selected=emptySet();selecting=false},
-                        onQuarantine={{onQuarantine(chosen)}}else null)
+                        onQuarantine={onQuarantine(chosen)})
                 }
                 itemsIndexed(vm.searchResult.songs,key={i,s->"$i:${s.id}"}) {index,song->
                     SongRow(song,index,song.id in vm.favoriteIds,
                         play={player.play(vm.searchResult.songs,index)},
                         favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                        removeFromNas={vm.prepareSongRemoval(listOf(song))},
                         selected=index in selected,selectionMode=selecting,
                         onSelect={selected=if(index in selected)selected-index else selected+index},
                         onLongSelect={selecting=true;selected=selected+index})
@@ -891,7 +892,7 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                     selecting=false;selected=emptySet()}}else null,
                 onRemove=if(detail.isPlaylist){{vm.removeSelectedFromPlaylist(selected.toList());
                     selected=emptySet();selecting=false}}else null,
-                onQuarantine={{onQuarantine(chosen)}}else null)
+                onQuarantine={onQuarantine(chosen)})
         }
         itemsIndexed(listed,key={_,pair->"${pair.first}:${pair.second.id}"}){index,pair->
             val song=pair.second
