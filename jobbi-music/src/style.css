@@ -592,3 +592,17 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
 .removal-confirm-label input{width:100%;border:1px solid #91758b;background:#191820;color:#fff;border-radius:8px;padding:11px}
 .removal-dialog-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding:18px 0 0}
 .inline-removal-loading{position:fixed;z-index:80;bottom:95px;left:50%;transform:translateX(-50%);background:#322a35;border:1px solid #ab6b91;border-radius:12px;padding:12px 18px;display:flex;align-items:center;gap:12px;color:#fff}
+
+/* Download actions for playlists and Favorites */
+.collection-download-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.collection-download-actions button,.playlist-download-action{display:inline-flex;align-items:center;justify-content:center;flex-direction:row;gap:7px;border:1px solid #65475b;background:#2a202c;color:#ffb9d2;border-radius:10px;padding:10px 12px;cursor:pointer;font-size:12px;font-weight:650}
+.playlist-download-card{display:flex;flex-direction:column;min-width:0;gap:6px}
+.playlist-download-card>button:first-child{width:100%;flex:1;text-align:left}
+.playlist-download-card .playlist-download-action{width:100%;font-size:11px;white-space:normal;min-height:39px}
+.playlist-download-card .playlist-graphic{width:100%}
+.collection-download-actions button:hover,.playlist-download-action:hover{background:#412f40}
+@media(max-width:720px){
+ .collection-download-actions{justify-content:flex-start;gap:6px}
+ .collection-download-actions button{padding:8px;font-size:11px}
+ .playlist-download-card .playlist-download-action{font-size:10px;padding:7px}
+}
