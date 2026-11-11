@@ -745,4 +745,11 @@ app.get('/tools/jobbi-collection-export.user.js',(req,res)=>{
 });
 app.get('*',(req,res)=>{res.setHeader('Cache-Control','no-store');res.sendFile(path.join(staticDir,'index.html'));});
 setInterval(()=>{const now=Date.now();for(const [key,item] of sessions)if(item.expires<now)sessions.delete(key);for(const[key,item]of attempts)if(now-item.start>LOGIN_WINDOW_MS)attempts.delete(key);for(const[key,item]of actionLimits)if(now-item.start>ACTION_WINDOW_MS)actionLimits.delete(key);},60000).unref();
+// Data minimization: rankings need 30 days, never keep granular listener
+// history indefinitely. A small periodic batch keeps NAS database IO light.
+setInterval(()=>{
+  socialQuery(`DELETE FROM jobbi_listens WHERE id IN
+    (SELECT id FROM jobbi_listens WHERE played_at < now()-interval '90 days'
+     ORDER BY played_at LIMIT 2000)`).catch(()=>{});
+},12*60*60*1000).unref();
 app.listen(PORT,'0.0.0.0',()=>console.log(`Jobbi Music listening on port ${PORT}`));
