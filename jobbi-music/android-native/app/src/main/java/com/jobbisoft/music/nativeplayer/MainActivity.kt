@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -191,9 +192,8 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     var createPlaylist by remember { mutableStateOf(false) }
     var invite by remember { mutableStateOf(false) }
     var bulkChoice by remember { mutableStateOf<BulkChoice?>(null) }
-    var quarantineSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var quarantineConfirm by remember { mutableStateOf("") }
-    LaunchedEffect(quarantineSongs) { quarantineConfirm = "" }
+    var removalConfirm by remember { mutableStateOf("") }
+    LaunchedEffect(vm.removalPreviews) { removalConfirm = "" }
 
     DisposableEffect(player) { onDispose { player.disconnect() } }
     LaunchedEffect(player) {
@@ -272,7 +272,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     when(page) {
                         "Home" -> HomeScreen(vm,player,onSongAdd={addSong=it})
                         "Search" -> SearchScreen(vm,player,onSongAdd={addSong=it},
-                            onBulkPlaylist={bulkChoice=BulkChoice(it)},onQuarantine={quarantineSongs=it})
+                            onBulkPlaylist={bulkChoice=BulkChoice(it)},onQuarantine={vm.prepareSongRemoval(it)})
                         "Server" -> ServerDiscoverScreen(onBack={vm.select("Search")},initialQuery=vm.serverSearchSeed)
                         "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
                         "Profile" -> ProfileScreen(vm)
@@ -281,16 +281,16 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
                             emptyText="Heart songs to save them here.",isFavorites=true,
                             onBulkPlaylist={songs->bulkChoice=BulkChoice(songs)},
-                            onQuarantine={quarantineSongs=it})
+                            onQuarantine={vm.prepareSongRemoval(it)})
                         "Detail" -> DetailScreen(vm,player,onSongAdd={addSong=it},onInvite={invite=true},
                             onBulkPlaylist={songs,indices,move->
                                 bulkChoice=BulkChoice(songs,if(move)vm.detail?.id else null,indices,move)
-                            },onQuarantine={quarantineSongs=it})
+                            },onQuarantine={vm.prepareSongRemoval(it)})
                         "Import" -> ImportScreen(onBack={vm.select("More")})
                         else -> MoreScreen(vm,player)
                     }
                 }
-                if(vm.busy) LinearProgressIndicator(modifier=Modifier.fillMaxWidth().align(Alignment.TopCenter))
+                if(vm.busy||vm.removalBusy) LinearProgressIndicator(modifier=Modifier.fillMaxWidth().align(Alignment.TopCenter))
             }
         }
         if(showNowPlaying) ModalBottomSheet(onDismissRequest={showNowPlaying=false}) {
@@ -331,23 +331,57 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                 confirmButton={TextButton(onClick={bulkChoice=null}){Text("Cancel")}}
             )
         }
-        if(quarantineSongs.isNotEmpty()) {
-            val chosen=quarantineSongs
-            AlertDialog(onDismissRequest={quarantineSongs=emptyList()},
-                title={Text("Remove recordings from the NAS?")},
-                text={Column(verticalArrangement=Arrangement.spacedBy(7.dp)){
-                    Text("Move ${chosen.distinctBy{it.id}.size} recording(s) into a protected quarantine folder. "+
-                        "They disappear from the active music library after reindexing, but can be recovered by an administrator.")
-                    Text("This is NOT the same as removing songs from a playlist. "+
-                        "Only the administrator can perform this action.",color=MaterialTheme.colorScheme.error)
-                    Text(chosen.take(3).joinToString("\n") { it.artist+" — "+it.title })
-                    OutlinedTextField(quarantineConfirm,{quarantineConfirm=it},
-                        label={Text("Type QUARANTINE to confirm")},singleLine=true)
-                }},
-                confirmButton={TextButton(enabled=quarantineConfirm=="QUARANTINE",onClick={
-                    vm.quarantineSelected(chosen);quarantineSongs=emptyList()
-                }){Text("Move to quarantine")}},
-                dismissButton={TextButton(onClick={quarantineSongs=emptyList()}){Text("Cancel")}}
+        if(vm.removalPreviews.isNotEmpty()) {
+            val reviews=vm.removalPreviews
+            AlertDialog(
+                onDismissRequest=vm::dismissSongRemoval,
+                title={Text("Remove from shared music server?")},
+                text={
+                    Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement=Arrangement.spacedBy(8.dp)){
+                        Text("This moves ${reviews.size} recording(s) to recoverable NAS quarantine. "+
+                            "It removes the recording for EVERY listener, not just your playlists.",
+                            color=MaterialTheme.colorScheme.error)
+                        reviews.forEach { impact ->
+                            val song=impact.optJSONObject("song")
+                            Text((song?.optString("artist")?:"")+" — "+
+                                (song?.optString("title")?:"Recording"),
+                                fontWeight=FontWeight.SemiBold)
+                            val refs=impact.optJSONArray("references")
+                            if(refs==null||refs.length()==0)Text(
+                                "No references found in accessible playlists.",
+                                style=MaterialTheme.typography.bodySmall)
+                            else for(i in 0 until minOf(refs.length(),12)){
+                                val ref=refs.optJSONObject(i)?:continue
+                                val description=when {
+                                    ref.optBoolean("restricted") ->
+                                        "Another user has this recording in a private playlist (name hidden)"
+                                    ref.optBoolean("own") ->
+                                        "You have this song in: "+ref.optString("name")
+                                    else ->
+                                        ref.optString("owner","Another user")+
+                                            " has this song in: "+ref.optString("name")
+                                }
+                                Text("• "+description,style=MaterialTheme.typography.bodySmall)
+                            }
+                            if(refs!=null&&refs.length()>12)
+                                Text("And ${refs.length()-12} more playlist references…",
+                                    style=MaterialTheme.typography.bodySmall)
+                        }
+                        Text("Important: Other users' private Navidrome playlists "+
+                            "cannot all be inspected. Even if none appear above, this "+
+                            "recording may still be used by other listeners.",
+                            style=MaterialTheme.typography.bodySmall,
+                            color=MaterialTheme.colorScheme.error)
+                        OutlinedTextField(removalConfirm,{removalConfirm=it},
+                            label={Text("Type REMOVE to confirm")},
+                            singleLine=true,modifier=Modifier.fillMaxWidth())
+                    }
+                },
+                confirmButton={TextButton(enabled=removalConfirm=="REMOVE"&&!vm.removalBusy,
+                    onClick=vm::confirmSongRemoval){Text("Move recording(s) to quarantine")}},
+                dismissButton={TextButton(onClick=vm::dismissSongRemoval,
+                    enabled=!vm.removalBusy){Text("Cancel")}}
             )
         }
         if(createPlaylist) {
@@ -476,7 +510,7 @@ private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)
         itemsIndexed(vm.home.songs,key={_,s->s.id}) { index,song ->
             SongRow(song,index,vm.favoriteIds.contains(song.id),
                 play={player.play(vm.home.songs,index)},favorite={vm.toggleFavorite(song)},
-                add={onSongAdd(song)})
+                add={onSongAdd(song)},removeFromNas={vm.prepareSongRemoval(listOf(song))})
         }
     }
 }
@@ -524,7 +558,8 @@ private fun Cover(art:String?,size: androidx.compose.ui.unit.Dp,modifier:Modifie
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:()->Unit,
-                    add:()->Unit, selected:Boolean=false,selectionMode:Boolean=false,
+                    add:()->Unit, removeFromNas:()->Unit={},
+                    selected:Boolean=false,selectionMode:Boolean=false,
                     onSelect:()->Unit={},onLongSelect:()->Unit={}) {
     Row(Modifier.fillMaxWidth()
         .background(if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
@@ -552,6 +587,11 @@ private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:
             }
             IconButton(onClick=add,modifier=Modifier.size(40.dp)){
                 Icon(Icons.Rounded.Add,contentDescription="Add to playlist")
+            }
+            IconButton(onClick=removeFromNas,modifier=Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.DeleteOutline,
+                    contentDescription="Remove ${song.title} from NAS",
+                    tint=MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -605,11 +645,11 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
             onPlaylist={onBulkPlaylist(selected.sorted().map(songs::get));selected=emptySet();selecting=false},
             onRemove=if(isFavorites){{vm.favoriteSelected(selected.sorted().map(songs::get),false);
                 selected=emptySet();selecting=false}}else null,
-            onQuarantine=if(vm.isAdmin){{onQuarantine(selected.sorted().map(songs::get))}}else null)
+            onQuarantine={{onQuarantine(selected.sorted().map(songs::get))}}else null)
         LazyColumn(contentPadding=PaddingValues(vertical=10.dp)) {
             itemsIndexed(songs,key={i,s->"$i:${s.id}"}){index,song->
                 SongRow(song,index,song.id in vm.favoriteIds,
-                    play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                    play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},removeFromNas={vm.prepareSongRemoval(listOf(song))},
                     selected=index in selected,selectionMode=selecting,
                     onSelect={selected=if(index in selected)selected-index else selected+index},
                     onLongSelect={selecting=true;selected=selected+index})
@@ -678,7 +718,7 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                         onClear={selected=emptySet()},
                         onFavorite={vm.favoriteSelected(chosen,true)},
                         onPlaylist={onBulkPlaylist(chosen);selected=emptySet();selecting=false},
-                        onQuarantine=if(vm.isAdmin){{onQuarantine(chosen)}}else null)
+                        onQuarantine={{onQuarantine(chosen)}}else null)
                 }
                 itemsIndexed(vm.searchResult.songs,key={i,s->"$i:${s.id}"}) {index,song->
                     SongRow(song,index,song.id in vm.favoriteIds,
@@ -851,13 +891,14 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                     selecting=false;selected=emptySet()}}else null,
                 onRemove=if(detail.isPlaylist){{vm.removeSelectedFromPlaylist(selected.toList());
                     selected=emptySet();selecting=false}}else null,
-                onQuarantine=if(vm.isAdmin){{onQuarantine(chosen)}}else null)
+                onQuarantine={{onQuarantine(chosen)}}else null)
         }
         itemsIndexed(listed,key={_,pair->"${pair.first}:${pair.second.id}"}){index,pair->
             val song=pair.second
             val playingList=listed.map{it.second}
             SongRow(song,index,song.id in vm.favoriteIds,
                 play={player.play(playingList,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                removeFromNas={vm.prepareSongRemoval(listOf(song))},
                 selected=pair.first in selected,selectionMode=selecting,
                 onSelect={selected=if(pair.first in selected)selected-pair.first else selected+pair.first},
                 onLongSelect={selecting=true;selected=selected+pair.first})
