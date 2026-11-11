@@ -741,10 +741,14 @@ function App() {
         <div className="playlist-graphic"><ListMusic size={31}/></div>
         <strong>{p.name}</strong><span>{p.songCount||0} songs</span>
       </button>
-      <button type="button" className="playlist-download-action"
-        aria-label={'Download '+p.name} onClick={()=>downloadCollection('playlist',p.id,p.name)}>
+      <a className="playlist-download-action"
+        href={'/api/download/collection?scope=playlist&playlistId='+encodeURIComponent(p.id)}
+        aria-label={'Download '+p.name} onClick={event=>{
+          event.preventDefault();
+          downloadCollection('playlist',p.id,p.name);
+        }}>
         <ArrowDownToLine size={15}/> Download playlist
-      </button>
+      </a>
     </div>)}</div>
   </section>}</>;
   if(page.id==='social')main=<SocialSpace api={api} user={user} playTracks={playTracks} onSave={androidApp?saveOffline:undefined} nativePlaylists={home?.playlists||[]} initialPlaylistId={page.idValue} onProfileUpdate={updateSocialProfile} onDiscoverMusic={()=>{setSearchTab('soulseek');setPage({id:'search'})}}/>;
