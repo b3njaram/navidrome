@@ -1,3 +1,11 @@
+## Download full playlists and Favorites
+
+**Website:** In **Your Library**, use **Download playlist** on any playlist card or **Download all playlists** in the heading. The Favorites screen has **Download all Favorite songs**. The browser receives a streamed, original-audio **ZIP archive** (FLAC/MP3/etc. exactly as in Navidrome), organized into separately numbered playlist folders. Song names are sanitized for safe cross-platform ZIP extraction, and repeated recordings appearing in different playlists remain in each playlist's folder. Archives are limited to 10,000 track entries / 250 playlists per request; if over the limit, download individual playlists instead. The download never deletes or alters NAS recordings. Allow time and sufficient local storage for large archives.
+
+**Native Android APK v1.0.5:** Use the download icon on each playlist, the **Download all playlists** button in Library, or **Download all** on Favorites. Confirm whether transfers should wait for Wi-Fi (default) or use mobile data. The Android OS queues actual original-quality recordings into **device-private music storage**, continues transfers in the background, and automatically skips files already queued or downloaded even when they occur in multiple playlists. **More → Offline downloads** displays completed/queued/failed counts. Saved recordings are preferred during playback, and the **Downloaded music** screen can play those recordings offline even if the server cannot be reached, when secure remembered sign-in is enabled. Failed queued transfers (for example if the 12-hour server session expires) can be retried by downloading the collection again after logging in; already completed tracks are skipped. Avoid clearing app data/uninstalling if you wish to keep downloaded files.
+
+The website downloads portable ZIP files; the native APK saves music for offline playback, rather than producing one large ZIP. Both download from the user's existing, authenticated Navidrome library — not from Soulseek peer search.
+
 # Jobbi Music — Navidrome frontend
 
 A separate React + Node.js music player preview for the Synology NAS. This does not replace the current Navidrome server or modify its music library.
