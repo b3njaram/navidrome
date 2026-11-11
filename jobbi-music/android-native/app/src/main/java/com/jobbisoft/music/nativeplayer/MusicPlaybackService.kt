@@ -58,7 +58,7 @@ class MusicPlaybackService : MediaSessionService() {
         val songId=activeSongId?.takeIf{it.isNotBlank()}?:return
         if(counted||failed)return
         val target=if(activeDurationMs>0)
-            minOf(4L*60L*1000L,maxOf(30_000L,activeDurationMs/2))
+            minOf(4L*60L*1000L,maxOf(5_000L,activeDurationMs/2))
             else 30_000L
         if(listenedMs<target)return
         counted=true
