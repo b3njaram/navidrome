@@ -133,7 +133,8 @@ class NativePlayer(private val context: Context) {
                 .build()
             MediaItem.Builder()
                 .setMediaId(song.id)
-                .setUri(Uri.parse(JobbiApi.streamUrl(song.id)))
+                .setUri(JobbiDownloads.playableUri(context,JobbiApi.username,JobbiApi.serverUrl(),song.id)
+                    ?: Uri.parse(JobbiApi.streamUrl(song.id)))
                 .setMediaMetadata(metadata)
                 .build()
         }
