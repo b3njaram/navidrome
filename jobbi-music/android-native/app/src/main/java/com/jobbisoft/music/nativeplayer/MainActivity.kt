@@ -170,6 +170,7 @@ private fun JobbiTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
+private data class DownloadChoice(val kind:String,val title:String,val id:String="")
 private data class BulkChoice(val songs:List<Song>,val sourceId:String?=null,
     val indices:List<Int> = emptyList(), val move:Boolean=false)
 private data class Dest(val name: String, val icon: ImageVector)
@@ -192,12 +193,20 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     var createPlaylist by remember { mutableStateOf(false) }
     var invite by remember { mutableStateOf(false) }
     var bulkChoice by remember { mutableStateOf<BulkChoice?>(null) }
+    var downloadChoice by remember { mutableStateOf<DownloadChoice?>(null) }
+    var downloadWifiOnly by remember { mutableStateOf(true) }
     var removalConfirm by remember { mutableStateOf("") }
     LaunchedEffect(vm.removalPreviews) { removalConfirm = "" }
 
     DisposableEffect(player) { onDispose { player.disconnect() } }
     LaunchedEffect(player) {
         while (isActive) { player.tick(); delay(450) }
+    }
+    LaunchedEffect(vm.signedIn,vm.account) {
+        while(isActive&&vm.signedIn){
+            vm.updateDownloadStats()
+            delay(20000)
+        }
     }
     LaunchedEffect(vm.error,vm.message,player.error) {
         val value = vm.error.ifBlank { vm.message }.ifBlank { player.error }
@@ -277,12 +286,17 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
                         "Profile" -> ProfileScreen(vm)
                         "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
-                        "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true})
+                        "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true},
+                            onDownloadPlaylist={p->downloadChoice=DownloadChoice("playlist",p.name,p.id)},
+                            onDownloadAll={downloadChoice=DownloadChoice("all","All playlists")},
+                            onDownloadFavorites={downloadChoice=DownloadChoice("favorites","Favorites")})
                         "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
                             emptyText="Heart songs to save them here.",isFavorites=true,
+                            onDownloadFavorites={downloadChoice=DownloadChoice("favorites","Favorites")},
                             onBulkPlaylist={songs->bulkChoice=BulkChoice(songs)},
                             onQuarantine={vm.prepareSongRemoval(it)})
                         "Detail" -> DetailScreen(vm,player,onSongAdd={addSong=it},onInvite={invite=true},
+                            onDownloadPlaylist={id,title->downloadChoice=DownloadChoice("playlist",title,id)},
                             onBulkPlaylist={songs,indices,move->
                                 bulkChoice=BulkChoice(songs,if(move)vm.detail?.id else null,indices,move)
                             },onQuarantine={vm.prepareSongRemoval(it)})
@@ -311,6 +325,35 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
             },
             confirmButton={TextButton(onClick={addSong=null}) {Text("Close")}}
         )
+        if(downloadChoice!=null){
+            val choice=downloadChoice!!
+            AlertDialog(
+                onDismissRequest={downloadChoice=null},
+                title={Text("Download "+choice.title+"?")},
+                text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
+                    Text("Save original audio on this device for offline playback. "+
+                        "Already saved recordings are skipped, even when they appear "+
+                        "in several playlists. Downloads continue in the background.")
+                    Row(verticalAlignment=Alignment.CenterVertically){
+                        Checkbox(downloadWifiOnly,onCheckedChange={downloadWifiOnly=it})
+                        Text("Wi-Fi only (recommended for large collections)",
+                            style=MaterialTheme.typography.bodyMedium)
+                    }
+                    if(choice.kind=="all")Text("Every accessible playlist will be queued. "+
+                        "Large libraries can use significant phone storage.",
+                        style=MaterialTheme.typography.bodySmall)
+                }},
+                confirmButton={TextButton(onClick={
+                    when(choice.kind){
+                        "favorites"->vm.downloadFavorites(downloadWifiOnly)
+                        "all"->vm.downloadAllPlaylists(downloadWifiOnly)
+                        else->vm.downloadPlaylist(choice.id,downloadWifiOnly)
+                    }
+                    downloadChoice=null
+                }){Text("Download")}},
+                dismissButton={TextButton(onClick={downloadChoice=null}){Text("Cancel")}}
+            )
+        }
         if(bulkChoice!=null) {
             val request=bulkChoice!!
             AlertDialog(onDismissRequest={bulkChoice=null},
@@ -619,6 +662,7 @@ private fun SelectionActions(count:Int,total:Int,onAll:()->Unit,onClear:()->Unit
 @Composable
 private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
                         onSongAdd:(Song)->Unit,emptyText:String,isFavorites:Boolean=false,
+                        onDownloadFavorites:()->Unit={},
                         onBulkPlaylist:(List<Song>)->Unit={},
                         onQuarantine:(List<Song>)->Unit={}) {
     var selecting by remember { mutableStateOf(false) }
@@ -632,9 +676,12 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=5.dp),
             horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-            if(isFavorites)FilledTonalButton(onClick={
-                player.play(songs.shuffled())
-            }){Icon(Icons.Rounded.Shuffle,null);Spacer(Modifier.width(6.dp));Text("Shuffle Favorites")}
+            if(isFavorites){
+                FilledTonalButton(onClick={player.play(songs.shuffled())}){
+                    Icon(Icons.Rounded.Shuffle,null);Spacer(Modifier.width(6.dp));Text("Shuffle")}
+                OutlinedButton(onClick=onDownloadFavorites){
+                    Icon(Icons.Rounded.Download,null);Spacer(Modifier.width(6.dp));Text("Download all")}
+            }
             TextButton(onClick={selecting=!selecting;selected=emptySet()}) {
                 Text(if(selecting)"Done" else "Select songs")
             }
@@ -735,7 +782,9 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
 }
 
 @Composable
-private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit) {
+private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
+                          onDownloadPlaylist:(MusicPlaylist)->Unit,
+                          onDownloadAll:()->Unit,onDownloadFavorites:()->Unit) {
     LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
@@ -744,6 +793,16 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit) {
                 Icon(Icons.Rounded.Favorite,null)
                 Spacer(Modifier.width(8.dp))
                 Text("Favorites · Saved songs")
+            }
+        }
+        item {
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),
+                verticalAlignment=Alignment.CenterVertically){
+                OutlinedButton(onClick=onDownloadAll){
+                    Icon(Icons.Rounded.Download,null);Spacer(Modifier.width(5.dp))
+                    Text("Download all playlists")
+                }
+                TextButton(onClick=onDownloadFavorites){Text("Download Favorites")}
             }
         }
         item {
@@ -768,6 +827,9 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit) {
                             color=MaterialTheme.colorScheme.onSurfaceVariant,
                             style=MaterialTheme.typography.bodySmall)
                     }
+                    IconButton(onClick={onDownloadPlaylist(playlist)}){
+                        Icon(Icons.Rounded.Download,contentDescription="Download ${playlist.name}")
+                    }
                 }
             }
         }
@@ -791,7 +853,7 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit) {
 
 @Composable
 private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
-                         onInvite:()->Unit,
+                         onInvite:()->Unit,onDownloadPlaylist:(String,String)->Unit,
                          onBulkPlaylist:(List<Song>,List<Int>,Boolean)->Unit,
                          onQuarantine:(List<Song>)->Unit) {
     val detail = vm.detail ?: return
@@ -830,6 +892,11 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                     }
                     AssistChip(onClick={picker.launch("image/*")},
                         label={Text("Cover")},leadingIcon={Icon(Icons.Rounded.CloudUpload,null)})
+                    if(detail.isPlaylist)
+                        OutlinedButton(onClick={onDownloadPlaylist(detail.id,detail.title)}){
+                            Icon(Icons.Rounded.Download,null);Spacer(Modifier.width(5.dp))
+                            Text("Download")
+                        }
                 }
                 Row(verticalAlignment=Alignment.CenterVertically){
                     TextButton(onClick={selecting=!selecting;selected=emptySet()}){
@@ -1027,6 +1094,17 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
             Icon(Icons.Rounded.Settings,null)
             Spacer(Modifier.width(8.dp))
             Text("Admin console")
+        }
+        Text("Offline downloads",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
+        Text("${vm.downloadStats.saved} saved · ${vm.downloadStats.queued} queued · "+
+            "${vm.downloadStats.failed} failed",
+            style=MaterialTheme.typography.bodyMedium)
+        Text("Saved original recordings play locally whenever they're available. "+
+            "Android handles background transfers; large bulk downloads default to Wi-Fi only.",
+            style=MaterialTheme.typography.bodySmall,
+            color=MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick=vm::updateDownloadStats){
+            Icon(Icons.Rounded.Refresh,null);Text("Refresh downloads")
         }
         Text("Streaming quality",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
