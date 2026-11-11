@@ -192,6 +192,8 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     var invite by remember { mutableStateOf(false) }
     var bulkChoice by remember { mutableStateOf<BulkChoice?>(null) }
     var quarantineSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var quarantineConfirm by remember { mutableStateOf("") }
+    LaunchedEffect(quarantineSongs) { quarantineConfirm = "" }
 
     DisposableEffect(player) { onDispose { player.disconnect() } }
     LaunchedEffect(player) {
@@ -327,8 +329,10 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     Text("This is NOT the same as removing songs from a playlist. "+
                         "Only the administrator can perform this action.",color=MaterialTheme.colorScheme.error)
                     Text(chosen.take(3).joinToString("\n") { it.artist+" — "+it.title })
+                    OutlinedTextField(quarantineConfirm,{quarantineConfirm=it},
+                        label={Text("Type QUARANTINE to confirm")},singleLine=true)
                 }},
-                confirmButton={TextButton(onClick={
+                confirmButton={TextButton(enabled=quarantineConfirm=="QUARANTINE",onClick={
                     vm.quarantineSelected(chosen);quarantineSongs=emptyList()
                 }){Text("Move to quarantine")}},
                 dismissButton={TextButton(onClick={quarantineSongs=emptyList()}){Text("Cancel")}}
