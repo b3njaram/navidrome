@@ -29,6 +29,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
  */
 class MusicPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var playback: ExoPlayer? = null
     // Account-aware listening history must live with the playback service,
     // not only the activity. Background playback still gets counted.
     private val scrobbleScope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
@@ -54,6 +56,13 @@ class MusicPlaybackService : MediaSessionService() {
         override fun run(){
             sampleClock()
             recordIfQualified()
+            val deadline=getSharedPreferences("jobbi-playback-timer",Context.MODE_PRIVATE)
+                .getLong("pause-at",0L)
+            if(deadline>0 && System.currentTimeMillis()>=deadline){
+                playback?.pause()
+                getSharedPreferences("jobbi-playback-timer",Context.MODE_PRIVATE)
+                    .edit().remove("pause-at").apply()
+            }
             progressHandler.postDelayed(this,5000L)
         }
     }
@@ -122,6 +131,7 @@ class MusicPlaybackService : MediaSessionService() {
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSource)
             .build()
+        playback=player
         player.setHandleAudioBecomingNoisy(true)
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.repeatMode = Player.REPEAT_MODE_OFF
@@ -137,6 +147,7 @@ class MusicPlaybackService : MediaSessionService() {
         scrobbleScope.cancel()
         session?.run { player.release(); release() }
         session = null
+        playback = null
         super.onDestroy()
     }
 }
@@ -160,6 +171,16 @@ class NativePlayer(private val context: Context) {
         private set
     var queue by mutableStateOf<List<Song>>(emptyList())
         private set
+    var currentIndex by mutableIntStateOf(-1)
+        private set
+    var shuffleEnabled by mutableStateOf(false)
+        private set
+    var repeatMode by mutableIntStateOf(Player.REPEAT_MODE_OFF)
+        private set
+    var sleepUntil by mutableLongStateOf(0L)
+        private set
+    private val songIndex=mutableMapOf<String,Song>()
+    private fun timerPrefs()=context.getSharedPreferences("jobbi-playback-timer",Context.MODE_PRIVATE)
 
     private var pending: Pair<List<Song>,Int>? = null
     private var future: ListenableFuture<MediaController>? = null
@@ -193,8 +214,22 @@ class NativePlayer(private val context: Context) {
     private fun syncFromPlayer(player: Player) {
         playing = player.isPlaying
         val index = player.currentMediaItemIndex
-        val song = queue.getOrNull(index)
+        val actual=(0 until player.mediaItemCount).map{n->
+            val item=player.getMediaItemAt(n)
+            songIndex[item.mediaId] ?: Song(
+                id=item.mediaId,
+                title=item.mediaMetadata.title?.toString() ?: "Unknown track",
+                artist=item.mediaMetadata.artist?.toString() ?: "Unknown artist",
+                album=item.mediaMetadata.albumTitle?.toString() ?: "",
+                cover=null,duration=0L
+            ).also{songIndex[item.mediaId]=it}
+        }
+        if(queue!=actual)queue=actual
+        currentIndex=index
+        val song=queue.getOrNull(index)
         active = song
+        shuffleEnabled=player.shuffleModeEnabled
+        repeatMode=player.repeatMode
         duration = if (player.duration > 0 && player.duration != androidx.media3.common.C.TIME_UNSET)
             player.duration else (song?.duration ?: 0L) * 1000L
         position = player.currentPosition.coerceAtLeast(0)
@@ -204,6 +239,23 @@ class NativePlayer(private val context: Context) {
 
     fun tick() {
         controller?.let { syncFromPlayer(it) }
+        sleepUntil=timerPrefs().getLong("pause-at",0L)
+    }
+
+    private fun mediaItem(song:Song):MediaItem {
+        songIndex[song.id]=song
+        val metadata=MediaMetadata.Builder()
+            .setTitle(song.title)
+            .setArtist(song.artist)
+            .setAlbumTitle(song.album)
+            .setArtworkUri(JobbiApi.coverUrl(song.cover)?.let(Uri::parse))
+            .build()
+        return MediaItem.Builder()
+            .setMediaId(song.id)
+            .setUri(JobbiDownloads.playableUri(context,JobbiApi.username,
+                JobbiApi.serverUrl(),song.id) ?: Uri.parse(JobbiApi.streamUrl(song.id)))
+            .setMediaMetadata(metadata)
+            .build()
     }
 
     fun play(songs: List<Song>, start: Int = 0) {
@@ -212,20 +264,7 @@ class NativePlayer(private val context: Context) {
         val chosen = start.coerceIn(0, songs.lastIndex)
         val c = controller
         if (c == null) { pending = songs to chosen; connect(); return }
-        val items = songs.map { song ->
-            val metadata = MediaMetadata.Builder()
-                .setTitle(song.title)
-                .setArtist(song.artist)
-                .setAlbumTitle(song.album)
-                .setArtworkUri(JobbiApi.coverUrl(song.cover)?.let(Uri::parse))
-                .build()
-            MediaItem.Builder()
-                .setMediaId(song.id)
-                .setUri(JobbiDownloads.playableUri(context,JobbiApi.username,JobbiApi.serverUrl(),song.id)
-                    ?: Uri.parse(JobbiApi.streamUrl(song.id)))
-                .setMediaMetadata(metadata)
-                .build()
-        }
+        val items = songs.map(::mediaItem)
         error = ""
         c.setMediaItems(items,chosen,0)
         c.prepare()
@@ -233,6 +272,96 @@ class NativePlayer(private val context: Context) {
         syncFromPlayer(c)
     }
 
+    fun playNext(song:Song){
+        if(song.id.isBlank())return
+        val c=controller
+        if(c==null){
+            val waiting=pending
+            if(waiting!=null){
+                val at=(waiting.second+1).coerceIn(0,waiting.first.size)
+                val modified=waiting.first.toMutableList().apply{add(at,song)}
+                pending=modified to waiting.second
+                queue=modified
+            }else play(listOf(song))
+            return
+        }
+        if(c.mediaItemCount==0){play(listOf(song));return}
+        c.addMediaItem((c.currentMediaItemIndex+1).coerceIn(0,c.mediaItemCount),mediaItem(song))
+        syncFromPlayer(c)
+    }
+    fun addToQueue(song:Song){
+        if(song.id.isBlank())return
+        val c=controller
+        if(c==null){
+            val waiting=pending
+            if(waiting!=null){
+                val modified=waiting.first+song
+                pending=modified to waiting.second
+                queue=modified
+            }else play(listOf(song))
+            return
+        }
+        if(c.mediaItemCount==0){play(listOf(song));return}
+        c.addMediaItem(mediaItem(song))
+        syncFromPlayer(c)
+    }
+    fun moveUpcoming(from:Int,to:Int){
+        val c=controller?:return
+        if(from<=c.currentMediaItemIndex||to<=c.currentMediaItemIndex||
+            from<0||to<0||from>=c.mediaItemCount||to>=c.mediaItemCount)return
+        c.moveMediaItem(from,to)
+        syncFromPlayer(c)
+    }
+    fun removeUpcoming(index:Int){
+        val c=controller?:return
+        if(index<=c.currentMediaItemIndex||index>=c.mediaItemCount)return
+        c.removeMediaItem(index)
+        syncFromPlayer(c)
+    }
+    fun clearUpcoming(){
+        val c=controller?:return
+        val start=c.currentMediaItemIndex+1
+        if(start>=0&&start<c.mediaItemCount)c.removeMediaItems(start,c.mediaItemCount)
+        syncFromPlayer(c)
+    }
+    fun jumpTo(index:Int){
+        val c=controller?:return
+        if(index<0||index>=c.mediaItemCount)return
+        c.seekTo(index,0L)
+        c.play()
+        syncFromPlayer(c)
+    }
+    fun toggleShuffle(){
+        val c=controller?:return
+        if(!shuffleEnabled){
+            val start=c.currentMediaItemIndex+1
+            if(start>=0&&start<c.mediaItemCount){
+                val upcoming=(start until c.mediaItemCount).map(c::getMediaItemAt).shuffled()
+                c.removeMediaItems(start,c.mediaItemCount)
+                c.addMediaItems(start,upcoming)
+            }
+        }
+        // Shuffle acts on the upcoming list, without hiding manually enqueued
+        // Play Next tracks behind Media3's randomized traversal.
+        shuffleEnabled=!shuffleEnabled
+        c.shuffleModeEnabled=false
+        syncFromPlayer(c)
+    }
+    fun cycleRepeat(){
+        val c=controller?:return
+        c.repeatMode=when(c.repeatMode){
+            Player.REPEAT_MODE_OFF->Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL->Player.REPEAT_MODE_ONE
+            else->Player.REPEAT_MODE_OFF
+        }
+        syncFromPlayer(c)
+    }
+    fun setSleepTimer(minutes:Int){
+        val deadline=if(minutes>0)System.currentTimeMillis()+minutes*60_000L else 0L
+        if(deadline>0)timerPrefs().edit().putLong("pause-at",deadline).apply()
+        else timerPrefs().edit().remove("pause-at").apply()
+        sleepUntil=deadline
+    }
     fun toggle() {
         controller?.let { if(it.isPlaying) it.pause() else {it.prepare();it.play()} }
     }
@@ -249,10 +378,13 @@ class NativePlayer(private val context: Context) {
     fun shuffle(enabled: Boolean) { controller?.shuffleModeEnabled=enabled }
     fun repeat(mode: Int) { controller?.repeatMode=mode }
     fun stop() {
+        setSleepTimer(0)
         pending = null
         controller?.stop()
         controller?.clearMediaItems()
         queue = emptyList()
+        songIndex.clear()
+        currentIndex = -1
         active = null
         playing = false
     }
