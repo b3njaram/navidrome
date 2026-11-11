@@ -24,7 +24,9 @@ data class Song(
     val album: String,
     val cover: String?,
     val duration: Long,
-    val albumId: String? = null
+    val albumId: String? = null,
+    val suffix: String = "",
+    val size: Long = 0L
 )
 data class Album(val id: String, val name: String, val artist: String, val cover: String?)
 data class MusicPlaylist(val id: String, val name: String, val count: Int, val public: Boolean)
@@ -50,7 +52,9 @@ fun JSONObject.song(): Song = Song(
     album = optStr("album", "Unknown album"),
     cover = optStr("coverArt").ifEmpty { null },
     duration = optLong("duration", 0L),
-    albumId = optStr("albumId").ifEmpty { null }
+    albumId = optStr("albumId").ifEmpty { null },
+    suffix = optStr("suffix"),
+    size = optLong("size",0L)
 )
 fun JSONObject.album(): Album = Album(
     optStr("id"), optStr("name", optStr("title", "Untitled")),
@@ -200,6 +204,10 @@ object JobbiApi {
     suspend fun uploadAvatar(bytes: ByteArray, mime: String) {
         require(bytes.size in 16..1_048_576 && mime in listOf("image/jpeg","image/png","image/webp"))
         request("/api/social/me/avatar", method="POST",bytes=bytes,mime=mime)
+    }
+    fun cookieHeader(relative: String): String {
+        val target = authenticatedUrl(relative).toHttpUrl()
+        return jar.loadForRequest(target).joinToString("; ") { it.name + "=" + it.value }
     }
     fun authenticatedUrl(relative: String): String {
         require(relative.startsWith("/api/") && !relative.contains("..") && !relative.startsWith("//"))
