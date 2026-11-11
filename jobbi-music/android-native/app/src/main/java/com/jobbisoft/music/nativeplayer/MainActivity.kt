@@ -204,6 +204,18 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
         if(value.isNotBlank())snack.showSnackbar(value,withDismissAction=true)
     }
     JobbiTheme {
+        if(vm.restoringSession){
+            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+                Column(horizontalAlignment=Alignment.CenterHorizontally,
+                    verticalArrangement=Arrangement.spacedBy(15.dp)){
+                    CircularProgressIndicator()
+                    Text("Restoring your Jobbi Music session…")
+                    Text("Signing in securely",style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            return@JobbiTheme
+        }
         if (!vm.signedIn) {
             LoginScreen(vm)
             return@JobbiTheme
@@ -371,6 +383,7 @@ private fun LoginScreen(vm: MusicViewModel) {
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var server by remember { mutableStateOf(vm.server) }
+    var keepSignedIn by remember { mutableStateOf(true) }
     Box(Modifier.fillMaxSize().background(
         Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface,
             MaterialTheme.colorScheme.primaryContainer.copy(alpha=.5f),
@@ -395,10 +408,27 @@ private fun LoginScreen(vm: MusicViewModel) {
             OutlinedTextField(password,{password=it},label={Text("Password")},
                 visualTransformation=PasswordVisualTransformation(),
                 singleLine=true,modifier=Modifier.fillMaxWidth())
-            Button(onClick={vm.login(user,password,server)},
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Checkbox(checked=keepSignedIn,onCheckedChange={keepSignedIn=it},
+                    enabled=!vm.busy)
+                Column(Modifier.weight(1f)){
+                    Text("Keep me signed in",style=MaterialTheme.typography.bodyMedium)
+                    Text("Encrypted on this device with Android Keystore",
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Button(onClick={vm.login(user,password,server,keepSignedIn)},
                 enabled=!vm.busy&&user.isNotBlank()&&password.isNotBlank(),
                 modifier=Modifier.fillMaxWidth().height(54.dp)) {
                 Icon(Icons.Rounded.PlayArrow,null); Spacer(Modifier.width(9.dp)); Text("Listen now")
+            }
+            if(vm.savedSignInAvailable) OutlinedButton(onClick=vm::retrySavedSignIn,
+                enabled=!vm.busy && !vm.restoringSession,
+                modifier=Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Refresh,null)
+                Spacer(Modifier.width(8.dp))
+                Text("Retry saved sign-in")
             }
             Text("Native playback · No WebView · Secured HTTPS",
                 style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -926,6 +956,11 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
         .padding(22.dp),verticalArrangement=Arrangement.spacedBy(15.dp)){
         Text("Music settings",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
         Text("Signed in as ${vm.account}",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if(vm.savedSignInAvailable)
+            "Automatic sign-in enabled · encrypted on this device"
+            else "Automatic sign-in disabled · you'll sign in again after closing the app",
+            style=MaterialTheme.typography.bodySmall,
+            color=MaterialTheme.colorScheme.onSurfaceVariant)
         FilledTonalButton(onClick={vm.select("Profile")},modifier=Modifier.fillMaxWidth()){
             Icon(Icons.Rounded.PersonAdd,null)
             Spacer(Modifier.width(8.dp))
