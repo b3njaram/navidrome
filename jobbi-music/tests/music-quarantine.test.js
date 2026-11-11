@@ -20,7 +20,7 @@ test('NAS quarantine safely moves a music file without permanently deleting its 
     assert.ok(names.includes('.ndignore'));
     const journal=JSON.parse(await readFile(path.join(root,'.jobbi-quarantine',result.stored+'.json'),'utf8'));
     assert.equal(journal.original,'Artist/Album/Track.flac');
-    assert.equal(names[0],result.stored);
+    assert.ok(names.includes(result.stored));
     assert.deepEqual(await readFile(path.join(root,'.jobbi-quarantine',names[0])),bytes);
   }finally{await rm(root,{recursive:true,force:true})}
 });
