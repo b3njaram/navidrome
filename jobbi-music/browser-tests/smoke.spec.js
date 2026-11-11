@@ -631,8 +631,12 @@ test('Favorites have a shuffle button and bulk copy to another playlist',async({
   const state=await setupMocks(page,{favoriteSongIds:['s1']});
   const errors=[];page.on('pageerror',err=>errors.push(err.message));
   await login(page,'listener');
-  const favorites=page.locator('.sidebar').getByRole('button',{name:'Favorites',exact:true});
-  await favorites.click();
+  if(await page.locator('.sidebar').isVisible()){
+    await page.locator('.sidebar').getByRole('button',{name:'Favorites',exact:true}).click();
+  }else{
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:'Favorites'}).click();
+  }
   await expect(page.getByRole('button',{name:'Shuffle Favorites'})).toBeEnabled();
   await page.getByRole('button',{name:'Select songs'}).click();
   await page.getByRole('button',{name:'Select all'}).click();
