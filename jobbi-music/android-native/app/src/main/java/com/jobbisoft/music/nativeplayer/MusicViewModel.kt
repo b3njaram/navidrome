@@ -94,7 +94,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             "jobbi-native-weather",android.content.Context.MODE_PRIVATE)
             .getString("city:"+account.lowercase(),"").orEmpty()
     }
-    fun setWeatherCity(city:String){
+    fun chooseWeatherCity(city:String){
         val trimmed=city.trim().take(80)
         if(trimmed.isNotBlank()&&trimmed.length<2){
             recommendationsError="Enter at least two characters for your city."
