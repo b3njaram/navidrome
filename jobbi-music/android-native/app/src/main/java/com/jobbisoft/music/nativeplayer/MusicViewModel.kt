@@ -16,6 +16,10 @@ import org.json.JSONObject
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
     var signedIn by androidx.compose.runtime.mutableStateOf(false)
         private set
+    var offlineMode by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    var downloadedSongs by androidx.compose.runtime.mutableStateOf<List<Song>>(emptyList())
+        private set
     var restoringSession by androidx.compose.runtime.mutableStateOf(true)
         private set
     var savedSignInAvailable by androidx.compose.runtime.mutableStateOf(false)
@@ -80,51 +84,72 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun restoreSavedSignIn() {
-        if(signedIn)return
+        if(signedIn && !offlineMode)return
         viewModelScope.launch {
             restoringSession = true
             error = ""
+            var remembered: RememberedLogin? = null
             try {
-                val saved = withContext(Dispatchers.IO) {
+                remembered=withContext(Dispatchers.IO){
                     SecureLoginStorage.load(getApplication())
                 }
-                savedSignInAvailable = saved != null
+                savedSignInAvailable = remembered != null
+                val saved = remembered
                 if(saved != null){
-                    // A new process has no usable Jobbi cookie. Establish a new
-                    // HTTPS session using only the Keystore-encrypted account.
-                    JobbiApi.changeServer(getApplication(), saved.server)
+                    JobbiApi.changeServer(getApplication(),saved.server)
                     server = JobbiApi.serverUrl()
-                    account = JobbiApi.login(saved.username, saved.password)
+                    account = JobbiApi.login(saved.username,saved.password)
                     isAdmin = JobbiApi.isAdmin
+                    offlineMode = false
                     signedIn = true
+                    selected = "Home"
                     refresh()
                 }
             }catch(e: Exception){
                 JobbiApi.clearSession()
-                account = ""
                 isAdmin = false
                 if(e is JobbiException && e.status == 401){
-                    withContext(Dispatchers.IO) {
-                        runCatching { SecureLoginStorage.clear(getApplication()) }
+                    withContext(Dispatchers.IO){
+                        runCatching{SecureLoginStorage.clear(getApplication())}
                     }
                     savedSignInAvailable = false
-                    error = "Your saved credentials are no longer valid. Please sign in again."
+                    signedIn = false
+                    offlineMode = false
+                    account = ""
+                    error = "Saved credentials are no longer valid. Sign in again."
                 }else{
-                    // Offline/network/server failures must NOT erase the encrypted
-                    // account. Users can retry without retyping their password.
-                    error = "Couldn't restore your session: "+
-                        (e.message ?: "Server unavailable")+
-                        ". Your saved sign-in is still on this device; tap Retry."
+                    // Remembered account unlocks ONLY its own locally downloaded
+                    // music; no server actions or admin privileges are granted.
+                    val cached=remembered?.let {saved ->
+                        withContext(Dispatchers.IO){
+                            JobbiDownloads.downloadedSongs(getApplication(),saved.username,saved.server)
+                        }
+                    }.orEmpty()
+                    if(remembered!=null && cached.isNotEmpty()){
+                        account=remembered!!.username
+                        server=remembered!!.server
+                        JobbiApi.useOfflineIdentity(account)
+                        downloadedSongs=cached
+                        offlineMode=true
+                        signedIn=true
+                        selected="Downloads"
+                        message="You're offline. Playing ${cached.size} downloaded recordings. "+
+                            "Reconnect from More when the server becomes available."
+                        updateDownloadStats()
+                    }else{
+                        signedIn=false
+                        account=""
+                        error="Couldn't connect to your music server. "+
+                            "Your saved sign-in is still on this device; retry when online."
+                    }
                 }
-            }finally{
-                restoringSession = false
-            }
+            }finally{restoringSession=false}
         }
     }
     fun retrySavedSignIn() {
-        if(!signedIn && !restoringSession && savedSignInAvailable) restoreSavedSignIn()
+        if((!signedIn || offlineMode)&&!restoringSession&&savedSignInAvailable)
+            restoreSavedSignIn()
     }
-
     private fun execute(block: suspend () -> Unit) {
         viewModelScope.launch {
             busy = true
@@ -143,6 +168,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         account = confirmedAccount
         isAdmin = JobbiApi.isAdmin
         signedIn = true
+        offlineMode = false
         try {
             withContext(Dispatchers.IO) {
                 if(remember) {
@@ -165,9 +191,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // when the server is unavailable. Never silently log in after Sign out.
         withContext(Dispatchers.IO) { SecureLoginStorage.clear(getApplication()) }
         savedSignInAvailable = false
-        runCatching { JobbiApi.logout() }
+        if(!offlineMode)runCatching { JobbiApi.logout() }
         JobbiApi.clearSession()
         signedIn = false
+        offlineMode = false
+        downloadedSongs = emptyList()
         isAdmin = false
         account = ""
         selected = "Home"
@@ -177,9 +205,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         onComplete()
     }
     fun select(tab: String) {
+        if(offlineMode && tab !in setOf("Downloads","More")){
+            message="Reconnect in More to access online music. Your downloads are available."
+            selected="Downloads"
+            return
+        }
         selected = tab
         detail = null
         when(tab) {
+            "Downloads" -> refreshDownloadedSongs()
             "Home" -> refresh()
             "Library" -> loadLibrary()
             "Favorites" -> loadFavorites()
@@ -205,6 +239,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         updateDownloadStats()
     }
 
+    fun refreshDownloadedSongs() {
+        if(account.isBlank())return
+        viewModelScope.launch {
+            downloadedSongs=withContext(Dispatchers.IO){
+                JobbiDownloads.downloadedSongs(getApplication(),account,server)
+            }
+            updateDownloadStats()
+        }
+    }
     fun updateDownloadStats() {
         if(!signedIn||account.isBlank())return
         viewModelScope.launch {
@@ -221,7 +264,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         message="$label: ${result.queued} queued, ${result.alreadySaved} already saved"+
             (if(result.failed>0)", ${result.failed} failed to queue" else "")+
             ". "+result.notice
-        updateDownloadStats()
+        refreshDownloadedSongs()
     }
     fun downloadPlaylist(id:String,wifiOnly:Boolean=true)=execute {
         val playlist=JobbiApi.openPlaylist(id)
