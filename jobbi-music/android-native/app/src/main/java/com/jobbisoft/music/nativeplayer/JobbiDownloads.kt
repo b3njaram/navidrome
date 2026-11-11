@@ -107,7 +107,9 @@ object JobbiDownloads {
         val cookie=JobbiApi.cookieHeader("/api/download/song/"+Uri.encode(unique.first().id))
         if(cookie.isBlank())throw JobbiException("Please sign in again before downloading songs.")
         val dm=manager(c)
-        var queued=0,failed=0,skipped=0
+        var queued=0
+        var failed=0
+        var skipped=0
         val editor=prefs(c).edit()
         for(song in unique){
             val current=existing[song.id]
