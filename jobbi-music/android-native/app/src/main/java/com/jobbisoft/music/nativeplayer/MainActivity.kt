@@ -603,7 +603,7 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 label={Text("Search server")},
                 leadingIcon={Icon(Icons.Rounded.UploadFile,null)})
         }
-        OutlinedTextField(vm.searchQuery,vm::search,
+        OutlinedTextField(vm.searchQuery,{selecting=false;selected=emptySet();vm.search(it)},
             modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=12.dp),
             placeholder={Text("Songs, albums, artists...")},
             leadingIcon={Icon(Icons.Rounded.Search,null)},singleLine=true,
