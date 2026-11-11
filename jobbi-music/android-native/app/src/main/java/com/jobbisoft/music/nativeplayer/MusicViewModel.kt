@@ -50,6 +50,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
     var searchResult by androidx.compose.runtime.mutableStateOf(SearchResult(emptyList(),emptyList()))
         private set
+    var searchingLibrary by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    var lastSearchedTerm by androidx.compose.runtime.mutableStateOf("")
+        private set
     var favoriteIds by androidx.compose.runtime.mutableStateOf<Set<String>>(emptySet())
         private set
     var account by androidx.compose.runtime.mutableStateOf("")
@@ -121,13 +125,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun search(term: String) {
         searchQuery = term
         searchJob?.cancel()
-        if (term.isBlank()) { searchResult = SearchResult(emptyList(),emptyList()); return }
+        lastSearchedTerm = ""
+        if(term.isBlank()){
+            searchingLibrary = false
+            searchResult = SearchResult(emptyList(),emptyList())
+            return
+        }
+        searchingLibrary = true
         searchJob = viewModelScope.launch {
             delay(280)
             try {
                 searchResult = JobbiApi.search(term.trim())
+                lastSearchedTerm = term.trim()
                 error = ""
-            } catch (e: Exception) { error = e.message ?: "Search failed" }
+            } catch(e: Exception){
+                error = "Navidrome library search failed: "+(e.message ?: "Connection error")
+            } finally { searchingLibrary = false }
         }
     }
     fun openAlbum(id: String) = execute {
