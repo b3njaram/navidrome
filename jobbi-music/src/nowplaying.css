@@ -134,3 +134,20 @@
 .immersive-seek input[type="range"]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;border:2px solid white;background:#6d6271}
 .immersive-seek input[type="range"]:focus-visible{outline:2px solid #ffb4d3;outline-offset:7px}
 .immersive-seek input[type="range"]:disabled{opacity:.5;cursor:default}
+
+
+/* Playback queue is an interactive ordered collection, not just a jump list. */
+.immersive-queue-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:11px;color:#d7c1ce;margin:10px 4px}
+.immersive-queue-toolbar button{padding:8px 10px;border:1px solid #81556e;border-radius:10px;color:#fff;background:#3c2936}
+.immersive-queue-toolbar button:disabled{opacity:.4}
+.immersive-queue-row{display:flex;align-items:center;gap:5px;min-width:0;border-radius:12px}
+.immersive-queue-row.current{background:#62425655}
+.immersive-queue-track{display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-align:left;padding:9px 4px}
+.immersive-queue-track img{width:43px;height:43px;object-fit:cover;border-radius:7px;flex-shrink:0}
+.immersive-queue-track span{display:flex;flex:1;flex-direction:column;min-width:0}
+.immersive-queue-track strong,.immersive-queue-track small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.immersive-queue-track small{font-size:11px;color:#c7afc0}
+.immersive-queue-controls{display:flex;gap:3px}
+.immersive-queue-controls button{display:grid;place-items:center;width:32px;height:36px;border-radius:8px;color:#fbe1f0}
+.immersive-queue-controls button:hover:not(:disabled){background:#875a70}
+.immersive-queue-controls button:disabled{opacity:.35}
