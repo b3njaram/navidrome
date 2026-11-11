@@ -41,6 +41,20 @@ data class Listing(
 )
 data class SearchResult(val songs: List<Song>, val albums: List<Album>)
 data class HomeResult(val recent: List<Album>, val featured: List<Album>, val songs: List<Song>, val playlists: List<MusicPlaylist>)
+data class RecommendationsResult(
+    val recentTracks: List<Song> = emptyList(),
+    val topWeek: List<Song> = emptyList(),
+    val topMonth: List<Song> = emptyList(),
+    val madeForYou: List<Song> = emptyList(),
+    val timeMix: List<Song> = emptyList(),
+    val timeLabel: String = "Daily Mix",
+    val weatherMix: List<Song> = emptyList(),
+    val weatherLabel: String = "",
+    val weatherCity: String = "",
+    val weatherError: String = "",
+    val trackingAvailable: Boolean = true,
+    val trackingNote: String = ""
+)
 
 fun JSONObject.optStr(key: String, fallback: String = ""): String =
     if (isNull(key)) fallback else optString(key, fallback).takeUnless { it == "null" } ?: fallback
@@ -240,6 +254,26 @@ object JobbiApi {
             data.optJSONArray("featured").albums(),
             data.optJSONArray("songs").songs(),
             data.optJSONArray("playlists").playlists()
+        )
+    }
+    suspend fun recommendations(city: String = ""): RecommendationsResult {
+        val offset=-java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis())/60000
+        val path="/api/recommendations?timezoneOffsetMinutes="+offset+
+            (if(city.isNotBlank())"&city="+Uri.encode(city.take(80)) else "")
+        val data=getObject(path)
+        return RecommendationsResult(
+            recentTracks=data.optJSONArray("recentTracks").songs(),
+            topWeek=data.optJSONArray("topWeek").songs(),
+            topMonth=data.optJSONArray("topMonth").songs(),
+            madeForYou=data.optJSONArray("madeForYou").songs(),
+            timeMix=data.optJSONArray("timeMix").songs(),
+            timeLabel=data.optStr("timeLabel","Daily Mix"),
+            weatherMix=data.optJSONArray("weatherMix").songs(),
+            weatherLabel=data.optStr("weatherLabel"),
+            weatherCity=data.optJSONObject("weather")?.optStr("city") ?: "",
+            weatherError=data.optStr("weatherError"),
+            trackingAvailable=data.optBoolean("trackingAvailable",true),
+            trackingNote=data.optStr("trackingNote")
         )
     }
     suspend fun search(term: String): SearchResult {
