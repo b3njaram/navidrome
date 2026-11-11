@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import {buildCollectionPlan,streamCollectionZip} from './collection-download.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { searchSlskd, slskdConnection } from './slskd.js';
@@ -340,6 +341,37 @@ async function binaryProxy(req,res,name){
 }
 app.get('/api/cover/:id',mustAuth,route(async(req,res)=>binaryProxy(req,res,'getCoverArt')));
 app.get('/api/stream/:id',mustAuth,route(async(req,res)=>binaryProxy(req,res,'stream')));
+// Browser download: streamed original files in a ZIP, not a JSON playlist export.
+// Uses existing authenticated Navidrome permissions and no public NAS mounts.
+app.get('/api/download/collection',mustAuth,route(async(req,res)=>{
+  const scope=String(req.query.scope||'');
+  const id=typeof req.query.playlistId==='string'?req.query.playlistId:'';
+  let plan;
+  try{plan=await buildCollectionPlan(req.user,{scope,playlistId:id},subsonic)}
+  catch(e){return res.status(400).json({error:String(e.message||'Could not load collection').slice(0,180)})}
+  streamCollectionZip({
+    res,user:req.user,plan,
+    fetchAudio:async(user,songId,signal)=>{
+      // download.view returns the raw recording instead of a transcode.
+      return fetch(subsonicUrl(user,'download',{id:songId}),{signal,redirect:'error'});
+    }
+  });
+}));
+// Android DownloadManager keeps background downloads in a device-private folder.
+app.get('/api/download/song/:id',mustAuth,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid song ID'});
+  // A download never changes files on the NAS.
+  const upstream=await fetch(subsonicUrl(req.user,'download',{id:req.params.id}),{
+    signal:AbortSignal.timeout(180000),redirect:'error'});
+  if(!upstream.ok||!upstream.body)return res.status(502).json({error:'Recording unavailable for download.'});
+  res.status(200).set('Content-Type',upstream.headers.get('content-type')||'application/octet-stream');
+  const len=upstream.headers.get('content-length');
+  if(len&&/^\d+$/.test(len))res.setHeader('Content-Length',len);
+  res.setHeader('Content-Disposition','attachment');
+  res.setHeader('Cache-Control','private, no-store');
+  await pipeline(Readable.fromWeb(upstream.body),res);
+}));
+
 
 // Existing downloader is intentionally only accessible via authenticated, admin-only server routes.
 // Its /api/search JSON contract has not yet been inspected. This transparently returns its JSON
