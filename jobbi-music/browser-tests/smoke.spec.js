@@ -613,7 +613,7 @@ test('web song menu Play Next/Add to Queue and Up Next reorder/remove/clear work
   await expect(sidebar.locator('.queue-manage-row')).toHaveCount(2);
   await sidebar.getByRole('button',{name:'Clear upcoming'}).click();
   await expect(sidebar.locator('.queue-manage-row')).toHaveCount(1);
-  await sidebar.getByRole('button',{name:'Close'}).last().click();
+  await sidebar.locator('header button.icon-button').click();
 
   await tracks.nth(1).getByLabel('Queue options for Another Song').click();
   await tracks.nth(1).getByRole('button',{name:'Add to queue'}).click();
