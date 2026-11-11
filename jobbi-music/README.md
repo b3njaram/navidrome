@@ -1,3 +1,15 @@
+## Personalized listening and lightweight recommendations
+
+**Website + native APK v1.0.6:** The Home page includes **Recently Added Songs**, **Top This Week**, **Top This Month**, **Made for You**, and a time-of-day mix (morning, afternoon, evening, late night). The time mix uses the listener's own timezone, not the NAS clock. Each song can be played directly and each mix can be played as a collection. A user may optionally enter a **city** to enable the weather-based mix. GPS is never requested; only the city name is sent to Open-Meteo's geocoding and current-weather services, with a 45-minute cache. Clear/disable the city to turn weather lookups off.
+
+Recommendations are computed from Navidrome song/album metadata, favorites, a small sample of library tracks, and each user's **own** listening history. There is **no audio analysis, GPU, embedding model or paid LLM required**, and no other listener can query a user's private listening history. Contextual recommendations perform best when songs have genre metadata; without it, the engine mixes artists and favorite tracks. Weekly and monthly rankings begin collecting data **after this release is deployed**; historic all-time Navidrome play counts cannot be reliably backdated by week.
+
+### Accurate listening tracking
+
+The existing website and the native Media3 playback service both report a completed/qualified play after **half of the recording or four minutes (whichever comes first)**, with a five-second minimum for very short tracks. Unknown duration uses 30 seconds. Playback elapsed time is measured rather than relying on the seek position. Repeat and auto-advance count distinct qualified plays, and skipping before the threshold does not. The native playback listener runs in the **Android media service**, including when music continues in the background. Navidrome receives its standard scrobble first, then Jobbi stores a private, minimal record for time-window charts; failure of the recommendation database does not interrupt playback.
+
+Listening events are indexed by account and time. A small daily cleanup automatically removes event rows older than 90 days. The weather feature is off until a user explicitly chooses a city. The weather provider may have separate terms for commercial use; review Open-Meteo licensing if offering Jobbi Music commercially.
+
 ## Download full playlists and Favorites
 
 **Website:** In **Your Library**, use **Download playlist** on any playlist card or **Download all playlists** in the heading. The Favorites screen has **Download all Favorite songs**. The browser receives a streamed, original-audio **ZIP archive** (FLAC/MP3/etc. exactly as in Navidrome), organized into separately numbered playlist folders. Song names are sanitized for safe cross-platform ZIP extraction, and repeated recordings appearing in different playlists remain in each playlist's folder. Archives are limited to 10,000 track entries / 250 playlists per request; if over the limit, download individual playlists instead. The download never deletes or alters NAS recordings. Allow time and sufficient local storage for large archives.
