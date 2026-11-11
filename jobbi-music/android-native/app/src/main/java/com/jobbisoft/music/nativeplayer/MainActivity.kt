@@ -265,7 +265,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             NavigationBarItem(
                                 selected=vm.selected==destination.name ||
                                      (destination.name=="Search"&&vm.selected=="Server") ||
-                                     (destination.name=="More"&&vm.selected in listOf("Admin","Profile","Import","Favorites")),
+                                     (destination.name=="More"&&vm.selected in listOf("Admin","Profile","Import","Favorites","Downloads")),
                                 onClick={vm.select(destination.name)},
                                 icon={Icon(destination.icon,contentDescription=null)},
                                 label={Text(destination.name)},
@@ -290,6 +290,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             onDownloadPlaylist={p->downloadChoice=DownloadChoice("playlist",p.name,p.id)},
                             onDownloadAll={downloadChoice=DownloadChoice("all","All playlists")},
                             onDownloadFavorites={downloadChoice=DownloadChoice("favorites","Favorites")})
+                        "Downloads" -> DownloadedSongsScreen(vm,player)
                         "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
                             emptyText="Heart songs to save them here.",isFavorites=true,
                             onDownloadFavorites={downloadChoice=DownloadChoice("favorites","Favorites")},
@@ -782,6 +783,62 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
 }
 
 @Composable
+private fun DownloadedSongsScreen(vm:MusicViewModel,player:NativePlayer) {
+    Column {
+        Column(Modifier.padding(horizontal=18.dp,vertical=13.dp),
+            verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("Downloaded music",style=MaterialTheme.typography.headlineMedium,
+                fontWeight=FontWeight.Bold)
+            Text("Original audio saved on this device · ${vm.downloadStats.saved} songs",
+                style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                OutlinedButton(onClick=vm::refreshDownloadedSongs){
+                    Icon(Icons.Rounded.Refresh,null);Spacer(Modifier.width(6.dp))
+                    Text("Refresh")
+                }
+                if(vm.offlineMode)FilledTonalButton(onClick=vm::retrySavedSignIn,
+                    enabled=!vm.restoringSession) {
+                    Icon(Icons.Rounded.Cloud,null);Spacer(Modifier.width(6.dp))
+                    Text("Reconnect")
+                }
+            }
+            if(vm.offlineMode)Text("Offline mode: only saved recordings play. "+
+                "Online playlists and account settings will resume after reconnecting.",
+                style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if(vm.downloadedSongs.isEmpty()) {
+            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                Text("No completed downloads yet. "+
+                    "Use Download on a playlist or Favorites while connected.",
+                    Modifier.padding(22.dp),textAlign=TextAlign.Center)
+            }
+        }else{
+            LazyColumn(contentPadding=PaddingValues(bottom=30.dp)) {
+                itemsIndexed(vm.downloadedSongs,key={_,s->s.id}){index,song->
+                    Row(Modifier.fillMaxWidth().clickable {
+                        player.play(vm.downloadedSongs,index)
+                    }.padding(horizontal=20.dp,vertical=11.dp),
+                        verticalAlignment=Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.MusicNote,null,
+                            tint=MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(song.title,maxLines=1,overflow=TextOverflow.Ellipsis,
+                                fontWeight=FontWeight.SemiBold)
+                            Text(song.artist,style=MaterialTheme.typography.bodySmall,
+                                color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Rounded.PlayArrow,contentDescription="Play downloaded song")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                           onDownloadPlaylist:(MusicPlaylist)->Unit,
                           onDownloadAll:()->Unit,onDownloadFavorites:()->Unit) {
@@ -1079,6 +1136,17 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
             Icon(Icons.Rounded.Groups,null)
             Spacer(Modifier.width(8.dp))
             Text("Community & Friends")
+        }
+        FilledTonalButton(onClick={vm.select("Downloads")},modifier=Modifier.fillMaxWidth()){
+            Icon(Icons.Rounded.Download,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Offline downloads")
+        }
+        if(vm.offlineMode) OutlinedButton(onClick=vm::retrySavedSignIn,
+            enabled=!vm.restoringSession,modifier=Modifier.fillMaxWidth()){
+            Icon(Icons.Rounded.Refresh,null)
+            Spacer(Modifier.width(8.dp))
+            Text("Reconnect to Jobbi Music")
         }
         FilledTonalButton(onClick={vm.select("Favorites")},modifier=Modifier.fillMaxWidth()){
             Icon(Icons.Rounded.Favorite,null)
