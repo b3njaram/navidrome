@@ -170,7 +170,7 @@ test('web can download individual playlists, all playlists, and Favorites as ZIP
 
   page.once('dialog',dialog=>dialog.accept());
   const individualEvent=page.waitForEvent('download');
-  await page.getByRole('button',{name:'Download Favorites Mix'}).click();
+  await page.getByRole('link',{name:'Download Favorites Mix'}).click();
   const individual=await individualEvent;
   expect(individual.url()).toContain('scope=playlist');
   expect(individual.url()).toContain('playlistId=p1');
@@ -180,7 +180,7 @@ test('web can download individual playlists, all playlists, and Favorites as ZIP
   await page.getByRole('button',{name:'Download all playlists'}).click();
   expect((await allEvent).url()).toContain('scope=all-playlists');
 
-  await navigate(page,'Favorites');
+  await page.locator('.library-shortcuts').getByRole('button',{name:/Favorites/}).click();
   page.once('dialog',dialog=>dialog.accept());
   const favoritesEvent=page.waitForEvent('download');
   await page.getByRole('button',{name:'Download all Favorite songs'}).click();
