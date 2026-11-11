@@ -4,3 +4,12 @@ export const preferredDuration=(catalog,stream)=>finiteSeconds(catalog)||finiteS
 export const cappedPosition=(position,length)=>{const n=Number(position);if(!Number.isFinite(n))return 0;return Math.max(0,Math.min(n,finiteSeconds(length)||Number.MAX_SAFE_INTEGER));};
 export const progressPercent=(position,length)=>{const total=finiteSeconds(length);return total?Math.max(0,Math.min(100,cappedPosition(position,total)*100/total)):0;};
 export const endedTooEarly=(position,expected)=>{const total=finiteSeconds(expected),played=Number(position);return total>0&&Number.isFinite(played)&&total-played>Math.max(7,Math.min(18,total*.04));};
+
+/** Count the same qualified listen on the web and Android native player.
+ * Playback time (not seek position) must exceed half of the recording
+ * or four minutes, whichever comes first. Very short songs use >=5 sec.
+ */
+export const listenThresholdSeconds=duration=>{
+  const seconds=finiteSeconds(duration);
+  return seconds?Math.min(240,Math.max(5,seconds/2)):30;
+};
