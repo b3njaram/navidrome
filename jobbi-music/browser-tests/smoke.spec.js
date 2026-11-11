@@ -935,17 +935,34 @@ async function oversizedCameraPng(page){
   return bytes;
 }
 
-test('web album cover accepts an oversized camera photo by converting to real JPEG',async({page})=>{
-  const state=await setupMocks(page),uploads=[];
-  const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/api/artwork/album/a1',async route=>{
-    if(route.request().method()==='POST'){
-      const payload=route.request().postDataBuffer();
-      uploads.push({mime:route.request().headers()['content-type'],
-        size:payload?.length,signature:payload?.subarray(0,3).toString('hex')});
-    }
-    await route.fallback();
+async function captureOutgoingPhotoBlobs(page){
+  // Playwright's WebKit network hook sometimes omits raw File bodies.
+  // Observe the actual Blob bytes before fetch instead of assuming that
+  // request.postDataBuffer() is available in every browser engine.
+  await page.addInitScript(()=>{
+    window.__jobbiPhotoUploads=[];
+    const nativeFetch=window.fetch;
+    window.fetch=async function(...args){
+      const [input,init]=args;
+      const url=typeof input==='string'?input:input?.url||'';
+      if((url.includes('/api/artwork/')||url.includes('/api/social/me/avatar'))&&
+          init?.body instanceof Blob){
+        const bytes=new Uint8Array(await init.body.arrayBuffer());
+        const signature=Array.from(bytes.slice(0,3))
+          .map(n=>n.toString(16).padStart(2,'0')).join('');
+        window.__jobbiPhotoUploads.push({
+          url,mime:init.body.type,size:bytes.length,signature
+        });
+      }
+      return nativeFetch.apply(this,args);
+    };
   });
+}
+
+test('web album cover accepts an oversized camera photo by converting to real JPEG',async({page})=>{
+  await captureOutgoingPhotoBlobs(page);
+  const state=await setupMocks(page);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await login(page,'listener');
   await navigate(page,'Your Library');
   await page.locator('.album-grid .album-card').first().click();
@@ -953,26 +970,19 @@ test('web album cover accepts an oversized camera photo by converting to real JP
   await page.locator('.artwork-upload input[type=file]').setInputFiles({
     name:'original-camera-photo.png',mimeType:'image/png',buffer:large
   });
-  await expect.poll(()=>uploads.length).toBe(1);
-  expect(uploads[0].mime).toContain('image/jpeg');
-  expect(uploads[0].signature).toBe('ffd8ff');
-  expect(uploads[0].size).toBeLessThanOrEqual(1048576);
+  await expect.poll(()=>page.evaluate(()=>window.__jobbiPhotoUploads.length)).toBe(1);
+  const [uploaded]=await page.evaluate(()=>window.__jobbiPhotoUploads);
+  expect(uploaded.mime).toContain('image/jpeg');
+  expect(uploaded.signature).toBe('ffd8ff');
+  expect(uploaded.size).toBeLessThanOrEqual(1048576);
   expect(state.artworkUploads).toContain('/api/artwork/album/a1');
   expect(errors).toEqual([]);
 });
 
 test('web profile picture accepts oversized photo and uploads only compressed JPEG',async({page})=>{
+  await captureOutgoingPhotoBlobs(page);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await setupMocks(page);await mockSocial(page);
-  const uploads=[];
-  await page.route('**/api/social/me/avatar',async route=>{
-    if(route.request().method()==='POST'){
-      const payload=route.request().postDataBuffer();
-      uploads.push({mime:route.request().headers()['content-type'],
-        size:payload?.length,signature:payload?.subarray(0,3).toString('hex')});
-    }
-    await route.fallback();
-  });
   await login(page,'listener');
   await navigate(page,'Community');
   await page.getByRole('button',{name:'My profile',exact:true}).click();
@@ -980,9 +990,10 @@ test('web profile picture accepts oversized photo and uploads only compressed JP
     name:'camera-photo.png',mimeType:'image/png',buffer:await oversizedCameraPng(page)
   });
   await expect(page.getByText('Profile picture saved')).toBeVisible();
-  expect(uploads).toHaveLength(1);
-  expect(uploads[0].mime).toContain('image/jpeg');
-  expect(uploads[0].signature).toBe('ffd8ff');
-  expect(uploads[0].size).toBeLessThanOrEqual(1048576);
+  await expect.poll(()=>page.evaluate(()=>window.__jobbiPhotoUploads.length)).toBe(1);
+  const [uploaded]=await page.evaluate(()=>window.__jobbiPhotoUploads);
+  expect(uploaded.mime).toContain('image/jpeg');
+  expect(uploaded.signature).toBe('ffd8ff');
+  expect(uploaded.size).toBeLessThanOrEqual(1048576);
   expect(errors).toEqual([]);
 });
