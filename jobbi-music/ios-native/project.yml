@@ -1,0 +1,52 @@
+name: JobbiMusic
+options:
+  bundleIdPrefix: com.jobbisoft
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    SUPPORTS_MACCATALYST: "NO"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  JobbiMusic:
+    type: application
+    platform: iOS
+    sources:
+      - path: JobbiMusic
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jobbisoft.jobbi.music
+        INFOPLIST_KEY_CFBundleDisplayName: Jobbi Music
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIBackgroundModes: audio
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+  JobbiMusicTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: JobbiMusicTests
+    dependencies:
+      - target: JobbiMusic
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.jobbisoft.jobbi.music.tests
+schemes:
+  JobbiMusic:
+    build:
+      targets:
+        JobbiMusic: all
+    test:
+      targets:
+        - JobbiMusicTests
+    archive:
+      targets:
+        JobbiMusic: all
