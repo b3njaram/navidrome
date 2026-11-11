@@ -21,6 +21,7 @@ import {createInvidiousImportRouter} from './invidious-import.js';
 import {countIndexedSongs,countAccountRows} from './admin-stats.js';
 import {socialQuery} from './social-db.js';
 import {collectRemovalImpact,makeRemovalTicket,verifyRemovalTicket,impactForClient} from './removal-impact.js';
+import {makeRecommendations,fetchListeningHistory,getCityWeather,recordListen,localHour} from './recommendations.js';
 import { promises as fs } from 'node:fs';
 
 const app = express();
@@ -304,7 +305,63 @@ app.get('/api/artists/:id',mustAuth,route(async(req,res)=>{
 app.get('/api/playlists/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getPlaylist',{id:req.params.id});res.json(d.playlist||null);}));
 app.get('/api/starred',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getStarred2');res.json(d.starred2||{});}));
 app.post('/api/star',mustAuth,route(async(req,res)=>{const {id,starred}=req.body ||{};if(!validId(id)||typeof starred!=='boolean')return res.status(400).json({error:'Invalid favorite request'});await subsonic(req.user,starred?'star':'unstar',{id});res.json({ok:true});}));
-app.post('/api/scrobble',mustAuth,route(async(req,res)=>{const {id}=req.body ||{};if(!validId(id))return res.status(400).json({error:'Invalid id'});await subsonic(req.user,'scrobble',{id,submission:true});res.json({ok:true});}));
+// Both the web and native Android players submit ONE completed-play event.
+// Navidrome remains the authoritative scrobble receiver. Jobbi additionally
+// records a minimal private event to support date-window recommendations.
+app.post('/api/scrobble',mustAuth,route(async(req,res)=>{
+  const {id}=req.body||{};
+  if(!validId(id))return res.status(400).json({error:'Invalid song ID'});
+  await subsonic(req.user,'scrobble',{id,submission:true});
+  let trackingSaved=false;
+  try{
+    const response=await subsonic(req.user,'getSong',{id});
+    const song=response.song;
+    if(song?.id===id){
+      const offset=req.body?.timezoneOffsetMinutes;
+      const hour=localHour(offset);
+      await recordListen({user:req.user.username,track:song,query:socialQuery,hour,
+        source:req.body?.source==='android'?'android':'web'});
+      trackingSaved=true;
+    }
+  }catch(err){
+    // Never break playback history on Navidrome if Jobbi statistics are offline.
+    console.warn('Private listening statistic unavailable:',err?.code||err?.name||'unknown');
+  }
+  res.json({ok:true,trackingSaved});
+}));
+
+// Read-only, per-user sections. No global listening history is exposed.
+app.get('/api/recommendations',mustAuth,route(async(req,res)=>{
+  const offset=Number(req.query.timezoneOffsetMinutes);
+  const hour=localHour(offset);
+  const city=typeof req.query.city==='string'?req.query.city.trim().slice(0,80):'';
+  let history=[],trackingAvailable=true,weather=null,weatherError='';
+  const [rows,random,stars,newest]=await Promise.allSettled([
+    fetchListeningHistory(req.user.username,socialQuery),
+    subsonic(req.user,'getRandomSongs',{size:160}),
+    subsonic(req.user,'getStarred2'),
+    subsonic(req.user,'getAlbumList2',{type:'newest',size:8})
+  ]);
+  if(rows.status==='fulfilled')history=rows.value;
+  else trackingAvailable=false;
+  const randomSongs=random.status==='fulfilled'?(random.value.randomSongs?.song||[]):[];
+  const favorites=stars.status==='fulfilled'?(stars.value.starred2?.song||[]):[];
+  const newestAlbums=newest.status==='fulfilled'?(newest.value.albumList2?.album||[]):[];
+  const newSongs=[];
+  // Limit Navidrome album queries. Newly added albums can have multiple songs.
+  const albumResults=await Promise.allSettled(newestAlbums.slice(0,8).map(album=>
+    subsonic(req.user,'getAlbum',{id:album.id})));
+  for(const result of albumResults){
+    if(result.status==='fulfilled')newSongs.push(...(result.value.album?.song||[]));
+  }
+  if(city){
+    try{weather=await getCityWeather(city)}
+    catch(err){weatherError=String(err.message||'Weather unavailable').slice(0,140)}
+  }
+  const result=makeRecommendations({history,random:randomSongs,
+    starred:Array.isArray(favorites)?favorites.slice(0,500):[],recent:newSongs,hour,weather});
+  res.json({...result,trackingAvailable,weatherError});
+}));
 app.get('/api/lyrics/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid song'});
   let structured=null,legacy=null;
