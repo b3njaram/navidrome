@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useMemo,useState} from 'react';
 import {cappedPosition,progressPercent} from './player-math.js';
-import {ArrowDown,ArrowDownToLine,ArrowUp,ChevronDown,Disc3,Heart,ListMusic,Maximize2,Mic2,MoreHorizontal,Pause,Play,Plus,Repeat2,Share2,Shuffle,SkipBack,SkipForward,Volume2,Waves,X,Check} from 'lucide-react';
+import {ArrowDown,ArrowDownToLine,ArrowUp,ChevronDown,Clock3,Disc3,Heart,ListMusic,Maximize2,Mic2,MoreHorizontal,Pause,Play,Plus,Repeat2,Share2,Shuffle,SkipBack,SkipForward,Volume2,Waves,X,Check} from 'lucide-react';
 const duration = s => {
   const x=Math.max(0,Math.floor(Number(s)||0));return `${Math.floor(x/60)}:${String(x%60).padStart(2,'0')}`;
 };
@@ -16,7 +16,7 @@ export default function NowPlaying({
   track,queue=[],currentIndex=0,playing,position=0,length=0,
   lyrics,lyricsLoading=false,mode,setMode,onClose,onToggle,onNext,onPrev,
   onSeek,onSelect,onMove,onRemove,onClear,onPlayNext,onAddToQueue,
-  onFavorite,favorited,onAdd,onDownload,
+  sleepMinutes=0,onSleepTimer,onFavorite,favorited,onAdd,onDownload,
   shuffle,repeat,onShuffle,onRepeat,onShare,onArtist,onAlbum
 }){
   const lines=lyrics?.lines||[];
@@ -51,6 +51,13 @@ export default function NowPlaying({
         <button onClick={()=>{onAdd();setMenuOpen(false)}}><Plus size={18}/> Add to playlist</button>
         <button onClick={()=>{onPlayNext?.(track);setMenuOpen(false)}}><ListMusic size={18}/> Play next</button>
         <button onClick={()=>{onAddToQueue?.(track);setMenuOpen(false)}}><ListMusic size={18}/> Add to queue</button>
+        <div className="immersive-sleep-options"><label htmlFor="immersive-sleep-timer"><Clock3 size={17}/> Sleep timer</label>
+          <select id="immersive-sleep-timer" value={sleepMinutes} onChange={event=>onSleepTimer?.(Number(event.target.value))}>
+            <option value={0}>Off</option><option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option><option value={45}>45 minutes</option>
+            <option value={60}>1 hour</option>
+          </select>
+        </div>
         {onDownload&&<button onClick={()=>{onDownload();setMenuOpen(false)}}><ArrowDownToLine size={18}/> Save offline</button>}
         <button onClick={()=>{onShare();setMenuOpen(false)}}><Share2 size={18}/> Copy track details</button>
       </div>}
