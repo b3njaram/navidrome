@@ -107,17 +107,21 @@ object JobbiDownloads {
         val cookie=JobbiApi.cookieHeader("/api/download/song/"+Uri.encode(unique.first().id))
         if(cookie.isBlank())throw JobbiException("Please sign in again before downloading songs.")
         val dm=manager(c)
+        val pendingIds=pending.map(Song::id).toSet()
         var queued=0
         var failed=0
         var skipped=0
         val editor=prefs(c).edit()
         for(song in unique){
             val current=existing[song.id]
-            if(song !in pending){skipped++;continue}
+            if(song.id !in pendingIds){skipped++;continue}
             val relative=hash(song.id).take(48)+"."+extension(song)
             val folder="jobbi/"+scope(user,server)
             val target=File(root,folder+"/"+relative)
             try{
+                check(File(root,folder).isDirectory || File(root,folder).mkdirs()) {
+                    "Cannot create app-private offline music directory"
+                }
                 if(target.isFile && (current==null||current.status!=DownloadManager.STATUS_SUCCESSFUL))
                     target.delete() // only the named app-private incomplete file
                 val uri=Uri.parse(JobbiApi.authenticatedUrl("/api/download/song/"+Uri.encode(song.id)))
