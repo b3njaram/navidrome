@@ -85,6 +85,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Switch
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -192,6 +194,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     val player = remember { NativePlayer(context.applicationContext).also { it.connect() } }
     val snack = remember { SnackbarHostState() }
     var showNowPlaying by remember { mutableStateOf(false) }
+    var openQueueFirst by remember { mutableStateOf(false) }
     var addSong by remember { mutableStateOf<Song?>(null) }
     var createPlaylist by remember { mutableStateOf(false) }
     var invite by remember { mutableStateOf(false) }
@@ -249,6 +252,11 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     actions = {
                         if(vm.selected=="Library")IconButton(onClick={createPlaylist=true}){
                             Icon(Icons.Rounded.Add,contentDescription="Create playlist")
+                        }
+                        if(player.active!=null)IconButton(onClick={
+                            openQueueFirst=true;showNowPlaying=true
+                        }){
+                            Icon(Icons.Rounded.QueueMusic,contentDescription="Open playback queue")
                         }
                         if(vm.selected=="Home")IconButton(onClick=vm::refresh){
                             Icon(Icons.Rounded.AutoAwesome,contentDescription="Refresh music")
@@ -311,8 +319,10 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                 if(vm.busy||vm.removalBusy) LinearProgressIndicator(modifier=Modifier.fillMaxWidth().align(Alignment.TopCenter))
             }
         }
-        if(showNowPlaying) ModalBottomSheet(onDismissRequest={showNowPlaying=false}) {
-            NowPlayingScreen(vm,player)
+        if(showNowPlaying) ModalBottomSheet(onDismissRequest={
+            showNowPlaying=false;openQueueFirst=false
+        }) {
+            NowPlayingScreen(vm,player,startWithQueue=openQueueFirst)
         }
         if(addSong!=null) AlertDialog(
             onDismissRequest={addSong=null}, title={Text("Add to playlist")},
@@ -589,6 +599,7 @@ private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)
         itemsIndexed(vm.home.songs,key={_,s->s.id}) { index,song ->
             SongRow(song,index,vm.favoriteIds.contains(song.id),
                 play={player.play(vm.home.songs,index)},favorite={vm.toggleFavorite(song)},
+                playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
                 add={onSongAdd(song)},removeFromNas={vm.prepareSongRemoval(listOf(song))})
         }
     }
@@ -714,8 +725,10 @@ private fun Cover(art:String?,size: androidx.compose.ui.unit.Dp,modifier:Modifie
 @Composable
 private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:()->Unit,
                     add:()->Unit, removeFromNas:()->Unit={},
+                    playNext:()->Unit={}, addQueue:()->Unit={},
                     selected:Boolean=false,selectionMode:Boolean=false,
                     onSelect:()->Unit={},onLongSelect:()->Unit={}) {
+    var moreOpen by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth()
         .background(if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
         .combinedClickable(onClick={if(selectionMode)onSelect()else play()},
@@ -740,8 +753,21 @@ private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:
                     contentDescription=if(hearted)"Remove from Favorites" else "Add to Favorites",
                     tint=if(hearted)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick=add,modifier=Modifier.size(40.dp)){
-                Icon(Icons.Rounded.Add,contentDescription="Add to playlist")
+            Box {
+                IconButton(onClick={moreOpen=true},modifier=Modifier.size(40.dp)) {
+                    Icon(Icons.Rounded.MoreVert,contentDescription="More options for ${song.title}")
+                }
+                DropdownMenu(expanded=moreOpen,onDismissRequest={moreOpen=false}) {
+                    DropdownMenuItem(text={Text("Play next")},
+                        leadingIcon={Icon(Icons.Rounded.PlaylistPlay,null)},
+                        onClick={moreOpen=false;playNext()})
+                    DropdownMenuItem(text={Text("Add to queue")},
+                        leadingIcon={Icon(Icons.Rounded.QueueMusic,null)},
+                        onClick={moreOpen=false;addQueue()})
+                    DropdownMenuItem(text={Text("Add to playlist")},
+                        leadingIcon={Icon(Icons.Rounded.PlaylistAdd,null)},
+                        onClick={moreOpen=false;add()})
+                }
             }
             IconButton(onClick=removeFromNas,modifier=Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.DeleteOutline,
@@ -809,7 +835,9 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
         LazyColumn(contentPadding=PaddingValues(vertical=10.dp)) {
             itemsIndexed(songs,key={i,s->"$i:${s.id}"}){index,song->
                 SongRow(song,index,song.id in vm.favoriteIds,
-                    play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},removeFromNas={vm.prepareSongRemoval(listOf(song))},
+                    play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},
+                    playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                    add={onSongAdd(song)},removeFromNas={vm.prepareSongRemoval(listOf(song))},
                     selected=index in selected,selectionMode=selecting,
                     onSelect={selected=if(index in selected)selected-index else selected+index},
                     onLongSelect={selecting=true;selected=selected+index})
@@ -883,7 +911,9 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 itemsIndexed(vm.searchResult.songs,key={i,s->"$i:${s.id}"}) {index,song->
                     SongRow(song,index,song.id in vm.favoriteIds,
                         play={player.play(vm.searchResult.songs,index)},
-                        favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                        favorite={vm.toggleFavorite(song)},
+                        playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                        add={onSongAdd(song)},
                         removeFromNas={vm.prepareSongRemoval(listOf(song))},
                         selected=index in selected,selectionMode=selecting,
                         onSelect={selected=if(index in selected)selected-index else selected+index},
@@ -1201,7 +1231,9 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             val song=pair.second
             val playingList=listed.map{it.second}
             SongRow(song,index,song.id in vm.favoriteIds,
-                play={player.play(playingList,index)},favorite={vm.toggleFavorite(song)},add={onSongAdd(song)},
+                play={player.play(playingList,index)},favorite={vm.toggleFavorite(song)},
+                playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                add={onSongAdd(song)},
                 removeFromNas={vm.prepareSongRemoval(listOf(song))},
                 selected=pair.first in selected,selectionMode=selecting,
                 onSelect={selected=if(pair.first in selected)selected-pair.first else selected+pair.first},
@@ -1245,7 +1277,13 @@ private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
 }
 
 @Composable
-private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer) {
+private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQueue:Boolean=false) {
+    var viewingQueue by remember { mutableStateOf(startWithQueue) }
+    var sleepMenu by remember { mutableStateOf(false) }
+    if(viewingQueue){
+        PlaybackQueueScreen(player,onBack={viewingQueue=false})
+        return
+    }
     val song=player.active ?:return
     var drag by remember(song.id) { mutableFloatStateOf(-1f) }
     val max=player.duration.coerceAtLeast(1L).toFloat()
@@ -1288,10 +1326,120 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer) {
                 Icon(Icons.Rounded.SkipNext,"Next track",Modifier.size(38.dp))
             }
         }
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,
+            verticalAlignment=Alignment.CenterVertically){
+            TextButton(onClick=player::toggleShuffle){
+                Icon(Icons.Rounded.Shuffle,
+                    contentDescription=if(player.shuffleEnabled)"Shuffle enabled" else "Shuffle upcoming",
+                    tint=if(player.shuffleEnabled)MaterialTheme.colorScheme.primary else
+                        MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.width(5.dp))
+                Text("Shuffle")
+            }
+            FilledTonalButton(onClick={viewingQueue=true}){
+                Icon(Icons.Rounded.QueueMusic,null)
+                Spacer(Modifier.width(5.dp))
+                Text("Queue · ${(player.queue.size-player.currentIndex-1).coerceAtLeast(0)}")
+            }
+            TextButton(onClick=player::cycleRepeat){
+                Icon(if(player.repeatMode==androidx.media3.common.Player.REPEAT_MODE_ONE)
+                    Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,null)
+                Spacer(Modifier.width(5.dp))
+                Text(when(player.repeatMode){
+                    androidx.media3.common.Player.REPEAT_MODE_ONE->"One"
+                    androidx.media3.common.Player.REPEAT_MODE_ALL->"All"
+                    else->"Off"
+                })
+            }
+        }
+        Box {
+            OutlinedButton(onClick={sleepMenu=true},modifier=Modifier.fillMaxWidth()){
+                Icon(Icons.Rounded.Bedtime,null)
+                Spacer(Modifier.width(8.dp))
+                Text(if(player.sleepUntil>0)
+                    "Sleep timer · ${((player.sleepUntil-System.currentTimeMillis())/60_000L+1).coerceAtLeast(0)} min remaining"
+                    else "Sleep timer")
+            }
+            DropdownMenu(expanded=sleepMenu,onDismissRequest={sleepMenu=false}){
+                listOf(15,30,45,60).forEach{minutes->
+                    DropdownMenuItem(text={Text("Pause after $minutes minutes")},
+                        onClick={player.setSleepTimer(minutes);sleepMenu=false})
+                }
+                DropdownMenuItem(text={Text("Cancel sleep timer")},
+                    onClick={player.setSleepTimer(0);sleepMenu=false})
+            }
+        }
         Text("High fidelity playback · Android Media3",style=MaterialTheme.typography.bodySmall,
             color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+@Composable
+private fun PlaybackQueueScreen(player:NativePlayer,onBack:()->Unit) {
+    Column(Modifier.fillMaxWidth().fillMaxHeight(.83f).padding(horizontal=13.dp),
+        verticalArrangement=Arrangement.spacedBy(8.dp)){
+        Row(Modifier.fillMaxWidth().padding(vertical=6.dp),
+            verticalAlignment=Alignment.CenterVertically){
+            IconButton(onClick=onBack){
+                Icon(Icons.Rounded.ArrowBack,contentDescription="Back to Now Playing")
+            }
+            Column(Modifier.weight(1f)){
+                Text("Up Next",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+                Text("${(player.queue.size-player.currentIndex-1).coerceAtLeast(0)} upcoming · ${player.queue.size} total",
+                    style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick=player::clearUpcoming,
+                enabled=player.currentIndex<player.queue.lastIndex){
+                Text("Clear upcoming")
+            }
+        }
+        if(player.queue.isEmpty()){
+            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                Text("Play a song, then choose Play next or Add to queue.")
+            }
+        }else LazyColumn(contentPadding=PaddingValues(bottom=24.dp)){
+            itemsIndexed(player.queue,key={i,s->"$i:${s.id}"}){index,song->
+                Row(Modifier.fillMaxWidth()
+                    .background(if(index==player.currentIndex)
+                        MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        RoundedCornerShape(13.dp))
+                    .padding(vertical=4.dp,horizontal=4.dp),
+                    verticalAlignment=Alignment.CenterVertically){
+                    Cover(song.cover,46.dp)
+                    Spacer(Modifier.width(9.dp))
+                    Column(Modifier.weight(1f).clickable{player.jumpTo(index)}){
+                        Text(song.title,maxLines=1,overflow=TextOverflow.Ellipsis,
+                            fontWeight=FontWeight.SemiBold)
+                        Text(if(index==player.currentIndex)"Now playing · ${song.artist}"
+                            else song.artist,maxLines=1,overflow=TextOverflow.Ellipsis,
+                            style=MaterialTheme.typography.bodySmall,
+                            color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if(index>player.currentIndex){
+                        IconButton(onClick={player.moveUpcoming(index,index-1)},
+                            enabled=index>player.currentIndex+1,
+                            modifier=Modifier.size(35.dp)){
+                            Icon(Icons.Rounded.KeyboardArrowUp,contentDescription="Move ${song.title} up")
+                        }
+                        IconButton(onClick={player.moveUpcoming(index,index+1)},
+                            enabled=index<player.queue.lastIndex,
+                            modifier=Modifier.size(35.dp)){
+                            Icon(Icons.Rounded.KeyboardArrowDown,contentDescription="Move ${song.title} down")
+                        }
+                        IconButton(onClick={player.removeUpcoming(index)},
+                            modifier=Modifier.size(35.dp)){
+                            Icon(Icons.Rounded.Close,contentDescription="Remove ${song.title} from queue")
+                        }
+                    }else if(index==player.currentIndex){
+                        Icon(Icons.Rounded.GraphicEq,contentDescription="Now playing",
+                            tint=MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun time(seconds:Long): String =
     "${seconds.coerceAtLeast(0)/60}:${(seconds.coerceAtLeast(0)%60).toString().padStart(2,'0')}"
 
