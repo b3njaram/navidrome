@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS jobbi_listens (
 );
 CREATE INDEX IF NOT EXISTS jobbi_listens_user_time_idx ON jobbi_listens(username,played_at DESC);
 CREATE INDEX IF NOT EXISTS jobbi_listens_song_time_idx ON jobbi_listens(username,song_id,played_at DESC);
+CREATE INDEX IF NOT EXISTS jobbi_listens_retention_idx ON jobbi_listens(played_at);
 CREATE INDEX IF NOT EXISTS social_playlists_public_idx ON social_playlists(updated_at DESC) WHERE visibility='public';
 CREATE INDEX IF NOT EXISTS social_playlists_owner_idx ON social_playlists(owner);
 CREATE INDEX IF NOT EXISTS social_members_username_idx ON social_members(username);
