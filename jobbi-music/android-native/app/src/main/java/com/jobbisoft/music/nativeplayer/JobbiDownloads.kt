@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Environment
 import android.os.StatFs
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -14,6 +15,7 @@ data class JobbiDownloadStats(val saved:Int=0,val queued:Int=0,val failed:Int=0,
                               val bytesSaved:Long=0,val lastNotice:String="")
 data class JobbiQueuedResult(val queued:Int,val alreadySaved:Int,val failed:Int,
                              val estimatedBytes:Long,val notice:String)
+data class OfflineCollection(val id:String,val title:String,val songs:List<Song>)
 
 private data class OfflineEntry(
     val id:String,val title:String,val artist:String,val album:String,
@@ -92,6 +94,31 @@ object JobbiDownloads {
             .thenBy{it.album.lowercase()}.thenBy{it.title.lowercase()})
             .map {Song(id=it.id,title=it.title,artist=it.artist,
                 album=it.album,cover=null,duration=0L)}
+    }
+    fun rememberCollection(c:Context,user:String,server:String,
+                           collectionId:String,title:String,songs:List<Song>){
+        if(user.isBlank()||collectionId.isBlank())return
+        val ids=JSONArray()
+        for(song in songs.distinctBy(Song::id))if(song.id.isNotBlank())ids.put(song.id)
+        val value=JSONObject().put("id",collectionId).put("title",title).put("ids",ids)
+        val key="collection:"+scope(user,server)+":"+hash(collectionId)
+        check(prefs(c).edit().putString(key,value.toString()).commit()){
+            "Could not remember your offline playlist."
+        }
+    }
+    fun completedCollections(c:Context,user:String,server:String):List<OfflineCollection>{
+        if(user.isBlank())return emptyList()
+        val available=downloadedSongs(c,user,server).associateBy(Song::id)
+        val prefix="collection:"+scope(user,server)+":"
+        return prefs(c).all.filterKeys {it.startsWith(prefix)}.values.mapNotNull{raw->
+            runCatching{
+                val j=JSONObject(raw as String)
+                val ids=j.optJSONArray("ids") ?: JSONArray()
+                val songs=(0 until ids.length()).mapNotNull{available[ids.optString(it)]}
+                if(songs.isEmpty())null
+                else OfflineCollection(j.getString("id"),j.optString("title"),songs)
+            }.getOrNull()
+        }.sortedBy{it.title.lowercase()}
     }
     fun enqueue(c:Context,user:String,server:String,songs:List<Song>,
                 wifiOnly:Boolean=true):JobbiQueuedResult {
