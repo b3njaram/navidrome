@@ -196,6 +196,9 @@ function App() {
   const listened=useRef({id:null,lastTick:0,elapsed:0,playing:false,counted:false});
   const androidApp=isNativeAndroid();
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
+  const [queueReadyFor,setQueueReadyFor]=useState('');
+  const [sleepMinutes,setSleepMinutes]=useState(0);
+  const [sleepUntil,setSleepUntil]=useState(0);
   const audio=useRef(null);
   const [playlistQuery,setPlaylistQuery]=useState(''),[coverVersion,setCoverVersion]=useState(0);
   const [bulkTask,setBulkTask]=useState(null);
@@ -221,6 +224,48 @@ function App() {
 
 
   useEffect(()=>{api('/api/session').then(setUser).catch(()=>setUser(null));},[]);
+  // Restore the same listener's listening session without resuming audio
+  // automatically. A queue is personal; it is never shared with other users.
+  useEffect(()=>{
+    if(!user?.username){setQueueReadyFor('');return;}
+    const key='jobbi-play-queue-v1:'+user.username.toLowerCase();
+    let saved;
+    try{saved=JSON.parse(localStorage.getItem(key)||'null')}catch{}
+    if(saved&&Array.isArray(saved.queue)){
+      const items=saved.queue.slice(0,1000).filter(song=>song&&typeof song.id==='string'&&
+        song.id.length>0&&song.id.length<=160&&typeof song.title==='string');
+      setQueue(items);
+      setCurrentIndex(items.length?Math.max(0,Math.min(items.length-1,Number(saved.currentIndex)||0)):-1);
+    }else{setQueue([]);setCurrentIndex(-1)}
+    setQueueReadyFor(key);
+  },[user?.username]);
+  useEffect(()=>{
+    if(!user?.username||queueReadyFor!=='jobbi-play-queue-v1:'+user.username.toLowerCase())return;
+    try{localStorage.setItem(queueReadyFor,JSON.stringify({
+      queue:queue.slice(0,1000).map(song=>({
+        id:song.id,title:song.title,artist:song.artist,album:song.album,
+        coverArt:song.coverArt,duration:song.duration,suffix:song.suffix
+      })),currentIndex
+    }))}catch{}
+  },[queue,currentIndex,queueReadyFor,user?.username]);
+  useEffect(()=>{
+    if(!sleepUntil)return;
+    const check=()=>{
+      if(Date.now()<sleepUntil)return;
+      audio.current?.pause();
+      setPlaying(false);
+      setSleepUntil(0);
+      setSleepMinutes(0);
+    };
+    const handle=setInterval(check,2000);
+    document.addEventListener('visibilitychange',check);
+    return()=>{clearInterval(handle);document.removeEventListener('visibilitychange',check)};
+  },[sleepUntil]);
+  const changeSleepTimer=minutes=>{
+    const value=Number(minutes)||0;
+    setSleepMinutes(value);
+    setSleepUntil(value>0?Date.now()+value*60_000:0);
+  };
   useEffect(()=>{if(user?.username)nativeCommand('syncSession');},[user?.username]);
   useEffect(()=>{
     if(!user)return;
@@ -445,7 +490,12 @@ function App() {
       setError('Could not update favorite: '+err.message);throw err;
     }
   };
-  const logout=async()=>{await post('/api/logout',{}).catch(()=>{});audio.current?.pause();setCurrentIndex(-1);setQueue([]);setUser(null);};
+  const logout=async()=>{
+    await post('/api/logout',{}).catch(()=>{});
+    audio.current?.pause();
+    if(user?.username){try{localStorage.removeItem('jobbi-play-queue-v1:'+user.username.toLowerCase())}catch{}}
+    changeSleepTimer(0);setCurrentIndex(-1);setQueue([]);setQueueReadyFor('');setUser(null);
+  };
 
   const loadAdmin=async()=>{
     setAdminLoading(true);setError('');
@@ -874,7 +924,9 @@ function App() {
     </div>)}</div>
   </section>}</>;
   if(page.id==='social')main=<SocialSpace api={api} user={user} playTracks={playTracks} onSave={androidApp?saveOffline:undefined} nativePlaylists={home?.playlists||[]} initialPlaylistId={page.idValue} onProfileUpdate={updateSocialProfile} onDiscoverMusic={()=>{setSearchTab('soulseek');setPage({id:'search'})}}/>;
-  if(page.id==='settings')main=<section className="admin-page"><div className="page-title"><div className="eyebrow">MY ACCOUNT</div><h1>Settings<span className="spark-dot">.</span></h1><p>Your personal listening preferences.</p></div><div className="admin-card"><h2>Signed in as {user.username}</h2><p>Role: {user.admin?'Administrator':'Listener'}. Your playlists, favorites and playback history are managed by Navidrome.</p><div className="settings-row"><label htmlFor="personal-quality">Streaming quality</label><select id="personal-quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original / lossless where supported</option><option value="balanced">High quality · 320 kbps</option><option value="saver">Data saver · 128 kbps</option></select></div><button className="ghost-button" onClick={logout}>Sign out</button></div></section>;
+  if(page.id==='settings')main=<section className="admin-page"><div className="page-title"><div className="eyebrow">MY ACCOUNT</div><h1>Settings<span className="spark-dot">.</span></h1><p>Your personal listening preferences.</p></div><div className="admin-card"><h2>Signed in as {user.username}</h2><p>Role: {user.admin?'Administrator':'Listener'}. Your playlists, favorites and playback history are managed by Navidrome.</p><div className="settings-row"><label htmlFor="personal-quality">Streaming quality</label><select id="personal-quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original / lossless where supported</option><option value="balanced">High quality · 320 kbps</option><option value="saver">Data saver · 128 kbps</option></select></div><div className="settings-row"><label htmlFor="personal-sleep-timer">Sleep timer</label><select id="personal-sleep-timer" aria-label="Sleep timer" value={sleepMinutes} onChange={e=>changeSleepTimer(e.target.value)}>
+    <option value={0}>Off</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={45}>45 minutes</option><option value={60}>1 hour</option>
+  </select><p className="settings-help">Pauses music automatically. The browser tab must stay open.</p></div><button className="ghost-button" onClick={logout}>Sign out</button></div></section>;
   if(page.id==='admin'&&user.admin)main=<section className="admin-page"><div className="page-title"><div className="eyebrow">PRIVATE SERVER OPERATIONS</div><h1>Admin console<span className="spark-dot">.</span></h1><p>Manage your music service, storage and access.</p></div>
     <div className="admin-head"><span className="admin-verified"><Check size={16}/> Verified Navidrome administrator</span><button className="ghost-button" onClick={loadAdmin} disabled={adminLoading}><RefreshCw size={16}/> Refresh dashboard</button></div>
     {adminLoading&&!adminOverview&&<div className="loading-block"><LoaderCircle className="spin"/> Loading server overview…</div>}
@@ -933,6 +985,7 @@ function App() {
       onSelect={setCurrentIndex}
       onMove={moveUpcoming} onRemove={removeFromQueue} onClear={clearQueue}
       onPlayNext={playNext} onAddToQueue={addToQueue}
+      sleepMinutes={sleepMinutes} onSleepTimer={changeSleepTimer}
       favorited={starred.has(currentTrack.id)}
       onFavorite={()=>favorite(currentTrack).catch(e=>setError(e.message))}
       onAdd={()=>{openPlaylistPicker(currentTrack);setNowPlayingOpen(false)}}
