@@ -6,7 +6,7 @@ import SocialSpace from './SocialSpace.jsx';
 import NowPlaying from './NowPlaying.jsx';
 import PlaylistTools from './PlaylistTools.jsx';
 import PlaylistTransfer from './PlaylistTransfer.jsx';
-import {preferredDuration,cappedPosition,progressPercent,endedTooEarly} from './player-math.js';
+import {preferredDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds} from './player-math.js';
 import './nowplaying.css';
 
 let currentCsrfToken='';
@@ -177,6 +177,7 @@ function App() {
   const activeAudioTrack=useRef(null);
   const userInitiatedPlay=useRef(null);
   const earlyEndRecovery=useRef({id:null,attempted:false});
+  const listened=useRef({id:null,lastTick:0,elapsed:0,playing:false,counted:false});
   const androidApp=isNativeAndroid();
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const audio=useRef(null);
@@ -253,7 +254,7 @@ function App() {
       setPlaying(false);setError('Unable to play this track: '+(err?.message||'Check browser audio permissions.'));
     });
     activeAudioTrack.current=currentTrack.id;
-    if(!sameTrack){earlyEndRecovery.current={id:currentTrack.id,attempted:false};setPosition(0);setLength(preferredDuration(currentTrack.duration,a.duration));}
+    if(!sameTrack){listened.current={id:currentTrack.id,lastTick:performance.now(),elapsed:0,playing:!a.paused,counted:false};earlyEndRecovery.current={id:currentTrack.id,attempted:false};setPosition(0);setLength(preferredDuration(currentTrack.duration,a.duration));}
   },[currentTrack?.id,quality]);
   useEffect(()=>{
     if(!currentTrack||!nowPlayingOpen||nowPlayingMode!=='lyrics')return;
@@ -303,7 +304,11 @@ function App() {
       // play() must run inside the user's click/tap; useEffect can be blocked by autoplay policies.
       const src=`/api/stream/${encodeURIComponent(track.id)}?quality=${quality}`;
       if(element.getAttribute('src')!==src){element.src=src;element.load();}
-      else if(currentTrack?.id===track.id){try{element.currentTime=0}catch{}}
+      else if(currentTrack?.id===track.id){
+        try{element.currentTime=0}catch{}
+        listened.current={id:track.id,lastTick:performance.now(),elapsed:0,
+          playing:false,counted:false};
+      }
       userInitiatedPlay.current=track.id!==currentTrack?.id?track.id:null;
       element.play().then(()=>{setPlaying(true);setError('')}).catch(err=>{
         setPlaying(false);setError('Unable to play this track: '+(err?.message||'Check browser audio permissions.'));
@@ -321,6 +326,25 @@ function App() {
     const target=cappedPosition(seconds,length);
     try{audio.current.currentTime=target;setPosition(target);}
     catch{setError('Seeking is not supported by this stream. Try Original quality.');}
+  };
+  const trackListen=(element,{reset=false}={})=>{
+    if(!currentTrack?.id||!element)return;
+    const now=performance.now();
+    const previous=listened.current;
+    if(previous.id!==currentTrack.id||reset){
+      listened.current={id:currentTrack.id,lastTick:now,elapsed:0,
+        playing:!element.paused&&!element.seeking&&!element.ended,counted:false};
+      return;
+    }
+    if(previous.playing)previous.elapsed+=Math.min(10000,Math.max(0,now-previous.lastTick));
+    previous.lastTick=now;
+    previous.playing=!element.paused&&!element.seeking&&!element.ended;
+    const goal=1000*listenThresholdSeconds(preferredDuration(currentTrack.duration,element.duration));
+    if(!previous.counted&&previous.elapsed>=goal){
+      previous.counted=true;
+      post('/api/scrobble',{id:currentTrack.id,source:'web',
+        timezoneOffsetMinutes:new Date().getTimezoneOffset()}).catch(()=>{});
+    }
   };
   const handleAudioEnded=e=>{
     if(!currentTrack)return;
@@ -342,8 +366,8 @@ function App() {
       setPlaying(false);setError('This song ended early even after retrying the original recording. Check the NAS source file.');
       return;
     }
-    post('/api/scrobble',{id:currentTrack.id}).catch(()=>{});
-    if(repeat){player.currentTime=0;player.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}
+    // Qualified play was already reported once by real elapsed listening time.
+    if(repeat){trackListen(player,{reset:true});player.currentTime=0;player.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));}
     else next();
   };
   const favorite=async item=>{
@@ -792,7 +816,13 @@ function App() {
   </button><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{['album','playlist'].includes(page.id)&&<PlaylistTools detail={detail} playlistId={page.idValue} isPlaylist={page.id==='playlist'} api={api} onUpdate={updated=>setDetail(old=>({...old,...updated,entry:updated?.entry??old?.entry}))} onSocial={id=>setPage({id:'social',idValue:id})} onFavoriteAll={favoriteAllPlaylist} onArtwork={uploadCover} onError={setError} search={playlistQuery} onSearch={setPlaylistQuery} viewer={user?.username}/>}{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{detailSongs.length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={filteredDetailSongs} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?(_i,song)=>removeFromPlaylist(page.idValue,song._playlistIndex):undefined}
   selectionKey={page.id+':'+page.idValue} onBulkAction={bulkAction} onDeleteRecording={song=>bulkAction('quarantine',[song])}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
   return <div className={'app-shell '+(playing?'music-is-playing':'music-is-paused')}><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span>{androidApp&&<button className="native-offline-link" title="Open downloaded music" onClick={()=>nativeCommand("openOffline")}><ArrowDownToLine size={15}/> Offline</button>}<label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Open community profile" onClick={()=>setPage({id:'social'})}>{socialSelf?.has_avatar?<img className="header-profile-photo" src={`/api/social/profiles/${encodeURIComponent(user.username.toLowerCase())}/avatar?v=${socialAvatarVersion}`} alt="My profile"/>:user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
-    <audio ref={audio} onTimeUpdate={e=>setPosition(Number.isFinite(e.currentTarget.currentTime)?e.currentTarget.currentTime:0)} onLoadedMetadata={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onDurationChange={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))} onEnded={handleAudioEnded} onError={e=>{setPlaying(false);if(e.currentTarget.error&&currentTrack)setError('Playback failed. Check the track format or connection, then try again.')}}/>
+    <audio ref={audio}
+      onTimeUpdate={e=>{setPosition(Number.isFinite(e.currentTarget.currentTime)?e.currentTarget.currentTime:0);trackListen(e.currentTarget)}}
+      onPlay={e=>trackListen(e.currentTarget)} onPause={e=>trackListen(e.currentTarget)}
+      onSeeking={e=>trackListen(e.currentTarget)}
+      onLoadedMetadata={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))}
+      onDurationChange={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))}
+      onEnded={e=>{trackListen(e.currentTarget);handleAudioEnded(e)}} onError={e=>{setPlaying(false);if(e.currentTarget.error&&currentTrack)setError('Playback failed. Check the track format or connection, then try again.')}}/>
     <div className={`player ${currentTrack?'player-active':''} ${playing?'player-playing':'player-paused'}`}><div className="player-song"><button className="player-open" aria-label={currentTrack?'Open now playing for '+currentTrack.title:'Nothing playing'} onClick={()=>openNowPlaying()} disabled={!currentTrack}><Art item={currentTrack} size="small"/>{currentTrack&&<span className="jobbi-mini-viz" aria-hidden="true"><i/><i/><i/><i/></span>}<div className="player-song-text"><strong>{currentTrack?.title||'Nothing playing yet'}</strong><span>{currentTrack?.artist||'Your soundtrack starts here'}</span></div></button>{currentTrack&&androidApp&&<button className="icon-button" title="Download this song to Android" onClick={()=>saveOffline(currentTrack)}><ArrowDownToLine size={18}/></button>}{currentTrack&&<button className={`icon-button ${starred.has(currentTrack.id)?'hearted':''}`} onClick={()=>favorite(currentTrack).catch(()=>{})} aria-label="Favorite current song" aria-pressed={starred.has(currentTrack.id)} title="Favorite"><Heart size={18} fill={starred.has(currentTrack.id)?'currentColor':'none'}/></button>}</div>
     <div className="player-center"><div className="playback-controls"><button className={`icon-button ${shuffle?'control-on':''}`} onClick={()=>setShuffle(v=>!v)} title="Shuffle"><Shuffle size={16}/></button><button className="icon-button player-previous" title="Previous song" aria-label="Previous song" onClick={prev} disabled={!currentTrack}><SkipBack size={19} fill="currentColor"/></button><button className="play-round" onClick={toggle} disabled={!currentTrack}>{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-button player-next" title="Next song" aria-label="Next song" onClick={next} disabled={!currentTrack}><SkipForward size={19} fill="currentColor"/></button><button className={`icon-button ${repeat?'control-on':''}`} onClick={()=>setRepeat(v=>!v)} title="Repeat"><Repeat2 size={16}/></button></div><div className="seek"><small>{duration(position)}</small><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={cappedPosition(position,length)} style={{'--seek-progress':progressPercent(position,length)+'%'}} onChange={e=>seekTo(Number(e.target.value))} disabled={!currentTrack||!length}/><small>{duration(length)}</small></div></div>
     <div className="player-extras"><button className={`icon-button ${panel==='lyrics'?'control-on':''}`} title="Lyrics" onClick={()=>openNowPlaying('lyrics')} disabled={!currentTrack}><Mic2 size={18}/></button><button className={`icon-button ${panel==='queue'?'control-on':''}`} title="Queue" onClick={()=>setPanel(panel==='queue'?null:'queue')}><ListMusic size={19}/></button><Volume2 size={18}/><input type="range" min="0" max="1" step=".01" value={volume} onChange={e=>setVolume(Number(e.target.value))} aria-label="Volume"/></div></div>
