@@ -5,7 +5,7 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[],weatherRequests:[],scrobbles:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -20,6 +20,28 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
     if(pathname==='/api/login'){const isAdmin=body.username==='testadmin';state.session={username:body.username,admin:isAdmin,csrfToken:'test-csrf-token'};return reply(state.session);}
     if(pathname==='/api/logout'){state.session=null;return reply({ok:true});}
     if(pathname==='/api/home')return reply({recent:[{id:'a1',name:'Test Album',artist:'Test Artist'}],featured:[],played:[],songs:[{id:'s1',title:'Kino',artist:'Test Artist',duration:180}],playlists:state.playlists});
+    if(pathname==='/api/recommendations'){
+      const city=url.searchParams.get('city')||'';
+      state.weatherRequests.push(city);
+      const song=(id,title,playCount)=>({id,title,artist:'Test Artist',album:'Test Album',duration:180,coverArt:'a1',playCount});
+      return reply({
+        recentTracks:[song('s1','Newest song')],
+        topWeek:[song('s2','Weekly favorite',6)],
+        topMonth:[song('s3','Monthly favorite',21)],
+        madeForYou:[song('s4','Your discovery')],
+        timeMix:[song('s5','Evening chill')],
+        timeLabel:'Evening Mix',timeKey:'evening',
+        weatherMix:city?[song('s6','Rainy favorite')]:[],
+        weatherLabel:city?'Rainy Day Mix':'',
+        weather:city?{city:'El Paso, Texas, United States',temperature:18,condition:'rain'}:null,
+        trackingAvailable:true,weatherError:''
+      });
+    }
+    if(pathname==='/api/scrobble'&&method==='POST'){
+      state.scrobbles.push(body);
+      return reply({ok:true,trackingSaved:true});
+    }
+
     if(pathname==='/api/songs/s1/removal-impact'&&method==='GET')
       return reply({song:{id:'s1',title:'Kino',artist:'Test Artist'},
         references:[
@@ -136,6 +158,26 @@ async function navigate(page,label){
   if(await mobile.isVisible()){await mobile.getByRole('button',{name:label,exact:true}).click();}
   else{await page.locator('.sidebar').getByRole('button',{name:label,exact:true}).click();}
 }
+
+test('home recommendations show weekly/monthly, personal and daily mixes and opt-in weather',async({page})=>{
+  const state=await setupMocks(page);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await login(page,'listener');
+  await expect(page.getByRole('heading',{name:'Recently Added Songs'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Top This Week'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Top This Month'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Made for You'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Evening Mix'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Play Weekly favorite from Top This Week'})).toBeVisible();
+  expect(state.weatherRequests.every(city=>city==='')).toBe(true);
+  await page.getByRole('textbox',{name:'City for weather-based music'}).fill('El Paso');
+  await page.getByRole('button',{name:'Use this city'}).click();
+  await expect(page.getByRole('heading',{name:'Rainy Day Mix'})).toBeVisible();
+  expect(state.weatherRequests).toContain('El Paso');
+  await page.getByRole('button',{name:'Turn off weather'}).click();
+  await expect(page.getByRole('heading',{name:'Rainy Day Mix'})).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
 
 test('ordinary listener sees playlist owners before removing a NAS recording',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
