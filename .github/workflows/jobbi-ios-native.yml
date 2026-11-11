@@ -53,6 +53,9 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/JobbiDerived" \
             CODE_SIGNING_ALLOWED=NO build
           test -s "$RUNNER_TEMP/JobbiDerived/Build/Products/Release-iphoneos/JobbiMusic.app/JobbiMusic"
+          APP_INFO="$RUNNER_TEMP/JobbiDerived/Build/Products/Release-iphoneos/JobbiMusic.app/Info.plist"
+          plutil -extract UIBackgroundModes json -o - "$APP_INFO" | grep -F '"audio"'
+          plutil -extract MinimumOSVersion raw -o - "$APP_INFO" | grep -E '^26[.]'
           mkdir -p "$RUNNER_TEMP/jobbi-payload/Payload"
           cp -R "$RUNNER_TEMP/JobbiDerived/Build/Products/Release-iphoneos/JobbiMusic.app" \
             "$RUNNER_TEMP/jobbi-payload/Payload/"
