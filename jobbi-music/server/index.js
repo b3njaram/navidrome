@@ -18,6 +18,8 @@ import {transliterateMusic} from './import-reconcile.js';
 import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
 import {createInvidiousImportRouter} from './invidious-import.js';
 import {countIndexedSongs,countAccountRows} from './admin-stats.js';
+import {socialQuery} from './social-db.js';
+import {collectRemovalImpact,makeRemovalTicket,verifyRemovalTicket,impactForClient} from './removal-impact.js';
 import { promises as fs } from 'node:fs';
 
 const app = express();
@@ -36,6 +38,9 @@ const STORAGE_STATS_PATH=process.env.STORAGE_STATS_PATH||'/run/jobbi-stats/stora
 const ADMIN_USERS = new Set((process.env.ADMIN_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
 const sessions = new Map();
 const sessionEncryptionKey=crypto.randomBytes(32);
+const removalSigningKey=crypto.randomBytes(32);
+const removalLocks=new Set();
+const removalRates=new Map();
 const sealPassword=plain=>{const iv=crypto.randomBytes(12);const cipher=crypto.createCipheriv('aes-256-gcm',sessionEncryptionKey,iv);const bytes=Buffer.concat([cipher.update(plain,'utf8'),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),bytes]).toString('base64url');};
 const unsealPassword=value=>{const bytes=Buffer.from(value,'base64url');const dec=crypto.createDecipheriv('aes-256-gcm',sessionEncryptionKey,bytes.subarray(0,12));dec.setAuthTag(bytes.subarray(12,28));return Buffer.concat([dec.update(bytes.subarray(28)),dec.final()]).toString('utf8');};
 const MAX_SESSIONS = 1000;
@@ -179,6 +184,61 @@ app.get('/api/library/artists',mustAuth,route(async(req,res)=>{
   res.json({artists,count:artists.length});
 }));
 app.get('/api/albums/:id',mustAuth,route(async(req,res)=>{const d=await subsonic(req.user,'getAlbum',{id:req.params.id});res.json(d.album||null);}));
+// Two-phase, privacy-aware removal for ALL signed-in listeners. Never trust
+// client-side confirmation or claims that a shared track has no references.
+async function inspectRemoval(user,id){
+  return collectRemovalImpact({user,id,subsonic,socialQuery});
+}
+app.get('/api/songs/:id/removal-impact',mustAuth,route(async(req,res)=>{
+  if(!validId(req.params.id))return res.status(400).json({error:'Invalid song ID'});
+  if(!MUSIC_QUARANTINE_URL || MUSIC_QUARANTINE_SECRET.length<32)
+    return res.status(503).json({error:'Shared music removal is unavailable until the NAS quarantine worker is enabled.'});
+  let impact;
+  try{impact=await inspectRemoval(req.user,req.params.id)}
+  catch(e){return res.status(503).json({error:'Could not check playlist references. No audio was removed. '+String(e.message||'').slice(0,160)})}
+  res.json(impactForClient(impact,makeRemovalTicket({
+    username:req.user.username,id:req.params.id,signature:impact.signature
+  },removalSigningKey)));
+}));
+app.post('/api/songs/:id/quarantine',mustAuth,route(async(req,res)=>{
+  const id=req.params.id;
+  if(!validId(id))return res.status(400).json({error:'Invalid song ID'});
+  if(req.body?.confirm!=='REMOVE_FROM_SHARED_LIBRARY'||
+    typeof req.body?.ticket!=='string')
+    return res.status(400).json({error:'Preview playlist impact and explicitly confirm removal first.'});
+  if(!MUSIC_QUARANTINE_URL || MUSIC_QUARANTINE_SECRET.length<32)
+    return res.status(503).json({error:'NAS quarantine worker is not enabled.'});
+  const key=req.user.username.toLowerCase(),now=Date.now();
+  const state=removalRates.get(key);
+  const rate=state&&now-state.start<24*60*60*1000?state:{start:now,count:0};
+  if(rate.count>=20)return res.status(429).json({error:'Daily removal limit reached (20 recordings).'});
+  if(removalLocks.has(id))return res.status(409).json({error:'Another removal of this recording is already being processed.'});
+  removalLocks.add(id);
+  try{
+    let impact;
+    try{impact=await inspectRemoval(req.user,id)}
+    catch(e){return res.status(503).json({error:'Playlist references could not be rechecked. Recording left untouched.'})}
+    if(!verifyRemovalTicket(req.body.ticket,{
+      username:req.user.username,id,signature:impact.signature
+    },removalSigningKey)){
+      return res.status(409).json({error:'Playlist references changed or confirmation expired. Review the updated warning before trying again.'});
+    }
+    const upstream=await fetch(MUSIC_QUARANTINE_URL+'/quarantine',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Jobbi-Quarantine-Key':MUSIC_QUARANTINE_SECRET},
+      body:JSON.stringify({path:impact.path,confirm:'QUARANTINE'}),
+      signal:AbortSignal.timeout(9000)
+    }).catch(()=>null);
+    if(!upstream)return res.status(503).json({error:'NAS quarantine worker is unreachable. No recording was moved.'});
+    const outcome=await upstream.json().catch(()=>({}));
+    if(!upstream.ok)return res.status(409).json({error:'NAS quarantine refused the recording: '+String(outcome.error||'Unknown error').slice(0,140)});
+    rate.count++;removalRates.set(key,rate);
+    let scanRequested=false;
+    try{await subsonic(req.user,'startScan');scanRequested=true}catch{}
+    res.json({quarantined:true,id,scanRequested,
+      message:'Recording moved to recoverable NAS quarantine. '+(scanRequested?'Navidrome scan requested.':'Ask an administrator to rescan the library.')});
+  }finally{removalLocks.delete(id)}
+}));
 // NAS removal means reversible quarantine, NEVER deleting a file immediately.
 // A separate opt-in worker owns the writable mount. Normal listeners have no access.
 app.post('/api/admin/songs/:id/quarantine',mustAuth,mustAdmin,route(async(req,res)=>{
