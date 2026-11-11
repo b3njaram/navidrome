@@ -68,6 +68,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var quality by androidx.compose.runtime.mutableStateOf("balanced")
         private set
+    var downloadStats by androidx.compose.runtime.mutableStateOf(JobbiDownloadStats())
+        private set
 
     private var searchJob: Job? = null
     init {
@@ -171,6 +173,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         selected = "Home"
         detail = null; home = HomeResult(emptyList(),emptyList(),emptyList(),emptyList())
         favorites = emptyList(); favoriteIds = emptySet(); playlists = emptyList()
+        downloadStats = JobbiDownloadStats()
         onComplete()
     }
     fun select(tab: String) {
@@ -190,6 +193,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val stars = JobbiApi.favorites()
         favorites = stars
         favoriteIds = stars.map(Song::id).toSet()
+        updateDownloadStats()
     }
     fun loadLibrary() = execute {
         albums = JobbiApi.albums()
@@ -198,6 +202,44 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun loadFavorites() = execute {
         favorites = JobbiApi.favorites()
         favoriteIds = favorites.map(Song::id).toSet()
+        updateDownloadStats()
+    }
+
+    fun updateDownloadStats() {
+        if(!signedIn||account.isBlank())return
+        viewModelScope.launch {
+            val count=withContext(Dispatchers.IO) {
+                JobbiDownloads.stats(getApplication(),account,server)
+            }
+            downloadStats=count
+        }
+    }
+    private suspend fun enqueueOffline(songs:List<Song>,label:String,wifiOnly:Boolean){
+        val result=withContext(Dispatchers.IO){
+            JobbiDownloads.enqueue(getApplication(),account,server,songs,wifiOnly)
+        }
+        message="$label: ${result.queued} queued, ${result.alreadySaved} already saved"+
+            (if(result.failed>0)", ${result.failed} failed to queue" else "")+
+            ". "+result.notice
+        updateDownloadStats()
+    }
+    fun downloadPlaylist(id:String,wifiOnly:Boolean=true)=execute {
+        val playlist=JobbiApi.openPlaylist(id)
+        enqueueOffline(playlist.songs,playlist.title,wifiOnly)
+    }
+    fun downloadFavorites(wifiOnly:Boolean=true)=execute {
+        val songs=JobbiApi.favorites()
+        enqueueOffline(songs,"Favorites",wifiOnly)
+    }
+    fun downloadAllPlaylists(wifiOnly:Boolean=true)=execute {
+        val list=JobbiApi.playlists()
+        require(list.isNotEmpty()){"You have no playlists to download."}
+        val tracks=mutableListOf<Song>()
+        for(playlist in list){
+            val loaded=JobbiApi.openPlaylist(playlist.id)
+            tracks.addAll(loaded.songs)
+        }
+        enqueueOffline(tracks.distinctBy(Song::id),"All playlists",wifiOnly)
     }
     fun search(term: String) {
         searchQuery = term
