@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MoreHorizontal, Album, ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, FileUp, Disc3, Heart, Home, Library, ListMusic, LoaderCircle, LogOut, Maximize2, Music2, Pause, Play, Plus, Repeat2, Search, Settings2, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles, Volume2, VolumeX, Waves, X, Mic2, Radio, RefreshCw, Headphones, HardDrive, UsersRound, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Album, ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, Clock3, FileUp, Disc3, Heart, Home, Library, ListMusic, LoaderCircle, LogOut, Maximize2, Music2, Pause, Play, Plus, Repeat2, Search, Settings2, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Sparkles, Volume2, VolumeX, Waves, X, Mic2, Radio, RefreshCw, Headphones, HardDrive, UsersRound, Trash2 } from 'lucide-react';
 import './style.css';
 import SocialSpace from './SocialSpace.jsx';
 import NowPlaying from './NowPlaying.jsx';
@@ -996,9 +996,9 @@ function App() {
             </button>
             {i>currentIndex&&<div className="queue-manage-actions">
               <button type="button" aria-label={'Move '+s.title+' up'} disabled={i===currentIndex+1}
-                onClick={()=>moveUpcoming(i,i-1)}><ArrowLeft size={16}/></button>
+                onClick={()=>moveUpcoming(i,i-1)}><ArrowUp size={16}/></button>
               <button type="button" aria-label={'Move '+s.title+' down'} disabled={i===queue.length-1}
-                onClick={()=>moveUpcoming(i,i+1)}><ArrowRight size={16}/></button>
+                onClick={()=>moveUpcoming(i,i+1)}><ArrowDown size={16}/></button>
               <button type="button" aria-label={'Remove '+s.title+' from queue'}
                 onClick={()=>removeFromQueue(i)}><X size={16}/></button>
             </div>}
