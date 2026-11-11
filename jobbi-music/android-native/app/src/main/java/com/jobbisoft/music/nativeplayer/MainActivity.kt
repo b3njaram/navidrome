@@ -15,6 +15,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -675,7 +676,8 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
         return
     }
     Column {
-        Row(Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=5.dp),
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            .padding(horizontal=14.dp,vertical=5.dp),
             horizontalArrangement=Arrangement.spacedBy(9.dp)) {
             if(isFavorites){
                 FilledTonalButton(onClick={player.play(songs.shuffled())}){
@@ -900,7 +902,8 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
             }
         }
         item {
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement=Arrangement.spacedBy(8.dp),
                 verticalAlignment=Alignment.CenterVertically){
                 OutlinedButton(onClick=onDownloadAll){
                     Icon(Icons.Rounded.Download,null);Spacer(Modifier.width(5.dp))
@@ -989,7 +992,8 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                             color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Row(horizontalArrangement=Arrangement.spacedBy(9.dp),
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement=Arrangement.spacedBy(9.dp),
                     verticalAlignment=Alignment.CenterVertically) {
                     Button(onClick={player.play(detail.songs)},enabled=detail.songs.isNotEmpty()){
                         Icon(Icons.Rounded.PlayArrow,null);Text("Play all")
