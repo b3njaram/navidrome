@@ -1,3 +1,7 @@
+### Native recommendations and playback counting (v1.0.6)
+
+Home shows per-user weekly and monthly charts, recently added songs, Made for You and time-of-day mixes. Optional weather mixes require a city that the listener enters; no GPS is accessed. The Android Media3 **service** reports qualified scrobbles for listening continuing in the background, preventing the previous Android gap in weekly/monthly charts. Skipped/seeked tracks do not inflate playback counts. Listening history begins with this version of the server backend; older Navidrome lifetime totals are not assigned arbitrary dates.
+
 ### Native offline collection downloads (v1.0.5)
 
 The app has playlist, all-playlists and Favorites download buttons. Background downloads are handled by Android DownloadManager in per-account, app-private Music directories. Wi-Fi-only is enabled by default. Completed files play through Media3 without contacting Navidrome. More → Offline downloads opens the local library. If auto-login fails for network reasons, a securely remembered account can unlock its previously downloaded tracks; changing or revoking credentials still requires a new login. Web supports an original-audio ZIP archive instead of the APK's local offline queue.
