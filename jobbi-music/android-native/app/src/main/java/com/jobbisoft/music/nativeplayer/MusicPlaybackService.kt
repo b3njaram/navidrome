@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.ContextCompat
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,6 +49,14 @@ class MusicPlaybackService : MediaSessionService() {
     private var wasPlaying=false
     private var counted=false
     private var failed=false
+    private val progressHandler=Handler(Looper.getMainLooper())
+    private val listenTick=object:Runnable{
+        override fun run(){
+            sampleClock()
+            recordIfQualified()
+            progressHandler.postDelayed(this,5000L)
+        }
+    }
 
     private fun sampleClock(){
         val now=SystemClock.elapsedRealtime()
@@ -73,6 +83,7 @@ class MusicPlaybackService : MediaSessionService() {
         player.addListener(object:Player.Listener {
             override fun onIsPlayingChanged(isPlaying:Boolean){
                 sampleClock()
+                recordIfQualified()
                 wasPlaying=isPlaying
             }
             override fun onEvents(player:Player,events:Player.Events){
@@ -81,9 +92,9 @@ class MusicPlaybackService : MediaSessionService() {
             }
             override fun onMediaItemTransition(mediaItem:MediaItem?,reason:Int){
                 sampleClock()
-                if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_AUTO||
-                    reason==Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
-                    recordIfQualified()
+                // Manual skip and queue changes also count if the old song has
+                // already reached the qualified-play threshold.
+                recordIfQualified()
                 activeSongId=mediaItem?.mediaId?.takeIf{it.isNotBlank()}
                 activeDurationMs=0L
                 listenedMs=0L
@@ -115,12 +126,14 @@ class MusicPlaybackService : MediaSessionService() {
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.repeatMode = Player.REPEAT_MODE_OFF
         listenTo(player)
+        progressHandler.postDelayed(listenTick,5000L)
         session = MediaSession.Builder(this, player).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        progressHandler.removeCallbacks(listenTick)
         scrobbleScope.cancel()
         session?.run { player.release(); release() }
         session = null
