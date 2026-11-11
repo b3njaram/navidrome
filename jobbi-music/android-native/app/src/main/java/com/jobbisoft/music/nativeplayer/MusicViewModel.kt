@@ -20,6 +20,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var downloadedSongs by androidx.compose.runtime.mutableStateOf<List<Song>>(emptyList())
         private set
+    var offlineCollections by androidx.compose.runtime.mutableStateOf<List<OfflineCollection>>(emptyList())
+        private set
+    var offlineCollectionId by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+    fun viewOfflineCollection(id:String){offlineCollectionId=id}
+    fun closeOfflineCollection(){offlineCollectionId=null}
     var restoringSession by androidx.compose.runtime.mutableStateOf(true)
         private set
     var savedSignInAvailable by androidx.compose.runtime.mutableStateOf(false)
@@ -130,6 +136,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         server=remembered!!.server
                         JobbiApi.useOfflineIdentity(account)
                         downloadedSongs=cached
+                        offlineCollections=withContext(Dispatchers.IO){
+                            JobbiDownloads.completedCollections(getApplication(),account,server)
+                        }
                         offlineMode=true
                         signedIn=true
                         selected="Downloads"
@@ -196,6 +205,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         signedIn = false
         offlineMode = false
         downloadedSongs = emptyList()
+        offlineCollections = emptyList()
+        offlineCollectionId = null
         isAdmin = false
         account = ""
         selected = "Home"
@@ -242,9 +253,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshDownloadedSongs() {
         if(account.isBlank())return
         viewModelScope.launch {
-            downloadedSongs=withContext(Dispatchers.IO){
-                JobbiDownloads.downloadedSongs(getApplication(),account,server)
+            val output=withContext(Dispatchers.IO){
+                JobbiDownloads.downloadedSongs(getApplication(),account,server) to
+                    JobbiDownloads.completedCollections(getApplication(),account,server)
             }
+            downloadedSongs=output.first
+            offlineCollections=output.second
             updateDownloadStats()
         }
     }
@@ -269,20 +283,38 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadPlaylist(id:String,wifiOnly:Boolean=true)=execute {
         val playlist=JobbiApi.openPlaylist(id)
         enqueueOffline(playlist.songs,playlist.title,wifiOnly)
+        withContext(Dispatchers.IO){
+            JobbiDownloads.rememberCollection(getApplication(),account,server,
+                "playlist:"+id,playlist.title,playlist.songs)
+        }
+        refreshDownloadedSongs()
     }
     fun downloadFavorites(wifiOnly:Boolean=true)=execute {
         val songs=JobbiApi.favorites()
         enqueueOffline(songs,"Favorites",wifiOnly)
+        withContext(Dispatchers.IO){
+            JobbiDownloads.rememberCollection(getApplication(),account,server,
+                "favorites","Favorites",songs)
+        }
+        refreshDownloadedSongs()
     }
     fun downloadAllPlaylists(wifiOnly:Boolean=true)=execute {
         val list=JobbiApi.playlists()
         require(list.isNotEmpty()){"You have no playlists to download."}
         val tracks=mutableListOf<Song>()
+        val collections=mutableListOf<Pair<String,Listing>>()
         for(playlist in list){
             val loaded=JobbiApi.openPlaylist(playlist.id)
             tracks.addAll(loaded.songs)
+            collections.add(playlist.id to loaded)
         }
         enqueueOffline(tracks.distinctBy(Song::id),"All playlists",wifiOnly)
+        withContext(Dispatchers.IO){
+            for((id,entry) in collections)
+                JobbiDownloads.rememberCollection(getApplication(),account,server,
+                    "playlist:"+id,entry.title,entry.songs)
+        }
+        refreshDownloadedSongs()
     }
     fun search(term: String) {
         searchQuery = term
