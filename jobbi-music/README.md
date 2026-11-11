@@ -7,6 +7,35 @@ Apple Music-inspired dark UI, Navidrome login, album and artist browser, search,
 
 Soulseek downloads are now queued via the existing custom Flask downloader at `/api/download` and transfers are read at `/api/downloads`. **Important:** the request body uses the inferred fields `username,filename,size,artist,title` based on your earlier NAS output. The live Flask handler has NOT yet been reviewed; verify it before considering Soulseek production-ready. Only acquire music you have permission to access.
 
+## Playlist management and reversible NAS recording removal
+
+Jobbi Music's native Android APK (v1.0.2) and web app support selecting multiple tracks. **Long-press** a track on Android or mobile web, or choose **Select songs** / **Select all** to select a collection. Actions include favorite/unfavorite, copy into a playlist, move between playlists (copies first, then removes original entries), and remove entries from a playlist without deleting audio. Favorites has a **Shuffle Favorites** button.
+
+The **Remove recordings from NAS** action is only shown to verified Jobbi Music administrators. This is not ordinary playlist removal: it moves actual audio files out of the indexed library. Its separate worker is **disabled by default**. Other users cannot mount music folders or use that endpoint.
+
+### Enable opt-in NAS quarantine on Synology
+
+Only do this after reviewing and backing up your music files and verifying the intended account has storage permissions. This is a distinct opt-in Docker worker; the main Jobbi container **still has no writable music volume**. The worker listens only on the Docker network, not on a public host port, and refuses symbolic links, path traversal, and non-audio file extensions.
+
+1. In DSM, give a dedicated, non-root UID/GID read/write access to the music shared folder. Set `QUARANTINE_UID` and `QUARANTINE_GID` in the local `/volume1/docker/jobbi-music-source/jobbi-music/.env` (defaults are 1000 and 100). Never store passwords or secrets in GitHub.
+2. SSH into the NAS and run:
+
+```sh
+sudo env JOBBI_ACK_STORAGE_WRITE=YES sh /volume1/docker/jobbi-music-source/jobbi-music/scripts/enable-quarantine.sh
+```
+
+The script checks read/write access **without modifying music**, generates or reuses a local secret, preserves a backup of `.env`, starts the separate worker, and rebuilds Jobbi Music. It refuses to run with root UID or without explicit acknowledgement. If the DSM permissions are insufficient, it stops and explains the blocker; it will not silently gain elevated access.
+
+3. Open a song in the app, select it, choose **Remove recordings from NAS**, and confirm. The file moves to `/volume1/music/.jobbi-quarantine/` with a `<random-id>-filename` and a `<random-id>-filename.json` recovery manifest recording the original relative path. It is **not** permanently deleted; an administrator can restore it manually. A `.ndignore` marker stops Navidrome from scanning the quarantine folder. The API requests a Navidrome scan, but depending on your scanner settings, old missing-file metadata might remain visible until a full scan or purge.
+
+To disable future removals, remove `MUSIC_QUARANTINE_URL` and `MUSIC_QUARANTINE_SECRET` from your local `.env` and rebuild **only** Jobbi Music. You can then stop the opt-in `jobbi-quarantine` container. Do not move quarantine files back into the active library without checking their recovery manifest.
+
+### When a music search is empty
+
+The initial search tab queries **Navidrome's already-indexed music**. It is not a Soulseek search. If you type **Algo Está Cambiando — Julieta Venegas** and get no library matches, choose **Search this song on server** / **Soulseek · New music**. This searches peers with the same phrase and can also show an Invidious alternative. Try `Julieta Venegas cambiando` or `Algo Esta Cambiando` if the full accented query does not find anything.
+
+The UI distinguishes **request failed**, **no peers answered**, and **peers answered but returned no supported audio**. All three states are different; none proves the recording is absent from the entire network. The app cannot determine remote peer availability from GitHub CI alone.
+
 ## Social community — friends, playlists, blends and profiles
 
 The **Community** tab is available to every signed-in Navidrome user. Social information is stored in a **dedicated PostgreSQL 17 container** called `jobbi-social-db`, with a private `jobbi-social-data` Docker volume. It has **no published database port**, no Docker socket mount and no access to the music folder. Navidrome remains the source of truth for music, credentials and personal playlists.
