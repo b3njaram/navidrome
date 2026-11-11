@@ -645,12 +645,12 @@ private fun WeatherCitySection(vm:MusicViewModel,player:NativePlayer){
             singleLine=true)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp),
             verticalAlignment=Alignment.CenterVertically){
-            FilledTonalButton(onClick={vm.setWeatherCity(draft)}){
+            FilledTonalButton(onClick={vm.chooseWeatherCity(draft)}){
                 Icon(Icons.Rounded.Cloud,null)
                 Spacer(Modifier.width(6.dp))
                 Text(if(vm.weatherCity.isBlank())"Enable weather mix" else "Update city")
             }
-            if(vm.weatherCity.isNotBlank())TextButton(onClick={vm.setWeatherCity("")}){
+            if(vm.weatherCity.isNotBlank())TextButton(onClick={vm.chooseWeatherCity("")}){
                 Text("Turn off")
             }
         }
