@@ -9,6 +9,7 @@ import PlaylistTransfer from './PlaylistTransfer.jsx';
 import {preferredDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds} from './player-math.js';
 import './nowplaying.css';
 import {prepareImageUpload} from './image-upload.js';
+import {enqueueNext,enqueueLast,reorderUpcoming,removeUpcoming,clearUpcoming,nextQueueIndex} from './play-queue.js';
 
 let currentCsrfToken='';
 const api = async (url, opts={}) => {
@@ -74,8 +75,8 @@ function AlbumRow({items,title,tagline,onClick,action}) {
   if(!items?.length)return null;
   return <section className="shelf"><div className="shelf-title"><div><h2>{title}</h2>{tagline&&<p>{tagline}</p>}</div>{action&&<span className="section-kicker">{action}</span>}</div><div className="album-grid">{items.map((x,i)=><AlbumCard key={x.id || i} item={x} onClick={onClick}/>)}</div></section>;
 }
-function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,onSave,onArtist,onAlbum,head=true,
-  selectionKey='songs',onBulkAction=null,onDeleteRecording=null}) {
+function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,onSave,onArtist,onAlbum,
+  onQueueNext,onQueueLast,head=true,selectionKey='songs',onBulkAction=null,onDeleteRecording=null}) {
   const [busy,setBusy]=useState('');
   const [selecting,setSelecting]=useState(false),[selected,setSelected]=useState(new Set());
   const hold=useRef(null),held=useRef(false);
@@ -148,6 +149,13 @@ function SongList({songs,onPlay,currentTrack,starred,onFavorite,onAdd,onRemove,o
         onClick={async event=>{event.stopPropagation();setBusy(song.id);try{await onFavorite(song)}catch{}finally{setBusy('')}}}>
         <Heart size={15} fill={starred?.has(song.id)?'currentColor':'none'}/></button>
         {onAdd&&<button type="button" className="icon-button" aria-label={'Add '+(song.title||song.name||'track')+' to playlist'} title="Add to playlist" onClick={event=>{event.stopPropagation();onAdd(song)}}><Plus size={16}/></button>}
+        {onQueueNext&&onQueueLast&&<details className="track-queue-menu" onClick={e=>e.stopPropagation()}>
+          <summary aria-label={'Queue options for '+(song.title||song.name||'track')} title="Playback options"><MoreHorizontal size={17}/></summary>
+          <div className="track-queue-menu-content" role="group" aria-label={'Queue '+(song.title||song.name||'track')}>
+            <button type="button" onClick={e=>{onQueueNext(song);e.currentTarget.closest('details').open=false}}>Play next</button>
+            <button type="button" onClick={e=>{onQueueLast(song);e.currentTarget.closest('details').open=false}}>Add to queue</button>
+          </div>
+        </details>}
         {onDeleteRecording&&<button type="button" className="icon-button" aria-label={'Remove '+(song.title||song.name||'track')+' from shared server'} title="Remove recording from shared NAS (requires confirmation)" onClick={event=>{event.stopPropagation();onDeleteRecording(song)}}><Trash2 size={16}/></button>}
         {onSave&&<button className="icon-button" title="Save on Android for offline playback" onClick={()=>onSave(song)}><ArrowDownToLine size={16}/></button>}
         {onRemove&&<button className="icon-button" title="Remove from playlist" onClick={()=>onRemove(index,song)}><X size={16}/></button>}
@@ -343,8 +351,38 @@ function App() {
     }
     setQueue(tracks);setCurrentIndex(index);
   };
-  const next=()=>{if(!queue.length)return;setCurrentIndex(i=>shuffle?Math.floor(Math.random()*queue.length):repeat?i:(i+1)%queue.length)};
-  const prev=()=>{if(!queue.length)return;if(audio.current?.currentTime>3){audio.current.currentTime=0;return;}setCurrentIndex(i=>(i-1+queue.length)%queue.length)};
+  const playNext=track=>{
+    if(!track?.id)return;
+    if(currentIndex<0||!queue.length){playTracks([track],0);return;}
+    setQueue(old=>enqueueNext(old,currentIndex,track));
+    setPanel('queue');
+  };
+  const addToQueue=track=>{
+    if(!track?.id)return;
+    if(currentIndex<0||!queue.length){playTracks([track],0);return;}
+    setQueue(old=>enqueueLast(old,currentIndex,track));
+    setPanel('queue');
+  };
+  const moveUpcoming=(from,to)=>setQueue(old=>reorderUpcoming(old,currentIndex,from,to));
+  const removeFromQueue=at=>setQueue(old=>removeUpcoming(old,currentIndex,at));
+  const clearQueue=()=>setQueue(old=>clearUpcoming(old,currentIndex));
+  const next=()=>{
+    if(!queue.length)return;
+    const following=nextQueueIndex(queue,currentIndex);
+    if(following<0){audio.current?.pause();setPlaying(false);return;}
+    setCurrentIndex(following);
+  };
+  const prev=()=>{if(!queue.length)return;if(audio.current?.currentTime>3){audio.current.currentTime=0;return;}setCurrentIndex(i=>Math.max(0,i-1))};
+  const toggleShuffle=()=>{
+    if(!shuffle&&currentIndex>=0){
+      setQueue(old=>{
+        const before=old.slice(0,currentIndex+1),upcoming=old.slice(currentIndex+1);
+        for(let i=upcoming.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[upcoming[i],upcoming[j]]=[upcoming[j],upcoming[i]]}
+        return [...before,...upcoming];
+      });
+    }
+    setShuffle(v=>!v);
+  };
   const changeQuality=value=>{setQuality(value);try{localStorage.setItem('jobbi-quality',value)}catch{}};
   const saveOffline=track=>nativeCommand('download',{track:{id:track.id,title:track.title||track.name,artist:track.artist,album:track.album,suffix:track.suffix||'mp3'},quality});
   const openNowPlaying=(mode='artwork')=>{if(!currentTrack)return;setNowPlayingMode(mode);setNowPlayingOpen(true);};
@@ -752,7 +790,7 @@ function App() {
   </>;
   if(page.id==='search')main=<><div className="page-title"><div className="eyebrow">EXPLORE MUSIC</div><h1>Discover<span className="spark-dot">.</span></h1><p>Search your library, Soulseek peers, and your private Invidious fallback.</p></div><div className="search-bar"><Search size={22}/><input className="search-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Songs, artists, albums..." autoFocus/>{q&&<button className="icon-button" onClick={()=>{setQ('');setRemote(null);setInvidious(null)}}><X size={18}/></button>}<span>⌘ K</span></div>
     <div className="segmented"><button className={searchTab==='library'?'selected':''} onClick={()=>setSearchTab('library')}><Library size={16}/> Your library</button><button className={searchTab==='soulseek'?'selected':''} onClick={()=>setSearchTab('soulseek')}><Radio size={16}/> Soulseek · New music <span className="experimental">IMPORT</span></button></div>
-    {searchTab==='library'?<>{results?<><AlbumRow items={results.album||[]} title="Albums" onClick={openAlbum}/>{(results.artist||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Artists</h2></div><div className="artist-strip">{results.artist.map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(results.song||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Songs</h2></div><SongList songs={results.song} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} selectionKey={'search:'+q} onBulkAction={bulkAction} onDeleteRecording={song=>bulkAction('quarantine',[song])}/></section>}{!results.album?.length&&!results.song?.length&&!results.artist?.length&&<div className="empty-state"><p>No matches in your indexed Navidrome library — that does not mean Soulseek has no copies.</p><button className="ghost-button" onClick={()=>{setSearchTab('soulseek');setRemote(null)}}><Radio size={16}/> Search “{q}” on Soulseek</button></div>}</>:<div className="search-suggestion"><Search size={35}/><h3>Every great listen starts somewhere.</h3><p>Search albums, artists, and tracks.</p><button className="discover-peer-cta" onClick={()=>setSearchTab('soulseek')}><Radio size={18}/> Discover new songs on Soulseek <ArrowRight size={16}/></button></div>}</>:
+    {searchTab==='library'?<>{results?<><AlbumRow items={results.album||[]} title="Albums" onClick={openAlbum}/>{(results.artist||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Artists</h2></div><div className="artist-strip">{results.artist.map(a=><button key={a.id} onClick={()=>setPage({id:'artist',idValue:a.id})}><Art item={a} round/><strong>{a.name}</strong></button>)}</div></section>}{(results.song||[]).length>0&&<section className="shelf"><div className="shelf-title"><h2>Songs</h2></div><SongList songs={results.song} onPlay={playTracks} onQueueNext={playNext} onQueueLast={addToQueue} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} selectionKey={'search:'+q} onBulkAction={bulkAction} onDeleteRecording={song=>bulkAction('quarantine',[song])}/></section>}{!results.album?.length&&!results.song?.length&&!results.artist?.length&&<div className="empty-state"><p>No matches in your indexed Navidrome library — that does not mean Soulseek has no copies.</p><button className="ghost-button" onClick={()=>{setSearchTab('soulseek');setRemote(null)}}><Radio size={16}/> Search “{q}” on Soulseek</button></div>}</>:<div className="search-suggestion"><Search size={35}/><h3>Every great listen starts somewhere.</h3><p>Search albums, artists, and tracks.</p><button className="discover-peer-cta" onClick={()=>setSearchTab('soulseek')}><Radio size={18}/> Discover new songs on Soulseek <ArrowRight size={16}/></button></div>}</>:
     <section className="remote-search"><div className="remote-notice"><Radio size={21}/><div><strong>Search beyond your library</strong><p>Explore more music through Soulseek and Invidious.</p></div></div>
       <div className="source-indicator"><span className={remoteStatus?.serverConnected?'source-online':'source-unknown'}/><span>{remoteStatus?.mode==='slskd'?remoteStatus.serverConnected?'Soulseek connected':'Soulseek connection needs attention':remoteStatus?.mode==='legacy'?'Legacy search · direct slskd connection recommended':'Checking Soulseek connection…'}</span></div>
       {remoteStatus?.message&&<div className="search-notice">{remoteStatus.message}</div>}
@@ -869,11 +907,11 @@ function App() {
     </div>
   </section>;
   if(page.id==='transfer')main=<PlaylistTransfer api={api} user={user?.username} onLibrary={()=>refreshPlaylists().catch(()=>{})}/>;
-  if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p><button type="button" className="ghost-button" onClick={()=>downloadCollection('favorites','','Favorites')}><ArrowDownToLine size={16}/> Download all Favorite songs</button></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} favorite={favorite} openAlbum={openAlbum} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onBulkAction={bulkAction} onDeleteRecording={song=>bulkAction('quarantine',[song])}/></>;
+  if(page.id==='favorites')main=<><div className="page-title"><div className="eyebrow">SAVED FOR LATER</div><h1>Favorites<span className="spark-dot">.</span></h1><p>Only the good stuff.</p><button type="button" className="ghost-button" onClick={()=>downloadCollection('favorites','','Favorites')}><ArrowDownToLine size={16}/> Download all Favorite songs</button></div><AlbumRow items={(home?.recent||[]).filter(x=>starred.has(x.id))} title="Loved albums" onClick={openAlbum}/><Favorites starred={starred} currentTrack={currentTrack} playTracks={playTracks} onQueueNext={playNext} onQueueLast={addToQueue} favorite={favorite} openAlbum={openAlbum} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onBulkAction={bulkAction} onDeleteRecording={song=>bulkAction('quarantine',[song])}/></>;
   if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><div className="detail-artwork"><Art item={detail} size="big" round={page.id==='artist'}/>{['album','playlist'].includes(page.id)&&<img key={page.idValue+'-'+coverVersion} className="custom-cover-art" src={'/api/artwork/'+page.id+'/'+encodeURIComponent(page.idValue)+'?v='+coverVersion} alt="Your uploaded cover" onError={e=>{e.currentTarget.style.display='none'}} onLoad={e=>{e.currentTarget.style.display='block'}}/>}</div><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit">
   <button type="button" className="ghost-button" onClick={()=>downloadCollection('playlist',page.idValue,detail.name||'playlist')}>
     <ArrowDownToLine size={16}/> Download playlist
-  </button><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{['album','playlist'].includes(page.id)&&<PlaylistTools detail={detail} playlistId={page.idValue} isPlaylist={page.id==='playlist'} api={api} onUpdate={updated=>setDetail(old=>({...old,...updated,entry:updated?.entry??old?.entry}))} onSocial={id=>setPage({id:'social',idValue:id})} onFavoriteAll={favoriteAllPlaylist} onArtwork={uploadCover} onError={setError} search={playlistQuery} onSearch={setPlaylistQuery} viewer={user?.username}/>}{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{detailSongs.length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={filteredDetailSongs} onPlay={playTracks} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?(_i,song)=>removeFromPlaylist(page.idValue,song._playlistIndex):undefined}
+  </button><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{['album','playlist'].includes(page.id)&&<PlaylistTools detail={detail} playlistId={page.idValue} isPlaylist={page.id==='playlist'} api={api} onUpdate={updated=>setDetail(old=>({...old,...updated,entry:updated?.entry??old?.entry}))} onSocial={id=>setPage({id:'social',idValue:id})} onFavoriteAll={favoriteAllPlaylist} onArtwork={uploadCover} onError={setError} search={playlistQuery} onSearch={setPlaylistQuery} viewer={user?.username}/>}{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{detailSongs.length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={filteredDetailSongs} onPlay={playTracks} onQueueNext={playNext} onQueueLast={addToQueue} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?(_i,song)=>removeFromPlaylist(page.idValue,song._playlistIndex):undefined}
   selectionKey={page.id+':'+page.idValue} onBulkAction={bulkAction} onDeleteRecording={song=>bulkAction('quarantine',[song])}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
   return <div className={'app-shell '+(playing?'music-is-playing':'music-is-paused')}><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span>{androidApp&&<button className="native-offline-link" title="Open downloaded music" onClick={()=>nativeCommand("openOffline")}><ArrowDownToLine size={15}/> Offline</button>}<label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Open community profile" onClick={()=>setPage({id:'social'})}>{socialSelf?.has_avatar?<img className="header-profile-photo" src={`/api/social/profiles/${encodeURIComponent(user.username.toLowerCase())}/avatar?v=${socialAvatarVersion}`} alt="My profile"/>:user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
     <audio ref={audio}
@@ -883,9 +921,9 @@ function App() {
       onLoadedMetadata={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))}
       onDurationChange={e=>setLength(preferredDuration(currentTrack?.duration,e.currentTarget.duration))}
       onEnded={e=>{trackListen(e.currentTarget);handleAudioEnded(e)}} onError={e=>{setPlaying(false);if(e.currentTarget.error&&currentTrack)setError('Playback failed. Check the track format or connection, then try again.')}}/>
-    <div className={`player ${currentTrack?'player-active':''} ${playing?'player-playing':'player-paused'}`}><div className="player-song"><button className="player-open" aria-label={currentTrack?'Open now playing for '+currentTrack.title:'Nothing playing'} onClick={()=>openNowPlaying()} disabled={!currentTrack}><Art item={currentTrack} size="small"/>{currentTrack&&<span className="jobbi-mini-viz" aria-hidden="true"><i/><i/><i/><i/></span>}<div className="player-song-text"><strong>{currentTrack?.title||'Nothing playing yet'}</strong><span>{currentTrack?.artist||'Your soundtrack starts here'}</span></div></button>{currentTrack&&androidApp&&<button className="icon-button" title="Download this song to Android" onClick={()=>saveOffline(currentTrack)}><ArrowDownToLine size={18}/></button>}{currentTrack&&<button className={`icon-button ${starred.has(currentTrack.id)?'hearted':''}`} onClick={()=>favorite(currentTrack).catch(()=>{})} aria-label="Favorite current song" aria-pressed={starred.has(currentTrack.id)} title="Favorite"><Heart size={18} fill={starred.has(currentTrack.id)?'currentColor':'none'}/></button>}</div>
-    <div className="player-center"><div className="playback-controls"><button className={`icon-button ${shuffle?'control-on':''}`} onClick={()=>setShuffle(v=>!v)} title="Shuffle"><Shuffle size={16}/></button><button className="icon-button player-previous" title="Previous song" aria-label="Previous song" onClick={prev} disabled={!currentTrack}><SkipBack size={19} fill="currentColor"/></button><button className="play-round" onClick={toggle} disabled={!currentTrack}>{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-button player-next" title="Next song" aria-label="Next song" onClick={next} disabled={!currentTrack}><SkipForward size={19} fill="currentColor"/></button><button className={`icon-button ${repeat?'control-on':''}`} onClick={()=>setRepeat(v=>!v)} title="Repeat"><Repeat2 size={16}/></button></div><div className="seek"><small>{duration(position)}</small><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={cappedPosition(position,length)} style={{'--seek-progress':progressPercent(position,length)+'%'}} onChange={e=>seekTo(Number(e.target.value))} disabled={!currentTrack||!length}/><small>{duration(length)}</small></div></div>
-    <div className="player-extras"><button className={`icon-button ${panel==='lyrics'?'control-on':''}`} title="Lyrics" onClick={()=>openNowPlaying('lyrics')} disabled={!currentTrack}><Mic2 size={18}/></button><button className={`icon-button ${panel==='queue'?'control-on':''}`} title="Queue" onClick={()=>setPanel(panel==='queue'?null:'queue')}><ListMusic size={19}/></button><Volume2 size={18}/><input type="range" min="0" max="1" step=".01" value={volume} onChange={e=>setVolume(Number(e.target.value))} aria-label="Volume"/></div></div>
+    <div className={`player ${currentTrack?'player-active':''} ${playing?'player-playing':'player-paused'}`}><div className="player-song"><button className="player-open" aria-label={currentTrack?'Open now playing for '+currentTrack.title:'Nothing playing'} onClick={()=>openNowPlaying()} disabled={!currentTrack}><Art item={currentTrack} size="small"/>{currentTrack&&<span className="jobbi-mini-viz" aria-hidden="true"><i/><i/><i/><i/></span>}<div className="player-song-text"><strong>{currentTrack?.title||'Nothing playing yet'}</strong><span>{currentTrack?.artist||'Your soundtrack starts here'}</span></div></button>{currentTrack&&androidApp&&<button className="icon-button" title="Download this song to Android" onClick={()=>saveOffline(currentTrack)}><ArrowDownToLine size={18}/></button>}{currentTrack&&<button className="icon-button queue-mobile-open" aria-label="Open queue" title="Up Next" onClick={()=>setPanel('queue')}><ListMusic size={18}/></button>}{currentTrack&&<button className={`icon-button ${starred.has(currentTrack.id)?'hearted':''}`} onClick={()=>favorite(currentTrack).catch(()=>{})} aria-label="Favorite current song" aria-pressed={starred.has(currentTrack.id)} title="Favorite"><Heart size={18} fill={starred.has(currentTrack.id)?'currentColor':'none'}/></button>}</div>
+    <div className="player-center"><div className="playback-controls"><button className={`icon-button ${shuffle?'control-on':''}`} onClick={toggleShuffle} title="Shuffle upcoming tracks"><Shuffle size={16}/></button><button className="icon-button player-previous" title="Previous song" aria-label="Previous song" onClick={prev} disabled={!currentTrack}><SkipBack size={19} fill="currentColor"/></button><button className="play-round" onClick={toggle} disabled={!currentTrack}>{playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-button player-next" title="Next song" aria-label="Next song" onClick={next} disabled={!currentTrack}><SkipForward size={19} fill="currentColor"/></button><button className={`icon-button ${repeat?'control-on':''}`} onClick={()=>setRepeat(v=>!v)} title="Repeat"><Repeat2 size={16}/></button></div><div className="seek"><small>{duration(position)}</small><input aria-label="Seek in song" type="range" min="0" max={Math.max(length,1)} step=".1" value={cappedPosition(position,length)} style={{'--seek-progress':progressPercent(position,length)+'%'}} onChange={e=>seekTo(Number(e.target.value))} disabled={!currentTrack||!length}/><small>{duration(length)}</small></div></div>
+    <div className="player-extras"><button className={`icon-button ${panel==='lyrics'?'control-on':''}`} title="Lyrics" onClick={()=>openNowPlaying('lyrics')} disabled={!currentTrack}><Mic2 size={18}/></button><button className={`icon-button ${panel==='queue'?'control-on':''}`} title="Queue" aria-label="Open queue" onClick={()=>setPanel(panel==='queue'?null:'queue')}><ListMusic size={19}/></button><Volume2 size={18}/><input type="range" min="0" max="1" step=".01" value={volume} onChange={e=>setVolume(Number(e.target.value))} aria-label="Volume"/></div></div>
     {nowPlayingOpen&&currentTrack&&<NowPlaying
       track={currentTrack} queue={queue} currentIndex={currentIndex}
       playing={playing} position={position} length={length} mode={nowPlayingMode}
@@ -893,6 +931,8 @@ function App() {
       onClose={()=>setNowPlayingOpen(false)} onToggle={toggle} onNext={next} onPrev={prev}
       onSeek={seekTo}
       onSelect={setCurrentIndex}
+      onMove={moveUpcoming} onRemove={removeFromQueue} onClear={clearQueue}
+      onPlayNext={playNext} onAddToQueue={addToQueue}
       favorited={starred.has(currentTrack.id)}
       onFavorite={()=>favorite(currentTrack).catch(e=>setError(e.message))}
       onAdd={()=>{openPlaylistPicker(currentTrack);setNowPlayingOpen(false)}}
@@ -900,7 +940,7 @@ function App() {
       onArtist={()=>{setNowPlayingOpen(false);openArtistSong(currentTrack)}}
       onAlbum={()=>{setNowPlayingOpen(false);openAlbumSong(currentTrack)}}
       onShare={()=>{const details=`${currentTrack.artist||'Unknown artist'} — ${currentTrack.title||'Unknown track'} · Jobbi Music`;navigator.clipboard?.writeText(details).catch(()=>{});}}
-      shuffle={shuffle} repeat={repeat} onShuffle={()=>setShuffle(v=>!v)}
+      shuffle={shuffle} repeat={repeat} onShuffle={toggleShuffle}
       onRepeat={()=>setRepeat(v=>!v)}/>}
     <nav className="mobile-nav" aria-label="Main navigation">{navs.map(n=><button key={n.id} type="button" aria-label={n.label} className={page.id===n.id?'selected':''} onClick={()=>{setPage({id:n.id});setMobileMore(false)}}><n.icon size={21} strokeWidth={2}/><span>{n.id==='home'?'Home':n.id==='library'?'Library':n.id==='social'?'Friends':n.label}</span></button>)}<button type="button" aria-label="More options" aria-expanded={mobileMore} className={mobileMore||['favorites','settings','admin'].includes(page.id)?'selected':''} onClick={()=>setMobileMore(v=>!v)}><MoreHorizontal size={22}/><span>More</span></button></nav>
     {mobileMore&&<div className="mobile-more-backdrop" onClick={()=>setMobileMore(false)}><div className="mobile-more-sheet" role="dialog" aria-label="More navigation" onClick={e=>e.stopPropagation()}><div className="mobile-more-heading"><strong>More in Jobbi Music</strong><button aria-label="Close menu" onClick={()=>setMobileMore(false)}><X size={20}/></button></div><button onClick={()=>{setPage({id:'favorites'});setMobileMore(false)}}><Heart size={19}/> Favorites</button><button onClick={()=>{setPage({id:'settings'});setMobileMore(false)}}><SlidersHorizontal size={19}/> Settings</button><button onClick={()=>{setPage({id:'transfer'});setMobileMore(false)}}><FileUp size={19}/> Import Spotify / Apple Music</button>{user.admin&&<button onClick={()=>{setPage({id:'admin'});setMobileMore(false)}}><Settings2 size={19}/> Admin console</button>}{androidApp&&<button onClick={()=>{nativeCommand('openOffline');setMobileMore(false)}}><ArrowDownToLine size={19}/> Downloads & offline</button>}</div></div>}
@@ -946,7 +986,24 @@ function App() {
       </aside>
     </div>}
     {pickerSong&&<div className="panel-backdrop" onClick={()=>setPickerSong(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">YOUR PLAYLISTS</span><h2>Add to playlist</h2></div><button className="icon-button" onClick={()=>setPickerSong(null)}><X size={22}/></button></header><p>{pickerSong.title} · {pickerSong.artist}</p><div className="queue-content">{(home?.playlists||[]).map(p=><button className="queue-item" key={p.id} disabled={playlistBusy} onClick={()=>addToPlaylist(p.id)}><ListMusic size={19}/><div><strong>{p.name}</strong><small>{p.songCount||0} songs</small></div><Plus size={19}/></button>)}{!(home?.playlists||[]).length&&<p>Make your first playlist under Your Library.</p>}</div></aside></div>}
-    {panel&&<div className="panel-backdrop" onClick={()=>setPanel(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOW PLAYING</span><h2>{panel==='queue'?'Up next':'Lyrics'}</h2></div><button className="icon-button" onClick={()=>setPanel(null)}><X size={22}/></button></header>{panel==='queue'?<div className="queue-content">{queue.map((s,i)=><button className={`queue-item ${i===currentIndex?'selected':''}`} key={i} onClick={()=>setCurrentIndex(i)}><Art item={s} size="tiny"/><div><strong>{s.title}</strong><small>{s.artist}</small></div>{i===currentIndex&&<Waves size={18}/>}</button>)}</div>:<div className="lyrics-content"><Art item={currentTrack} size="big"/><h3>{currentTrack?.title}</h3><p>{currentTrack?.artist}</p>{(lyrics?.structuredLyrics||[]).length?<div className="lyrics-lines">{lyrics.structuredLyrics.flatMap((o,i)=>(o.line||[]).map((l,j)=><p key={`${i}-${j}`}>{l.value||'♪'}</p>))}</div>:<div className="lyrics-empty"><Mic2 size={24}/><p>No synced lyrics found for this track.</p><small>Your existing LRCLIB downloader may be able to add them.</small></div>}</div>}</aside></div>}
+    {panel&&<div className="panel-backdrop" onClick={()=>setPanel(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOW PLAYING</span><h2>{panel==='queue'?'Up next':'Lyrics'}</h2></div><button className="icon-button" onClick={()=>setPanel(null)}><X size={22}/></button></header>{panel==='queue'?<div className="queue-manager">
+        <div className="queue-manager-toolbar"><p>{queue.length ? queue.length-currentIndex-1 : 0} upcoming · {queue.length} total</p>
+          <button type="button" className="ghost-button" onClick={clearQueue} disabled={currentIndex>=queue.length-1}>Clear upcoming</button></div>
+        <div className="queue-content" aria-label="Playback queue">
+          {queue.map((s,i)=><div className={`queue-manage-row ${i===currentIndex?'selected':''}`} key={i}>
+            <button className="queue-item" type="button" onClick={()=>setCurrentIndex(i)} aria-label={'Play '+s.title+' from queue'}>
+              <Art item={s} size="tiny"/><div><strong>{s.title}</strong><small>{s.artist}</small></div>{i===currentIndex&&<Waves size={18}/>}
+            </button>
+            {i>currentIndex&&<div className="queue-manage-actions">
+              <button type="button" aria-label={'Move '+s.title+' up'} disabled={i===currentIndex+1}
+                onClick={()=>moveUpcoming(i,i-1)}><ArrowLeft size={16}/></button>
+              <button type="button" aria-label={'Move '+s.title+' down'} disabled={i===queue.length-1}
+                onClick={()=>moveUpcoming(i,i+1)}><ArrowRight size={16}/></button>
+              <button type="button" aria-label={'Remove '+s.title+' from queue'}
+                onClick={()=>removeFromQueue(i)}><X size={16}/></button>
+            </div>}
+          </div>)}
+        </div></div>:<div className="lyrics-content"><Art item={currentTrack} size="big"/><h3>{currentTrack?.title}</h3><p>{currentTrack?.artist}</p>{(lyrics?.structuredLyrics||[]).length?<div className="lyrics-lines">{lyrics.structuredLyrics.flatMap((o,i)=>(o.line||[]).map((l,j)=><p key={`${i}-${j}`}>{l.value||'♪'}</p>))}</div>:<div className="lyrics-empty"><Mic2 size={24}/><p>No synced lyrics found for this track.</p><small>Your existing LRCLIB downloader may be able to add them.</small></div>}</div>}</aside></div>}
   </div>;
 }
 function RecommendationShelf({title,subtitle,songs,onPlay,showPlays=false,compact=false}){
@@ -970,7 +1027,7 @@ function RecommendationShelf({title,subtitle,songs,onPlay,showPlays=false,compac
     </div>
   </section>;
 }
-function Favorites({currentTrack,playTracks,favorite,openAlbum,starred,onAdd,onSave,onArtist,onAlbum,onBulkAction,onDeleteRecording}){
+function Favorites({currentTrack,playTracks,onQueueNext,onQueueLast,favorite,openAlbum,starred,onAdd,onSave,onArtist,onAlbum,onBulkAction,onDeleteRecording}){
   const [data,setData]=useState(null);const[err,setErr]=useState('');useEffect(()=>{api('/api/starred').then(setData).catch(e=>setErr(e.message))},[starred]);
   return <>{err&&<p>{err}</p>}<AlbumRow items={data?.album||[]} title="Favorite albums" onClick={openAlbum}/><section className="shelf"><div className="shelf-title"><h2>Favorite songs</h2>
       <button type="button" className="primary" disabled={!data?.song?.length}
@@ -981,6 +1038,6 @@ function Favorites({currentTrack,playTracks,favorite,openAlbum,starred,onAdd,onS
             [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];
           }
           playTracks(shuffled,0);
-        }}><Shuffle size={16}/> Shuffle Favorites</button></div>{data?.song?.length?<SongList songs={data.song} currentTrack={currentTrack} onPlay={playTracks} onFavorite={favorite} starred={starred} onAdd={onAdd} onSave={onSave} onArtist={onArtist} onAlbum={onAlbum} selectionKey="favorites" onBulkAction={onBulkAction} onDeleteRecording={onDeleteRecording}/>:<div className="empty-state"><Heart size={28}/><p>Tap a heart on any song to save it here.</p></div>}</section></>;
+        }}><Shuffle size={16}/> Shuffle Favorites</button></div>{data?.song?.length?<SongList songs={data.song} currentTrack={currentTrack} onPlay={playTracks} onQueueNext={onQueueNext} onQueueLast={onQueueLast} onFavorite={favorite} starred={starred} onAdd={onAdd} onSave={onSave} onArtist={onArtist} onAlbum={onAlbum} selectionKey="favorites" onBulkAction={onBulkAction} onDeleteRecording={onDeleteRecording}/>:<div className="empty-state"><Heart size={28}/><p>Tap a heart on any song to save it here.</p></div>}</section></>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
