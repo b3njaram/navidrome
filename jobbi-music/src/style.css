@@ -578,3 +578,17 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   .selection-toolbar button{font-size:11px;padding:8px 9px}
   .track-selection{min-width:30px}
 }
+
+/* Shared-library file removal: separate from removing a playlist entry. */
+.removal-review-panel{max-width:520px;max-height:min(90vh,740px);overflow-y:auto}
+.removal-warning{color:#ffc5c8;line-height:1.5;font-size:13px}
+.removal-references{max-height:36vh;overflow-y:auto;display:grid;gap:12px;padding:12px 0}
+.removal-song{border:1px solid rgba(203,150,171,.24);border-radius:12px;padding:12px}
+.removal-song>strong{display:block;margin-bottom:7px;line-height:1.4}
+.removal-song ul{padding-left:20px;margin:6px 0;font-size:13px;color:#ded4dd}
+.removal-song li{margin:7px 0}
+.removal-song p,.removal-song small{font-size:12px;color:#e0cdd8}
+.removal-confirm-label{display:flex;flex-direction:column;gap:8px;font-size:13px;font-weight:600}
+.removal-confirm-label input{width:100%;border:1px solid #91758b;background:#191820;color:#fff;border-radius:8px;padding:11px}
+.removal-dialog-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding:18px 0 0}
+.inline-removal-loading{position:fixed;z-index:80;bottom:95px;left:50%;transform:translateX(-50%);background:#322a35;border:1px solid #ab6b91;border-radius:12px;padding:12px 18px;display:flex;align-items:center;gap:12px;color:#fff}
