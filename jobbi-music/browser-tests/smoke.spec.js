@@ -166,7 +166,7 @@ test('home recommendations show weekly/monthly, personal and daily mixes and opt
   await expect(page.getByRole('heading',{name:'Recently Added Songs'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Top This Week'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Top This Month'})).toBeVisible();
-  await expect(page.getByRole('heading',{name:'Made for You'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Made for You',exact:true})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Evening Mix'})).toBeVisible();
   await expect(page.getByRole('button',{name:'Play Weekly favorite from Top This Week'})).toBeVisible();
   expect(state.weatherRequests.every(city=>city==='')).toBe(true);
