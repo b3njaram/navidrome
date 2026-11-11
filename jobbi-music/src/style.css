@@ -664,3 +664,17 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
   .track-queue-menu-content{right:0}
   .queue-manage-actions button{min-width:35px}
 }
+
+
+/* Leave enough hit area for Favorite, playlist, NAS and queue menus. On a
+ * 320px phone the duration is secondary to being able to tap the controls. */
+@media(min-width:721px){
+  .track-row,.track-header{grid-template-columns:40px minmax(0,3fr) minmax(0,2fr) 202px}
+}
+@media(max-width:720px){
+  .track-row,.track-header{grid-template-columns:25px minmax(0,1fr) 170px}
+  .track-row .track-actions>span:last-child{display:none}
+  .track-row .track-actions{gap:2px}
+  .track-row .track-actions .icon-button{width:30px;min-width:30px;flex-basis:30px}
+  .track-queue-menu>summary{width:30px}
+}
