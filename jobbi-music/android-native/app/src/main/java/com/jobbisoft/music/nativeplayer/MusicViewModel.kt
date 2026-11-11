@@ -80,6 +80,44 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var downloadStats by androidx.compose.runtime.mutableStateOf(JobbiDownloadStats())
         private set
+    var recommendations by androidx.compose.runtime.mutableStateOf<RecommendationsResult?>(null)
+        private set
+    var recommendationsLoading by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    var recommendationsError by androidx.compose.runtime.mutableStateOf("")
+        private set
+    var weatherCity by androidx.compose.runtime.mutableStateOf("")
+        private set
+    private fun loadWeatherPreference(){
+        if(account.isBlank())return
+        weatherCity=getApplication<Application>().getSharedPreferences(
+            "jobbi-native-weather",android.content.Context.MODE_PRIVATE)
+            .getString("city:"+account.lowercase(),"").orEmpty()
+    }
+    fun setWeatherCity(city:String){
+        val trimmed=city.trim().take(80)
+        if(trimmed.isNotBlank()&&trimmed.length<2){
+            recommendationsError="Enter at least two characters for your city."
+            return
+        }
+        weatherCity=trimmed
+        getApplication<Application>().getSharedPreferences(
+            "jobbi-native-weather",android.content.Context.MODE_PRIVATE)
+            .edit().putString("city:"+account.lowercase(),trimmed).apply()
+        refreshRecommendations()
+    }
+    fun refreshRecommendations(){
+        if(!signedIn||offlineMode||account.isBlank())return
+        viewModelScope.launch {
+            recommendationsLoading=true
+            recommendationsError=""
+            try{ recommendations=JobbiApi.recommendations(weatherCity) }
+            catch(e:Exception){
+                recommendationsError="Personalized recommendations unavailable: "+
+                    (e.message ?: "Server unavailable")
+            }finally{ recommendationsLoading=false }
+        }
+    }
 
     private var searchJob: Job? = null
     init {
@@ -109,6 +147,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     offlineMode = false
                     signedIn = true
                     selected = "Home"
+                    loadWeatherPreference()
                     refresh()
                 }
             }catch(e: Exception){
@@ -178,6 +217,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         isAdmin = JobbiApi.isAdmin
         signedIn = true
         offlineMode = false
+        loadWeatherPreference()
         try {
             withContext(Dispatchers.IO) {
                 if(remember) {
@@ -213,6 +253,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         detail = null; home = HomeResult(emptyList(),emptyList(),emptyList(),emptyList())
         favorites = emptyList(); favoriteIds = emptySet(); playlists = emptyList()
         downloadStats = JobbiDownloadStats()
+        recommendations = null
+        recommendationsError = ""
+        weatherCity = ""
         onComplete()
     }
     fun select(tab: String) {
@@ -239,6 +282,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         favorites = stars
         favoriteIds = stars.map(Song::id).toSet()
         updateDownloadStats()
+        refreshRecommendations()
     }
     fun loadLibrary() = execute {
         albums = JobbiApi.albums()
