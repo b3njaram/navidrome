@@ -1,0 +1,67 @@
+name: Jobbi Music native SwiftUI iOS
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'jobbi-music/ios-native/**'
+      - '.github/workflows/jobbi-ios-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: jobbi-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Xcode SDK version
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate native Xcode project
+        working-directory: jobbi-music/ios-native
+        run: xcodegen generate
+      - name: Compile native iPhone Simulator app
+        working-directory: jobbi-music/ios-native
+        run: |
+          set -o pipefail
+          xcodebuild -project JobbiMusic.xcodeproj -scheme JobbiMusic \
+            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Run Swift unit tests on iOS Simulator
+        working-directory: jobbi-music/ios-native
+        run: |
+          set -o pipefail
+          SIM_ID=$(python3 -c 'import json,subprocess; j=json.loads(subprocess.check_output(["xcrun","simctl","list","devices","available","-j"])); print(next((d["udid"] for _,v in j["devices"].items() for d in v if "iPhone" in d["name"] and d["state"] in ("Shutdown","Booted")), ""))')
+          if [ -z "$SIM_ID" ]; then echo "No iPhone simulator is available"; exit 1; fi
+          xcodebuild -project JobbiMusic.xcodeproj -scheme JobbiMusic \
+            -configuration Debug -destination "platform=iOS Simulator,id=$SIM_ID" \
+            CODE_SIGNING_ALLOWED=NO test
+      - name: Compile unsigned iPhone device app
+        working-directory: jobbi-music/ios-native
+        run: |
+          set -o pipefail
+          xcodebuild -project JobbiMusic.xcodeproj -scheme JobbiMusic \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/JobbiDerived" \
+            CODE_SIGNING_ALLOWED=NO build
+          test -s "$RUNNER_TEMP/JobbiDerived/Build/Products/Release-iphoneos/JobbiMusic.app/JobbiMusic"
+          mkdir -p "$RUNNER_TEMP/jobbi-payload/Payload"
+          cp -R "$RUNNER_TEMP/JobbiDerived/Build/Products/Release-iphoneos/JobbiMusic.app" \
+            "$RUNNER_TEMP/jobbi-payload/Payload/"
+          cd "$RUNNER_TEMP/jobbi-payload"
+          zip -qry "$GITHUB_WORKSPACE/JobbiMusic-UNSIGNED.ipa" Payload
+      - name: Upload unsigned IPA (not installable without signing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: JobbiMusic-UNSIGNED-NOT-INSTALLABLE
+          path: JobbiMusic-UNSIGNED.ipa
+          if-no-files-found: error
+          retention-days: 30
