@@ -23,8 +23,22 @@ services:
       ENABLE_ACCOUNT_MANAGEMENT: ${ENABLE_ACCOUNT_MANAGEMENT:-false}
       SOCIAL_DATABASE_URL: postgresql://jobbi_social:${SOCIAL_DB_PASSWORD:?Set SOCIAL_DB_PASSWORD in .env}@jobbi-social-db:5432/jobbi_social
     depends_on:
-      # Opt-in: docker compose --profile quarantine up -d jobbi-quarantine
-  # This is the only service permitted a writable /music mount. Never expose ports.
+      jobbi-social-db:
+        condition: service_healthy
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    volumes:
+      - jobbi-storage-stats:/run/jobbi-stats:ro
+    cap_drop:
+      - ALL
+    pids_limit: 128
+
+  # Opt-in: docker compose --profile quarantine up -d jobbi-quarantine
+  # The only service with a writable music mount; no published host ports.
   jobbi-quarantine:
     profiles: ["quarantine"]
     image: node:22-alpine
@@ -48,20 +62,6 @@ services:
       - ALL
     pids_limit: 32
     mem_limit: 96m
-
-  jobbi-social-db:
-        condition: service_healthy
-    mem_limit: 512m
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:size=16m
-    volumes:
-      - jobbi-storage-stats:/run/jobbi-stats:ro
-    cap_drop:
-      - ALL
-    pids_limit: 128
 
   jobbi-social-db:
     image: postgres:17-alpine
