@@ -16,6 +16,10 @@ import org.json.JSONObject
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
     var signedIn by androidx.compose.runtime.mutableStateOf(false)
         private set
+    var restoringSession by androidx.compose.runtime.mutableStateOf(true)
+        private set
+    var savedSignInAvailable by androidx.compose.runtime.mutableStateOf(false)
+        private set
     var isAdmin by androidx.compose.runtime.mutableStateOf(false)
         private set
     var busy by androidx.compose.runtime.mutableStateOf(false)
@@ -66,6 +70,53 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         JobbiApi.configure(application)
         server = JobbiApi.serverUrl()
         quality = JobbiApi.quality
+        restoreSavedSignIn()
+    }
+
+    private fun restoreSavedSignIn() {
+        if(signedIn)return
+        viewModelScope.launch {
+            restoringSession = true
+            error = ""
+            try {
+                val saved = withContext(Dispatchers.IO) {
+                    SecureLoginStorage.load(getApplication())
+                }
+                savedSignInAvailable = saved != null
+                if(saved != null){
+                    // A new process has no usable Jobbi cookie. Establish a new
+                    // HTTPS session using only the Keystore-encrypted account.
+                    JobbiApi.changeServer(getApplication(), saved.server)
+                    server = JobbiApi.serverUrl()
+                    account = JobbiApi.login(saved.username, saved.password)
+                    isAdmin = JobbiApi.isAdmin
+                    signedIn = true
+                    refresh()
+                }
+            }catch(e: Exception){
+                JobbiApi.clearSession()
+                account = ""
+                isAdmin = false
+                if(e is JobbiException && e.status == 401){
+                    withContext(Dispatchers.IO) {
+                        runCatching { SecureLoginStorage.clear(getApplication()) }
+                    }
+                    savedSignInAvailable = false
+                    error = "Your saved credentials are no longer valid. Please sign in again."
+                }else{
+                    // Offline/network/server failures must NOT erase the encrypted
+                    // account. Users can retry without retyping their password.
+                    error = "Couldn't restore your session: "+
+                        (e.message ?: "Server unavailable")+
+                        ". Your saved sign-in is still on this device; tap Retry."
+                }
+            }finally{
+                restoringSession = false
+            }
+        }
+    }
+    fun retrySavedSignIn() {
+        if(!signedIn && !restoringSession && savedSignInAvailable) restoreSavedSignIn()
     }
 
     private fun execute(block: suspend () -> Unit) {
@@ -78,19 +129,41 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun dismissMessage() { message = ""; error = "" }
-    fun login(username: String,password: String,configuredServer: String) = execute {
+    fun login(username: String,password: String,configuredServer: String,
+              remember: Boolean = true) = execute {
         JobbiApi.changeServer(getApplication(),configuredServer)
         server = JobbiApi.serverUrl()
-        account = JobbiApi.login(username,password)
+        val confirmedAccount = JobbiApi.login(username,password)
+        account = confirmedAccount
         isAdmin = JobbiApi.isAdmin
         signedIn = true
+        try {
+            withContext(Dispatchers.IO) {
+                if(remember) {
+                    SecureLoginStorage.save(getApplication(),
+                        RememberedLogin(server,confirmedAccount,password))
+                }else {
+                    SecureLoginStorage.clear(getApplication())
+                }
+            }
+            savedSignInAvailable = remember
+        }catch (_: Exception){
+            savedSignInAvailable = false
+            message = "Signed in, but could not safely save your login. "+
+                "You may need to sign in again the next time."
+        }
         refresh()
     }
     fun logout(onComplete: () -> Unit = {}) = execute {
+        // Forget the saved account before sending the logout request, even
+        // when the server is unavailable. Never silently log in after Sign out.
+        withContext(Dispatchers.IO) { SecureLoginStorage.clear(getApplication()) }
+        savedSignInAvailable = false
         runCatching { JobbiApi.logout() }
         JobbiApi.clearSession()
         signedIn = false
         isAdmin = false
+        account = ""
         selected = "Home"
         detail = null; home = HomeResult(emptyList(),emptyList(),emptyList(),emptyList())
         favorites = emptyList(); favoriteIds = emptySet(); playlists = emptyList()
