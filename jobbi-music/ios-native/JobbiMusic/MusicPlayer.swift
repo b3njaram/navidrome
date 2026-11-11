@@ -155,7 +155,10 @@ final class MusicPlayer: ObservableObject {
 
     private func accumulateTime() {
         let now = Date()
-        if playing, let lastTime {
+        // Count actual AVPlayer playback only. Buffering, interruptions,
+        // scrubbing and a paused app must not inflate weekly statistics.
+        if playing, avPlayer.rate > 0, avPlayer.timeControlStatus == .playing,
+           let lastTime {
             realListenSeconds += max(0, min(4, now.timeIntervalSince(lastTime)))
         }
         lastTime = now
