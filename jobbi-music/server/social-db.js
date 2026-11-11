@@ -134,6 +134,19 @@ CREATE TABLE IF NOT EXISTS personalized_cover_art (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY(username,kind,entity_id)
 );
+-- Per-user listening events used for Jobbi's weekly, monthly and contextual
+-- recommendations. Do not share this table with community or other users.
+CREATE TABLE IF NOT EXISTS jobbi_listens (
+  id BIGSERIAL PRIMARY KEY,
+  username TEXT NOT NULL CHECK(length(username) BETWEEN 1 AND 120),
+  song_id TEXT NOT NULL CHECK(length(song_id) BETWEEN 1 AND 150),
+  song_data JSONB NOT NULL,
+  local_hour SMALLINT NOT NULL CHECK(local_hour BETWEEN 0 AND 23),
+  source TEXT NOT NULL CHECK(source IN ('web','android')),
+  played_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS jobbi_listens_user_time_idx ON jobbi_listens(username,played_at DESC);
+CREATE INDEX IF NOT EXISTS jobbi_listens_song_time_idx ON jobbi_listens(username,song_id,played_at DESC);
 CREATE INDEX IF NOT EXISTS social_playlists_public_idx ON social_playlists(updated_at DESC) WHERE visibility='public';
 CREATE INDEX IF NOT EXISTS social_playlists_owner_idx ON social_playlists(owner);
 CREATE INDEX IF NOT EXISTS social_members_username_idx ON social_members(username);
