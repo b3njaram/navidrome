@@ -1287,9 +1287,10 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQue
     val song=player.active ?:return
     var drag by remember(song.id) { mutableFloatStateOf(-1f) }
     val max=player.duration.coerceAtLeast(1L).toFloat()
-    Column(Modifier.fillMaxWidth().fillMaxHeight(.83f).padding(horizontal=27.dp),
+    Column(Modifier.fillMaxWidth().fillMaxHeight(.83f)
+        .verticalScroll(rememberScrollState()).padding(horizontal=27.dp),
         horizontalAlignment=Alignment.CenterHorizontally,
-        verticalArrangement=Arrangement.spacedBy(22.dp)) {
+        verticalArrangement=Arrangement.spacedBy(18.dp)) {
         Spacer(Modifier.height(10.dp))
         Cover(song.cover,258.dp)
         Spacer(Modifier.height(6.dp))
