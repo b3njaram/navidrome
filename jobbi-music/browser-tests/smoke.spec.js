@@ -5,7 +5,7 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -29,6 +29,7 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
       const id=pathname.split('/')[3],p=state.playlists.find(x=>x.id===id);
       if(!p)return reply({error:'Playlist not found'},404);
       if(body.addSongId){state.addedTracks.push({playlistId:id,songId:body.addSongId});p.songCount++;}
+      if(Number.isInteger(body.removeIndex))state.removedIndices.push({playlistId:id,index:body.removeIndex});
       if(typeof body.public==='boolean')p.public=body.public;
       return reply({playlist:{...p}});
     }
@@ -602,6 +603,44 @@ test('playlist tools search tracks, change privacy, heart songs and upload album
     buffer:Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(64)])
   });
   await expect.poll(()=>state.artworkUploads.length).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+
+test('playlist can select all, favorite songs, and remove entries without touching server files',async({page})=>{
+  const state=await setupMocks(page);
+  const errors=[];page.on('pageerror',err=>errors.push(err.message));
+  await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.locator('.playlist-grid').getByRole('button',{name:/Favorites Mix/}).click();
+  await page.getByRole('button',{name:'Select songs'}).click();
+  await page.getByRole('button',{name:'Select all'}).click();
+  await expect(page.getByText('2 of 2 selected')).toBeVisible();
+  await page.getByRole('button',{name:'Add to Favorites'}).click();
+  await expect.poll(()=>state.stars.size).toBe(2);
+  await page.getByRole('button',{name:'Select songs'}).click();
+  await page.getByRole('button',{name:'Select all'}).click();
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Remove from playlist'}).click();
+  await expect.poll(()=>state.removedIndices.length).toBe(2);
+  expect(state.removedIndices.map(x=>x.index)).toEqual([1,0]);
+  expect(errors).toEqual([]);
+});
+
+test('Favorites have a shuffle button and bulk copy to another playlist',async({page})=>{
+  const state=await setupMocks(page,{favoriteSongIds:['s1']});
+  const errors=[];page.on('pageerror',err=>errors.push(err.message));
+  await login(page,'listener');
+  const favorites=page.locator('.sidebar').getByRole('button',{name:'Favorites',exact:true});
+  await favorites.click();
+  await expect(page.getByRole('button',{name:'Shuffle Favorites'})).toBeEnabled();
+  await page.getByRole('button',{name:'Select songs'}).click();
+  await page.getByRole('button',{name:'Select all'}).click();
+  await page.getByRole('button',{name:'Add to playlist',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Add songs to playlist'})).toBeVisible();
+  await page.locator('.side-panel').getByRole('button',{name:/Favorites Mix/}).click();
+  await expect.poll(()=>state.addedTracks.length).toBe(1);
+  expect(state.addedTracks[0]).toEqual({playlistId:'p1',songId:'s1'});
   expect(errors).toEqual([]);
 });
 
