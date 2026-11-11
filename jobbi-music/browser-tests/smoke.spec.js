@@ -600,9 +600,7 @@ test('web song menu Play Next/Add to Queue and Up Next reorder/remove/clear work
 
   await tracks.nth(1).getByLabel('Queue options for Another Song').click();
   await tracks.nth(1).getByRole('button',{name:'Play next'}).click();
-  const mobileQueue=page.locator('.player .queue-mobile-open');
-  if(await mobileQueue.isVisible())await mobileQueue.click();
-  else await page.locator('.player-extras').getByRole('button',{name:'Open queue'}).click();
+  // Play Next opens the queue drawer on both desktop and mobile.
   const sidebar=page.locator('.side-panel');
   await expect(sidebar.getByRole('heading',{name:'Up next'})).toBeVisible();
   await expect(sidebar.locator('.queue-manage-row')).toHaveCount(3);
@@ -617,8 +615,7 @@ test('web song menu Play Next/Add to Queue and Up Next reorder/remove/clear work
 
   await tracks.nth(1).getByLabel('Queue options for Another Song').click();
   await tracks.nth(1).getByRole('button',{name:'Add to queue'}).click();
-  if(await mobileQueue.isVisible())await mobileQueue.click();
-  else await page.locator('.player-extras').getByRole('button',{name:'Open queue'}).click();
+  // Add to Queue also reveals the updated drawer without another tap.
   await expect(page.locator('.side-panel .queue-manage-row')).toHaveCount(2);
   expect(errors).toEqual([]);
 });
