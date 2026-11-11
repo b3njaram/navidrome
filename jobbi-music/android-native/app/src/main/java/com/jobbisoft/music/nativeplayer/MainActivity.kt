@@ -1067,6 +1067,24 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
 }
 
 @Composable
+private fun CustomCollectionCover(detail:Listing,revision:Int){
+    val context=LocalContext.current
+    val loader=remember { ImageLoader.Builder(context.applicationContext)
+        .okHttpClient(JobbiApi.client).build() }
+    Box(Modifier.size(122.dp).clip(RoundedCornerShape(18.dp))){
+        Cover(detail.songs.firstOrNull()?.cover,122.dp)
+        val kind=if(detail.isPlaylist)"playlist" else "album"
+        val overlay=JobbiApi.authenticatedUrl(
+            "/api/artwork/"+kind+"/"+Uri.encode(detail.id))+"?v="+revision
+        AsyncImage(
+            model=ImageRequest.Builder(context).data(overlay).crossfade(true).build(),
+            imageLoader=loader,contentDescription="Custom collection cover",
+            contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize()
+        )
+    }
+}
+
+@Composable
 private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
                          onInvite:()->Unit,onDownloadPlaylist:(String,String)->Unit,
                          onBulkPlaylist:(List<Song>,List<Int>,Boolean)->Unit,
@@ -1087,7 +1105,7 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
         item {
             Column(Modifier.padding(19.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                 Row(verticalAlignment=Alignment.CenterVertically) {
-                    Cover(detail.songs.firstOrNull()?.cover,122.dp)
+                    CustomCollectionCover(detail,vm.artRevision)
                     Spacer(Modifier.width(17.dp))
                     Column(Modifier.weight(1f)) {
                         Text(if(detail.isPlaylist)"PLAYLIST" else "ALBUM",
