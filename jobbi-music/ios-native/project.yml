@@ -17,15 +17,24 @@ targets:
     platform: iOS
     sources:
       - path: JobbiMusic
+    info:
+      path: JobbiMusic/Info.plist
+      properties:
+        CFBundleDisplayName: Jobbi Music
+        UIBackgroundModes:
+          - audio
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UILaunchScreen: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jobbisoft.jobbi.music
         INFOPLIST_KEY_CFBundleDisplayName: Jobbi Music
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UIBackgroundModes: audio
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
   JobbiMusicTests:
