@@ -47,10 +47,9 @@ export default function PlaylistTools({
       <label className="playlist-find"><Search size={17}/><input aria-label="Find a song in this playlist" type="search" placeholder="Find a song within this playlist…" value={search} onChange={e=>onSearch(e.target.value)}/>{search&&<button type="button" onClick={()=>onSearch('')}>Clear</button>}</label>
     </>}
     <label className="playlist-tool-button artwork-upload"><ImagePlus size={16}/> Upload {isPlaylist?'playlist':'album'} picture
-      <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!!busy} onChange={e=>{
+      <input type="file" accept="image/*,.heic,.heif" disabled={!!busy} onChange={e=>{
         const file=e.currentTarget.files?.[0];
         if(!file)return;
-        if(file.size>1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type)){onError('Choose a JPEG, PNG, or WebP picture under 1 MB');e.currentTarget.value='';return}
         work('art',()=>onArtwork(file)).finally(()=>{e.target.value=''});
       }}/>
     </label>
