@@ -147,6 +147,13 @@ object JobbiApi {
         username = ""; isAdmin = false; csrf = ""
         synchronized(lock) { cookies.clear() }
     }
+    /** Display the account's own downloaded recordings after offline key unlock.
+     * Does not create a session, cookie, or access to remote APIs.
+     */
+    fun useOfflineIdentity(rememberedUsername:String){
+        clearSession()
+        username=rememberedUsername
+    }
     private fun validateUrl(input: String): String {
         val value = input.trim().trimEnd('/')
         val url = try { value.toHttpUrl() } catch (e: Exception) {
