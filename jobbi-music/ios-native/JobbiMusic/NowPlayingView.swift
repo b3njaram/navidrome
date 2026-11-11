@@ -1,0 +1,175 @@
+import SwiftUI
+
+struct MiniPlayerView: View {
+    @EnvironmentObject private var player: MusicPlayer
+    let onOpen: () -> Void
+
+    var body: some View {
+        if let song = player.active {
+            HStack(spacing: 11) {
+                Button(action: onOpen) {
+                    HStack(spacing: 11) {
+                        CoverArt(art: song.coverArt, size: 42, cornerRadius: 9)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(song.title).font(.subheadline.bold()).lineLimit(1)
+                            Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open Now Playing for \(song.title)")
+                Button { player.toggle() } label: {
+                    Image(systemName: player.playing ? "pause.fill" : "play.fill")
+                        .frame(width: 38, height: 38)
+                }
+                .accessibilityLabel(player.playing ? "Pause" : "Play")
+                Button { player.next() } label: {
+                    Image(systemName: "forward.end.fill")
+                        .frame(width: 35, height: 38)
+                }
+                .accessibilityLabel("Next track")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 23))
+            .padding(.horizontal, 8)
+        }
+    }
+}
+
+struct NowPlayingView: View {
+    @EnvironmentObject private var player: MusicPlayer
+    @EnvironmentObject private var library: MusicLibrary
+    @EnvironmentObject private var api: JobbiAPI
+    @Environment(\.dismiss) private var dismiss
+    @State private var dragging = false
+    @State private var draggedValue = 0.0
+    @State private var showingQueue = false
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(spacing: 24) {
+                        Spacer(minLength: 12)
+                        if let song = player.active {
+                            CoverArt(art: song.coverArt,
+                                size: min(geo.size.width - 70, 380), cornerRadius: 24)
+                                .shadow(color: .black.opacity(0.18), radius: 18, y: 12)
+                                .accessibilityLabel("Cover of \(song.displayAlbum)")
+                            HStack(alignment: .center) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(song.title).font(.title2.bold()).lineLimit(2)
+                                    Text(song.artist).font(.title3).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    Task { await library.toggleFavorite(song, api: api) }
+                                } label: {
+                                    Image(systemName: library.favorites.contains(where: { $0.id == song.id })
+                                          ? "heart.fill" : "heart")
+                                    .font(.title2)
+                                }
+                                .accessibilityLabel("Toggle Favorite")
+                            }
+                            VStack(spacing: 4) {
+                                Slider(value: Binding(
+                                    get: { dragging ? draggedValue : player.elapsed },
+                                    set: { draggedValue = $0; dragging = true }
+                                ), in: 0...max(player.duration, 1), onEditingChanged: { editing in
+                                    if !editing {
+                                        player.seek(draggedValue)
+                                        dragging = false
+                                    }
+                                })
+                                .tint(.pink)
+                                HStack {
+                                    Text(time(player.elapsed))
+                                    Spacer()
+                                    Text("-" + time(max(0, player.duration - player.elapsed)))
+                                }
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            }
+                            HStack(spacing: 27) {
+                                Button { player.shuffled.toggle() } label: {
+                                    Image(systemName: "shuffle")
+                                        .foregroundStyle(player.shuffled ? .pink : .secondary)
+                                }
+                                Button { player.previous() } label: {
+                                    Image(systemName: "backward.end.fill").font(.title2)
+                                }
+                                Button { player.toggle() } label: {
+                                    Image(systemName: player.playing ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 25, weight: .bold))
+                                        .frame(width: 76, height: 76)
+                                }
+                                .buttonStyle(.glassProminent)
+                                Button { player.next() } label: {
+                                    Image(systemName: "forward.end.fill").font(.title2)
+                                }
+                                Button { player.repeatOne.toggle() } label: {
+                                    Image(systemName: player.repeatOne ? "repeat.1" : "repeat")
+                                        .foregroundStyle(player.repeatOne ? .pink : .secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityElement(children: .contain)
+                            HStack {
+                                Image(systemName: "speaker.wave.2")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button {
+                                    showingQueue = true
+                                } label: {
+                                    Label("Queue", systemImage: "list.bullet")
+                                }
+                                .buttonStyle(.glass)
+                            }
+                        } else {
+                            ContentUnavailableView("Nothing playing", systemImage: "music.note")
+                        }
+                    }
+                    .padding(25)
+                    .frame(maxWidth: 520)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .background(Color(uiColor: .secondarySystemBackground))
+            .navigationTitle("Now Playing")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done", systemImage: "chevron.down") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showingQueue) {
+                NavigationStack {
+                    List {
+                        ForEach(Array(player.queue.enumerated()), id: \.element.id) { index, song in
+                            HStack {
+                                SongRow(song: song, queue: player.queue, index: index)
+                                if index == player.currentIndex {
+                                    Image(systemName: "waveform").foregroundStyle(.pink)
+                                }
+                            }
+                        }
+                    }
+                    .navigationTitle("Up Next")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingQueue = false }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func time(_ seconds: Double) -> String {
+        let total = seconds.isFinite ? Int(max(0, seconds)) : 0
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
