@@ -151,3 +151,7 @@
 .immersive-queue-controls button{display:grid;place-items:center;width:32px;height:36px;border-radius:8px;color:#fbe1f0}
 .immersive-queue-controls button:hover:not(:disabled){background:#875a70}
 .immersive-queue-controls button:disabled{opacity:.35}
+
+.immersive-sleep-options{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 13px;color:#f4e3eb}
+.immersive-sleep-options label{display:flex;align-items:center;gap:8px;font-size:12px}
+.immersive-sleep-options select{border:1px solid #8b617a;border-radius:9px;background:#28212e;color:#fff;padding:7px;max-width:135px}
