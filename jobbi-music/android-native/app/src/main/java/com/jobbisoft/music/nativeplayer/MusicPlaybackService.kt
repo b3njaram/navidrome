@@ -228,7 +228,8 @@ class NativePlayer(private val context: Context) {
         currentIndex=index
         val song=queue.getOrNull(index)
         active = song
-        shuffleEnabled=player.shuffleModeEnabled
+        // The explicit upcoming-order shuffle is separate from Media3's
+        // random traversal, so Play Next always remains the next song.
         repeatMode=player.repeatMode
         duration = if (player.duration > 0 && player.duration != androidx.media3.common.C.TIME_UNSET)
             player.duration else (song?.duration ?: 0L) * 1000L
