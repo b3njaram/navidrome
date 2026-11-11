@@ -606,3 +606,33 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
  .collection-download-actions button{padding:8px;font-size:11px}
  .playlist-download-card .playlist-download-action{font-size:10px;padding:7px}
 }
+
+/* Lightweight per-user recommendation shelves */
+.recommendation-intro{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:25px 0 14px;flex-wrap:wrap}
+.recommendation-intro h2{font-size:clamp(23px,3vw,31px);line-height:1.15;margin:4px 0 8px}
+.recommendation-intro p,.shelf-tagline{margin:3px 0 0;color:#a7a0ad;font-size:13px;line-height:1.5}
+.recommendation-loading{display:flex;align-items:center;gap:8px;font-size:12px;color:#e5c5d7}
+.recommendation-note{font-size:12px;line-height:1.6;color:#b8aab9;padding:8px 0;margin:7px 0}
+.recommendation-shelf{margin-bottom:22px}
+.recommendation-shelf .shelf-title{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.recommendation-shelf .shelf-title .ghost-button{display:flex;align-items:center;gap:7px}
+.recommendation-tracks{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:8px;margin-top:15px}
+.recommendation-track{display:flex;align-items:center;gap:11px;min-width:0;width:100%;border:1px solid rgba(196,153,182,.18);border-radius:12px;background:rgba(42,31,46,.65);color:#f8e7f0;padding:9px;text-align:left;cursor:pointer}
+.recommendation-track:hover,.recommendation-track:focus-visible{background:rgba(91,58,77,.75);border-color:rgba(225,165,195,.52)}
+.recommendation-track-copy{min-width:0;display:flex;flex:1;flex-direction:column;gap:3px}
+.recommendation-track-copy strong,.recommendation-track-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recommendation-track-copy strong{font-size:13px}
+.recommendation-track-copy small{font-size:11px;color:#b8aeba}
+.recommendation-track-play{flex-shrink:0;color:#f3afcc}
+.recommendation-play-count{font-size:10px;color:#d2b3c5;white-space:nowrap}
+.weather-recommendations{margin:22px 0;padding:18px;border:1px solid rgba(213,166,197,.22);border-radius:16px;background:rgba(38,28,41,.55)}
+.weather-city-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:15px}
+.weather-city-form input{min-width:180px;flex:1;border:1px solid #78566e;border-radius:10px;padding:11px 13px;background:#201924;color:#fff}
+.weather-city-form input:focus{outline:2px solid #c06c9b}
+.weather-recommendations .recommendation-shelf{margin:14px 0 0}
+@media(max-width:660px){
+ .recommendation-tracks{grid-template-columns:1fr}
+ .recommendation-intro{margin-top:18px}
+ .recommendation-shelf .shelf-title .ghost-button{font-size:11px;padding:8px}
+ .weather-recommendations{padding:12px}
+}
