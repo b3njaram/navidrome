@@ -636,3 +636,31 @@ html,body,#root{width:100%;max-width:100%;min-width:0;overflow-x:clip}
  .recommendation-shelf .shelf-title .ghost-button{font-size:11px;padding:8px}
  .weather-recommendations{padding:12px}
 }
+
+
+/* Queue actions: independent of a playlist and safe on narrow phones. */
+.track-queue-menu{position:relative;flex:0 0 auto}
+.track-queue-menu>summary{display:grid;place-items:center;width:32px;height:36px;border-radius:8px;cursor:pointer;color:var(--text-secondary,#d2c9d0);list-style:none}
+.track-queue-menu>summary::-webkit-details-marker{display:none}
+.track-queue-menu[open]>summary,.track-queue-menu>summary:hover{background:rgba(255,255,255,.12);color:#fff}
+.track-queue-menu-content{display:flex;flex-direction:column;position:absolute;z-index:100;right:0;top:100%;min-width:145px;border:1px solid #594252;border-radius:12px;background:#24202b;box-shadow:0 10px 25px #0009;padding:5px;gap:2px}
+.track-queue-menu-content button{display:block;text-align:left;width:100%;padding:10px 12px;border-radius:8px;color:#fff;font-size:12px}
+.track-queue-menu-content button:hover{background:#584050}
+.track-list .track-row:has(.track-queue-menu[open]){position:relative;z-index:20}
+.queue-mobile-open{display:none!important}
+.queue-manager-toolbar{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:5px 0 17px;flex-wrap:wrap}
+.queue-manager-toolbar p{font-size:12px;color:#c2b8c5;margin:0}
+.queue-manager-toolbar .ghost-button{font-size:11px;padding:7px}
+.queue-manage-row{display:flex;align-items:center;gap:5px;min-width:0;border-radius:9px}
+.queue-manage-row.selected{background:#4a2f40}
+.queue-manage-row>.queue-item{flex:1;min-width:0}
+.queue-manage-actions{display:flex;align-items:center;gap:2px}
+.queue-manage-actions button{display:grid;place-items:center;min-width:31px;min-height:36px;color:#ead9e4;border-radius:7px}
+.queue-manage-actions button:hover:not(:disabled){background:#65415a}
+.queue-manage-actions button:disabled{opacity:.3;cursor:not-allowed}
+@media(max-width:720px){
+  .queue-mobile-open{display:inline-grid!important}
+  .player-song .queue-mobile-open{min-width:34px;padding:6px}
+  .track-queue-menu-content{right:0}
+  .queue-manage-actions button{min-width:35px}
+}
