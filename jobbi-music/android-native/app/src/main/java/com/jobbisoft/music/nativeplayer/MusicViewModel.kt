@@ -80,6 +80,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var downloadStats by androidx.compose.runtime.mutableStateOf(JobbiDownloadStats())
         private set
+    var artRevision by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
     var recommendations by androidx.compose.runtime.mutableStateOf<RecommendationsResult?>(null)
         private set
     var recommendationsLoading by androidx.compose.runtime.mutableStateOf(false)
@@ -591,19 +593,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         message = "Invitation sent. Collaboration uses a separate shared copy."
     }
     fun uploadArt(uri: Uri) = execute {
-        val listing = detail ?: return@execute
-        val content = getApplication<Application>().contentResolver
-        val mime = content.getType(uri) ?: "image/jpeg"
-        val bytes = withContext(Dispatchers.IO) {
-            content.openInputStream(uri)?.use { stream ->
-                stream.readNBytes(1_048_577)
-            } ?: throw IllegalArgumentException("Could not open picture")
-        }
-        if(bytes.size > 1_048_576)throw IllegalArgumentException("The cover must be smaller than 1 MB")
-        if(mime !in listOf("image/jpeg","image/png","image/webp"))
-            throw IllegalArgumentException("Choose JPG, PNG or WebP")
-        JobbiApi.uploadArt(if(listing.isPlaylist)"playlist" else "album",listing.id,bytes,mime)
-        message = "Your cover picture was saved."
+        val listing = detail ?: throw IllegalArgumentException("Open an album or playlist first")
+        val kind=if(listing.isPlaylist)"playlist" else "album"
+        val prepared=JobbiImageUpload.prepare(getApplication(),uri)
+        JobbiApi.uploadArt(kind,listing.id,prepared.bytes,prepared.mime)
+        artRevision++
+        message = "Picture uploaded. Your custom ${if(listing.isPlaylist)"playlist" else "album"} cover is ready."
     }
     fun rescan() = execute {
         JobbiApi.scanLibrary()
