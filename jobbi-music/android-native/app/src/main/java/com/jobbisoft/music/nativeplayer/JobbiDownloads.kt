@@ -81,6 +81,18 @@ object JobbiDownloads {
             return Uri.fromFile(downloaded)
         return null
     }
+    fun downloadedSongs(c:Context,user:String,server:String):List<Song> {
+        if(user.isBlank())return emptyList()
+        return entries(c,user,server).filter {entry->
+            val target=file(c,user,server,entry)
+            target.isFile&&target.length()>0L&&
+                (entry.status==DownloadManager.STATUS_SUCCESSFUL||
+                  runCatching{status(c,entry.downloadId)}.getOrNull()==DownloadManager.STATUS_SUCCESSFUL)
+        }.sortedWith(compareBy<OfflineEntry> {it.artist.lowercase()}
+            .thenBy{it.album.lowercase()}.thenBy{it.title.lowercase()})
+            .map {Song(id=it.id,title=it.title,artist=it.artist,
+                album=it.album,cover=null,duration=0L)}
+    }
     fun enqueue(c:Context,user:String,server:String,songs:List<Song>,
                 wifiOnly:Boolean=true):JobbiQueuedResult {
         require(user.isNotBlank()){"Sign in before downloading."}
