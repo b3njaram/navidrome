@@ -194,6 +194,7 @@ function App() {
   const userInitiatedPlay=useRef(null);
   const earlyEndRecovery=useRef({id:null,attempted:false});
   const listened=useRef({id:null,lastTick:0,elapsed:0,playing:false,counted:false});
+  const restoredPauseId=useRef(null);
   const androidApp=isNativeAndroid();
   const [queue,setQueue]=useState([]),[currentIndex,setCurrentIndex]=useState(-1),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(0),[volume,setVolume]=useState(0.78),[shuffle,setShuffle]=useState(false),[repeat,setRepeat]=useState(false),[panel,setPanel]=useState(null),[lyrics,setLyrics]=useState(null),[error,setError]=useState('');
   const [queueReadyFor,setQueueReadyFor]=useState('');
@@ -234,9 +235,11 @@ function App() {
     if(saved&&Array.isArray(saved.queue)){
       const items=saved.queue.slice(0,1000).filter(song=>song&&typeof song.id==='string'&&
         song.id.length>0&&song.id.length<=160&&typeof song.title==='string');
+      const selected=items.length?Math.max(0,Math.min(items.length-1,Number(saved.currentIndex)||0)):-1;
+      restoredPauseId.current=items[selected]?.id||null;
       setQueue(items);
-      setCurrentIndex(items.length?Math.max(0,Math.min(items.length-1,Number(saved.currentIndex)||0)):-1);
-    }else{setQueue([]);setCurrentIndex(-1)}
+      setCurrentIndex(selected);
+    }else{restoredPauseId.current=null;setQueue([]);setCurrentIndex(-1)}
     setQueueReadyFor(key);
   },[user?.username]);
   useEffect(()=>{
@@ -330,7 +333,10 @@ function App() {
     // Direct song clicks already call play() synchronously with browser user activation.
     const startedFromClick=userInitiatedPlay.current===currentTrack.id;
     userInitiatedPlay.current=null;
-    if(shouldPlay&&!startedFromClick)a.play().then(()=>setPlaying(true)).catch(err=>{
+    const shouldRemainPaused=restoredPauseId.current===currentTrack.id&&
+      activeAudioTrack.current===null&&!startedFromClick;
+    if(shouldRemainPaused)restoredPauseId.current=null;
+    if(shouldPlay&&!shouldRemainPaused&&!startedFromClick)a.play().then(()=>setPlaying(true)).catch(err=>{
       setPlaying(false);setError('Unable to play this track: '+(err?.message||'Check browser audio permissions.'));
     });
     activeAudioTrack.current=currentTrack.id;
