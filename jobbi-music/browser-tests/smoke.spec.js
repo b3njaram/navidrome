@@ -910,3 +910,79 @@ test('Apple Music Favorite Songs userscript captures current track-list-item row
   expect(manifest.collections[0].tracks[1].artist).toBe('Кино');
   expect(manifest.collections[0].tracks[2].album).toBe('Feel It - Single');
 });
+
+// Regression: real phone photos are routinely 2–8 MB and may be HEIC.
+// The browser should downsample them to a valid <=1 MiB JPEG before POSTing.
+async function oversizedCameraPng(page){
+  const base64=await page.evaluate(()=>{
+    const canvas=document.createElement('canvas');
+    canvas.width=1200;canvas.height=1100;
+    const ctx=canvas.getContext('2d');
+    const image=ctx.createImageData(canvas.width,canvas.height);
+    let seed=2026;
+    for(let i=0;i<image.data.length;i+=4){
+      seed=(Math.imul(seed,1664525)+1013904223)|0;
+      image.data[i]=seed&255;
+      image.data[i+1]=(seed>>>8)&255;
+      image.data[i+2]=(seed>>>16)&255;
+      image.data[i+3]=255;
+    }
+    ctx.putImageData(image,0,0);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  const bytes=Buffer.from(base64,'base64');
+  expect(bytes.length).toBeGreaterThan(1048576);
+  return bytes;
+}
+
+test('web album cover accepts an oversized camera photo by converting to real JPEG',async({page})=>{
+  const state=await setupMocks(page),uploads=[];
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/artwork/album/a1',async route=>{
+    if(route.request().method()==='POST'){
+      const payload=route.request().postDataBuffer();
+      uploads.push({mime:route.request().headers()['content-type'],
+        size:payload?.length,signature:payload?.subarray(0,3).toString('hex')});
+    }
+    await route.fallback();
+  });
+  await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.locator('.album-grid .album-card').first().click();
+  const large=await oversizedCameraPng(page);
+  await page.locator('.artwork-upload input[type=file]').setInputFiles({
+    name:'original-camera-photo.png',mimeType:'image/png',buffer:large
+  });
+  await expect.poll(()=>uploads.length).toBe(1);
+  expect(uploads[0].mime).toContain('image/jpeg');
+  expect(uploads[0].signature).toBe('ffd8ff');
+  expect(uploads[0].size).toBeLessThanOrEqual(1048576);
+  expect(state.artworkUploads).toContain('/api/artwork/album/a1');
+  expect(errors).toEqual([]);
+});
+
+test('web profile picture accepts oversized photo and uploads only compressed JPEG',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await setupMocks(page);await mockSocial(page);
+  const uploads=[];
+  await page.route('**/api/social/me/avatar',async route=>{
+    if(route.request().method()==='POST'){
+      const payload=route.request().postDataBuffer();
+      uploads.push({mime:route.request().headers()['content-type'],
+        size:payload?.length,signature:payload?.subarray(0,3).toString('hex')});
+    }
+    await route.fallback();
+  });
+  await login(page,'listener');
+  await navigate(page,'Community');
+  await page.getByRole('button',{name:'My profile',exact:true}).click();
+  await page.locator('.social-avatar-upload input[type=file]').setInputFiles({
+    name:'camera-photo.png',mimeType:'image/png',buffer:await oversizedCameraPng(page)
+  });
+  await expect(page.getByText('Profile picture saved')).toBeVisible();
+  expect(uploads).toHaveLength(1);
+  expect(uploads[0].mime).toContain('image/jpeg');
+  expect(uploads[0].signature).toBe('ffd8ff');
+  expect(uploads[0].size).toBeLessThanOrEqual(1048576);
+  expect(errors).toEqual([]);
+});
