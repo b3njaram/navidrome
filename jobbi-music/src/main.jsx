@@ -174,6 +174,13 @@ function App() {
   const [q,setQ]=useState(''),[results,setResults]=useState(null),[searchTab,setSearchTab]=useState('library'),[remote,setRemote]=useState(null),[remoteBusy,setRemoteBusy]=useState(false),[remoteStatus,setRemoteStatus]=useState(null),[formatFilter,setFormatFilter]=useState('all'),[sortRemote,setSortRemote]=useState('relevance');
   const [invidious,setInvidious]=useState(null),[invidiousBusy,setInvidiousBusy]=useState(false),[invidiousSong,setInvidiousSong]=useState(null),[permitVideo,setPermitVideo]=useState(false),[importWorker,setImportWorker]=useState({importEnabled:false}),[invidiousJobs,setInvidiousJobs]=useState([]);
   const [quality,setQuality]=useState(()=>{try{const v=localStorage.getItem('jobbi-quality');return ['original','balanced','saver'].includes(v)?v:'balanced'}catch{return 'balanced'}});
+  const [recommendations,setRecommendations]=useState(null);
+  const [recommendationsBusy,setRecommendationsBusy]=useState(false);
+  const [recommendationsError,setRecommendationsError]=useState('');
+  const [weatherCity,setWeatherCity]=useState(()=>{
+    try{return (localStorage.getItem('jobbi-weather-city')||'').slice(0,80)}catch{return ''}
+  });
+  const [weatherDraft,setWeatherDraft]=useState(weatherCity);
   const activeAudioTrack=useRef(null);
   const userInitiatedPlay=useRef(null);
   const earlyEndRecovery=useRef({id:null,attempted:false});
@@ -212,6 +219,25 @@ function App() {
   },[user?.username,page.id==='social']);
   const updateSocialProfile=()=>{api('/api/social/home').then(d=>{setSocialSelf(d.me);setSocialAvatarVersion(Date.now())}).catch(()=>{});};
   useEffect(()=>{if(!user)return;setLoading(true);Promise.allSettled([api('/api/home'),api('/api/starred')]).then(([h,s])=>{if(h.status==='fulfilled')setHome(h.value);else setError(h.reason.message);if(s.status==='fulfilled')setStarred(new Set([...(s.value.song||[]),...(s.value.album||[])].map(x=>x.id)));}).finally(()=>setLoading(false));},[user]);
+  useEffect(()=>{
+    if(!user?.username||page.id!=='home')return;
+    let live=true;
+    setRecommendationsBusy(true);setRecommendationsError('');
+    const params=new URLSearchParams({timezoneOffsetMinutes:String(new Date().getTimezoneOffset())});
+    if(weatherCity)params.set('city',weatherCity);
+    api('/api/recommendations?'+params)
+      .then(result=>{if(live)setRecommendations(result)})
+      .catch(err=>{if(live)setRecommendationsError(err.message)})
+      .finally(()=>{if(live)setRecommendationsBusy(false)});
+    return()=>{live=false};
+  },[user?.username,page.id,weatherCity]);
+  const saveWeatherCity=event=>{
+    event.preventDefault();
+    const city=weatherDraft.trim().slice(0,80);
+    try{if(city)localStorage.setItem('jobbi-weather-city',city);
+      else localStorage.removeItem('jobbi-weather-city')}catch{}
+    setWeatherCity(city);
+  };
   useEffect(()=>{if(page.id==='album'||page.id==='playlist'||page.id==='artist'){setDetail(null);const type=page.id==='album'?'albums':page.id==='playlist'?'playlists':'artists';api(`/api/${type}/${encodeURIComponent(page.idValue)}`).then(setDetail).catch(err=>setError(err.message));}},[page.id,page.idValue]);
   useEffect(()=>{if(page.id!=='search'||searchTab!=='library'||!q.trim()){setResults(null);return;}const timer=setTimeout(()=>api(`/api/search?q=${encodeURIComponent(q)}`).then(setResults).catch(err=>setError(err.message)),260);return()=>clearTimeout(timer);},[q,page.id,searchTab]);
   useEffect(()=>{
@@ -685,6 +711,38 @@ function App() {
     <div className="home-welcome"><div><div className="eyebrow"><Sparkles size={14}/> YOUR PERSONAL SOUNDTRACK</div><h1>{greeting()}<span className="spark-dot">.</span></h1><p>Pick up where the music left off.</p></div><span className="date-label">{new Intl.DateTimeFormat('en',{weekday:'long',month:'long',day:'numeric'}).format(new Date())}</span></div>
     <div className="hero-card"><div className="hero-glow"/><div className="hero-copy"><span className="hero-kicker"><span className="live-indicator"/> MADE FOR YOUR EARS</span><h2>All your music.<br/><em>One beautiful place.</em></h2><p>Rediscover the songs that move you. Your collection, your way.</p><div className="hero-buttons"><button className="primary" onClick={()=>playTracks(home?.songs||[],0)}><Play size={16} fill="currentColor"/> Play something good</button><button className="ghost-button" onClick={()=>setPage({id:'library'})}>Explore library <ArrowRight size={15}/></button><button className="ghost-button" onClick={()=>{setSearchTab('soulseek');setPage({id:'search'})}}><Radio size={15}/> Find new music</button></div></div><div className="hero-art"><div className="hero-record"><div className="record-core">{albums[0]&&<Art item={albums[0]}/>}</div></div></div></div>
     {loading&&!home?<div className="loading-block"><LoaderCircle className="spin"/> Loading albums…</div>:null}
+    <div className="recommendation-intro">
+      <div><span className="eyebrow">PERSONALIZED MUSIC</span>
+        <h2>Made for your listening.</h2>
+        <p>Lightweight mixes generated from your library and your private listening history.</p></div>
+      {recommendationsBusy&&<span role="status" className="recommendation-loading"><LoaderCircle size={16} className="spin"/> Updating mixes</span>}
+    </div>
+    {recommendationsError&&<p className="recommendation-note" role="status">Recommendations aren't available right now: {recommendationsError}</p>}
+    {recommendations&&<>
+      <RecommendationShelf title="Recently Added Songs" subtitle="The newest tracks indexed in your library" songs={recommendations.recentTracks} onPlay={playTracks}/>
+      <RecommendationShelf title="Top This Week" subtitle="Your most completed listens in the last 7 days" songs={recommendations.topWeek} onPlay={playTracks} showPlays/>
+      <RecommendationShelf title="Top This Month" subtitle="Your most completed listens in the last 30 days" songs={recommendations.topMonth} onPlay={playTracks} showPlays/>
+      <RecommendationShelf title="Made for You" subtitle="A blend of favorites, familiar artists and a few discoveries" songs={recommendations.madeForYou} onPlay={playTracks}/>
+      <RecommendationShelf title={recommendations.timeLabel||'Your Daily Mix'} subtitle="Recommendations for the current time of day" songs={recommendations.timeMix} onPlay={playTracks}/>
+      {!recommendations.topMonth?.length&&<p className="recommendation-note">Your weekly and monthly charts start filling up as you listen with this update. Previous all-time counts don't contain reliable dates.</p>}
+      {recommendations.trackingAvailable===false&&<p className="recommendation-note">Listening history is temporarily unavailable. Your other music mixes still work.</p>}
+      <section className="shelf weather-recommendations">
+        <div className="shelf-title"><div><h2>Music for the weather</h2><p className="shelf-tagline">Optional. Choose a city; location services are not used.</p></div></div>
+        <form className="weather-city-form" onSubmit={saveWeatherCity}>
+          <input aria-label="City for weather-based music" placeholder="City, e.g. El Paso" maxLength={80}
+            value={weatherDraft} onChange={e=>setWeatherDraft(e.target.value)}/>
+          <button className="ghost-button" type="submit">{weatherCity?'Update city':'Use this city'}</button>
+          {weatherCity&&<button className="ghost-button" type="button" onClick={()=>{
+            setWeatherDraft('');setWeatherCity('');try{localStorage.removeItem('jobbi-weather-city')}catch{}
+          }}>Turn off weather</button>}
+        </form>
+        {recommendations.weatherError&&<p role="status" className="recommendation-note">{recommendations.weatherError}</p>}
+        {recommendations.weather&&<p className="recommendation-note">{recommendations.weather.city} · {Math.round(recommendations.weather.temperature)}°C</p>}
+        {recommendations.weather&&<RecommendationShelf title={recommendations.weatherLabel||'Weather Mix'}
+          subtitle="Selected from the genres and artists in your library"
+          songs={recommendations.weatherMix} onPlay={playTracks} compact/>}
+      </section>
+    </>}
     <AlbumRow items={home?.recent} title="Fresh in your library" tagline="The latest additions to your collection" onClick={openAlbum}/>
     <AlbumRow items={home?.played} title="On repeat" tagline="The music you come back to" onClick={openAlbum}/>
     <AlbumRow items={home?.featured} title="Rediscover something" tagline="A little surprise from your shelves" onClick={openAlbum}/>
@@ -888,6 +946,27 @@ function App() {
     {pickerSong&&<div className="panel-backdrop" onClick={()=>setPickerSong(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">YOUR PLAYLISTS</span><h2>Add to playlist</h2></div><button className="icon-button" onClick={()=>setPickerSong(null)}><X size={22}/></button></header><p>{pickerSong.title} · {pickerSong.artist}</p><div className="queue-content">{(home?.playlists||[]).map(p=><button className="queue-item" key={p.id} disabled={playlistBusy} onClick={()=>addToPlaylist(p.id)}><ListMusic size={19}/><div><strong>{p.name}</strong><small>{p.songCount||0} songs</small></div><Plus size={19}/></button>)}{!(home?.playlists||[]).length&&<p>Make your first playlist under Your Library.</p>}</div></aside></div>}
     {panel&&<div className="panel-backdrop" onClick={()=>setPanel(null)}><aside className="side-panel" onClick={e=>e.stopPropagation()}><header><div><span className="eyebrow">NOW PLAYING</span><h2>{panel==='queue'?'Up next':'Lyrics'}</h2></div><button className="icon-button" onClick={()=>setPanel(null)}><X size={22}/></button></header>{panel==='queue'?<div className="queue-content">{queue.map((s,i)=><button className={`queue-item ${i===currentIndex?'selected':''}`} key={i} onClick={()=>setCurrentIndex(i)}><Art item={s} size="tiny"/><div><strong>{s.title}</strong><small>{s.artist}</small></div>{i===currentIndex&&<Waves size={18}/>}</button>)}</div>:<div className="lyrics-content"><Art item={currentTrack} size="big"/><h3>{currentTrack?.title}</h3><p>{currentTrack?.artist}</p>{(lyrics?.structuredLyrics||[]).length?<div className="lyrics-lines">{lyrics.structuredLyrics.flatMap((o,i)=>(o.line||[]).map((l,j)=><p key={`${i}-${j}`}>{l.value||'♪'}</p>))}</div>:<div className="lyrics-empty"><Mic2 size={24}/><p>No synced lyrics found for this track.</p><small>Your existing LRCLIB downloader may be able to add them.</small></div>}</div>}</aside></div>}
   </div>;
+}
+function RecommendationShelf({title,subtitle,songs,onPlay,showPlays=false,compact=false}){
+  if(!Array.isArray(songs)||!songs.length)return null;
+  const valid=songs.filter(item=>item?.id);
+  if(!valid.length)return null;
+  return <section className={'shelf recommendation-shelf'+(compact?' compact':'')}>
+    <div className="shelf-title"><div><h2>{title}</h2>{subtitle&&<p className="shelf-tagline">{subtitle}</p>}</div>
+      <button type="button" className="ghost-button" onClick={()=>onPlay(valid,0)}
+        aria-label={'Play all '+title}><Play size={16}/> Play mix</button>
+    </div>
+    <div className="recommendation-tracks">
+      {valid.slice(0,16).map((song,index)=><button type="button" className="recommendation-track"
+        key={song.id+':'+index} onClick={()=>onPlay(valid,index)}
+        aria-label={'Play '+(song.title||'track')+' from '+title}>
+        <Art item={song} size="tiny"/>
+        <span className="recommendation-track-copy"><strong>{song.title||'Untitled'}</strong><small>{song.artist||'Unknown artist'}</small></span>
+        {showPlays&&<span className="recommendation-play-count">{song.playCount||0} plays</span>}
+        <Play size={14} className="recommendation-track-play"/>
+      </button>)}
+    </div>
+  </section>;
 }
 function Favorites({currentTrack,playTracks,favorite,openAlbum,starred,onAdd,onSave,onArtist,onAlbum,onBulkAction,onDeleteRecording}){
   const [data,setData]=useState(null);const[err,setErr]=useState('');useEffect(()=>{api('/api/starred').then(setData).catch(e=>setErr(e.message))},[starred]);
