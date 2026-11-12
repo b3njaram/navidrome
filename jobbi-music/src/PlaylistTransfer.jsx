@@ -494,7 +494,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
            {autoResume&&<button type="button" className="playlist-tool-button"
              onClick={()=>setAutoResume(null)}>
              <Pause size={16}/> Cancel scheduled retry
-           </button>
+           </button>}
           <button type="button" className="playlist-tool-button"
             disabled={!authorized||working||!candidates.length}
             onClick={async()=>{
