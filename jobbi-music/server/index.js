@@ -18,6 +18,7 @@ import {createArtworkRouter} from './artwork.js';
 import {transliterateMusic} from './import-reconcile.js';
 import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
 import {createInvidiousImportRouter} from './invidious-import.js';
+import {createMusicSearchLimiter} from './search-limiter.js';
 import {countIndexedSongs,countAccountRows} from './admin-stats.js';
 import {socialQuery} from './social-db.js';
 import {collectRemovalImpact,makeRemovalTicket,verifyRemovalTicket,impactForClient} from './removal-impact.js';
@@ -49,7 +50,8 @@ const MAX_SESSIONS = 1000;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const ACTION_WINDOW_MS = 10 * 60 * 1000;
 const actionLimits = new Map();
-const soulseekSearchLimits=new Map();
+const mustLimitSoulseekSearch=createMusicSearchLimiter({source:'Soulseek'});
+const mustLimitInvidiousSearch=createMusicSearchLimiter({source:'Invidious'});
 const attempts = new Map();
 const ttl = 12 * 60 * 60 * 1000;
 const cookieName = 'jobbi_session';
@@ -78,14 +80,6 @@ const mustAdmin = async (req, res, next) => {
   } catch {return res.status(503).json({error:'Cannot verify administrator permissions with the music server'});}
 };
 const mustBeLimited = (req,res,next) => { const key = req.user.username.toLowerCase(); const now = Date.now(); const prev = actionLimits.get(key) || {count:0,start:now}; if(now-prev.start > ACTION_WINDOW_MS){ prev.count=0; prev.start=now; } prev.count++; actionLimits.set(key,prev); if(prev.count > 30) return res.status(429).json({error:'Too many music discovery requests; try again shortly'}); next(); };
-const mustLimitPeerSearch=(req,res,next)=>{
-  const username=req.user.username.toLowerCase();
-  const now=Date.now(),before=soulseekSearchLimits.get(username);
-  const state=before&&now-before.start<10*60*1000?before:{start:now,count:0};
-  state.count++;soulseekSearchLimits.set(username,state);
-  if(state.count>10)return res.status(429).json({error:'Soulseek search limit reached. Try again in a few minutes.'});
-  next();
-};
 const validId = x => typeof x === 'string' && x.length > 0 && x.length <= 150;
 const validName = x => typeof x === 'string' && x.trim().length >= 1 && x.trim().length <= 100;
 const saltAuth = (user) => { const s = crypto.randomBytes(8).toString('hex'); return {u:user.username, t:crypto.createHash('md5').update(user.password + s).digest('hex'),s,v:'1.16.1',c:'JobbiMusic',f:'json'}; };
@@ -435,7 +429,7 @@ app.get('/api/download/song/:id',mustAuth,route(async(req,res)=>{
 // so the UI can display results; no download/import action is exposed in this safe starter.
 app.use('/api/invidious',createInvidiousImportRouter({mustAuth,
   url:INVIDIOUS_WORKER_URL,secret:INVIDIOUS_WORKER_SECRET,statsFile:STORAGE_STATS_PATH}));
-app.get('/api/invidious/search',mustAuth,mustLimitPeerSearch,route(async(req,res)=>{
+app.get('/api/invidious/search',mustAuth,mustLimitInvidiousSearch,route(async(req,res)=>{
   const query=String(req.query.q||'').trim().slice(0,150);
   if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
   const result=await searchInvidious(query);
@@ -478,7 +472,7 @@ app.get('/api/soulseek/status',mustAuth,route(async(req,res)=>{
   return res.json({mode:'legacy',configured:Boolean(DOWNLOADER),serverConnected:null,
     message:DOWNLOADER?'Using custom downloader search. Direct slskd search is not configured; empty results may not reflect the full peer network.':'Configure slskd access to search the Soulseek network.'});
 }));
-app.post('/api/soulseek/search',mustAuth,mustBeLimited,mustLimitPeerSearch,route(async(req,res)=>{
+app.post('/api/soulseek/search',mustAuth,mustLimitSoulseekSearch,route(async(req,res)=>{
   const query=String(req.body?.query||'').trim().slice(0,150);
   if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
   if(SLSKD&&SLSKD_KEY){
