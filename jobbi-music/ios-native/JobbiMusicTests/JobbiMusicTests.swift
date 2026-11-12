@@ -125,6 +125,42 @@ final class JobbiMusicTests: XCTestCase {
             Set(["shared"]), retainedByOthers: protected), Set<String>())
     }
 
+    func testLyricsMillisecondsTrackTheCurrentLine() throws {
+        let lyrics = try JSONDecoder().decode(LyricsResponse.self, from: Data(
+            """
+            {"available":true,"synced":true,"source":"Navidrome",
+             "lines":[{"at":0,"text":"Verse"},{"at":13500,"text":"Chorus"},
+                      {"at":27000,"text":"Outro"}]}
+            """.utf8))
+        XCTAssertEqual(LyricsResponse.activeLine(in: lyrics.lines, seconds: 0), 0)
+        XCTAssertEqual(LyricsResponse.activeLine(in: lyrics.lines, seconds: 13.4), 0)
+        XCTAssertEqual(LyricsResponse.activeLine(in: lyrics.lines, seconds: 13.5), 1)
+        XCTAssertEqual(LyricsResponse.activeLine(in: lyrics.lines, seconds: 28), 2)
+        XCTAssertNil(LyricsResponse.activeLine(in: lyrics.lines, seconds: .nan))
+        let plain = [LyricLine(at: nil, text: "Untimed lyrics")]
+        XCTAssertNil(LyricsResponse.activeLine(in: plain, seconds: 20))
+    }
+
+    func testSharedPlaylistAndInvitationResponses() throws {
+        let overview = try JSONDecoder().decode(SocialOverview.self, from: Data(
+            """
+            {"friends":[{"username":"friend1","display_name":"Friend"}],
+             "playlists":[{"id":"social-1","title":"Our mix","owner":"me","visibility":"private"}],
+             "playlistInvitations":[{"id":"invite1","playlist_id":"social-2",
+                                     "sender":"friend1","title":"Listen together",
+                                     "can_edit":true}]}
+            """.utf8))
+        XCTAssertEqual(overview.friends?.first?.username, "friend1")
+        XCTAssertEqual(overview.playlistInvitations?.first?.id, "invite1")
+        let created = try JSONDecoder().decode(CreateSocialPlaylistResponse.self,
+            from: Data(#"{"playlist":{"id":"p1","title":"Together","owner":"me","visibility":"private"}}"#.utf8))
+        XCTAssertEqual(created.playlist.id, "p1")
+        let imported = try JSONDecoder().decode(ImportSocialPlaylistResponse.self,
+            from: Data(#"{"id":"p2","existing":true}"#.utf8))
+        XCTAssertEqual(imported.id, "p2")
+        XCTAssertEqual(SharedPlaylistMode.create.heading, "Create shared playlist")
+    }
+
     func testOfflineFileHeadersUsePlayableExtensions() {
         XCTAssertEqual(OfflineLibrary.audioExtension(header: Data("fLaCxxxxsample".utf8),
             declared: "mp3"), "flac")
