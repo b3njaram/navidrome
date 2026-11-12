@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowDownToLine,CheckCircle2,FileUp,Heart,LoaderCircle,Search,ShieldCheck,Music2,Pause,RefreshCw,Download,Check,AlertTriangle} from 'lucide-react';
-import {parseCollectionManifest,findLocalSong,pickSoulseekCandidate,pickInvidiousCandidate,songKey} from './playlist-export.js';
+import {parseCollectionManifest,findLocalSong,pickSoulseekCandidate,pickInvidiousCandidate,romanizeMusic,songKey} from './playlist-export.js';
 
 const SCAN_LIMIT=3;
 const REPORT_LIMIT=16000;
@@ -103,10 +103,16 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const fetchLocal=async(row,{refresh=false}={})=>{
     const key=sameSong(row);
     if(!refresh&&queryCache.current.has(key))return queryCache.current.get(key);
-    const data=await api('/api/search?q='+encodeURIComponent(row.title.slice(0,100)));
-    const song=findLocalSong(row,data.song||[])||null;
-    queryCache.current.set(key,song);
-    return song;
+    const query=row.title.slice(0,100);
+    const transliterated=romanizeMusic(query);
+    const variants=transliterated===query.toLowerCase()?[query]:[query,transliterated];
+    for(const variant of variants){
+      const data=await api('/api/search?q='+encodeURIComponent(variant));
+      const found=findLocalSong(row,data.song||[]);
+      if(found){queryCache.current.set(key,found);return found}
+    }
+    queryCache.current.set(key,null);
+    return null;
   };
   const ensurePlaylist=async collectionId=>{
     const c=stateRef.current.find(item=>item.id===collectionId);
@@ -138,37 +144,42 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const remoteMatch=async row=>{
     const key=sameSong(row);
     if(matchCache.current.has(key))return matchCache.current.get(key);
+    const requested=(row.artist+' '+row.title).slice(0,140);
+    const latin=romanizeMusic(requested);
+    const queries=latin===requested.toLowerCase()?[requested]:[requested,latin];
     let soulseekNote='';
-    try {
-      const search=await api('/api/soulseek/search',jsonOptions('POST',{
-        query:(row.artist+' '+row.title).slice(0,140)
-      }));
-      const candidate=pickSoulseekCandidate(row,search.results||[]);
-      if(candidate){
-        const matched={candidate,note:'Soulseek '+candidate.format};
-        matchCache.current.set(key,matched);
-        return matched;
+    for(const query of queries){
+      try {
+        const search=await api('/api/soulseek/search',jsonOptions('POST',{query}));
+        const candidate=pickSoulseekCandidate(row,search.results||[]);
+        if(candidate){
+          const matched={candidate,note:'Soulseek '+candidate.format};
+          matchCache.current.set(key,matched);
+          return matched;
+        }
+        soulseekNote=search.message||'No matching studio FLAC or MP3 on Soulseek.';
+      }catch(e){
+        if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
+        soulseekNote='Soulseek unavailable: '+String(e.message||'Search failed');
+        break;
       }
-      soulseekNote=search.message||'No matching studio FLAC or MP3 on Soulseek.';
-    }catch(e){
-      // A quota error is not permission to bypass the server limit.
-      if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
-      soulseekNote='Soulseek unavailable: '+String(e.message||'Search failed');
     }
     let fallbackNote='';
-    try {
-      const data=await api('/api/invidious/search?q='+
-        encodeURIComponent((row.artist+' '+row.title).slice(0,140)));
-      const candidate=pickInvidiousCandidate(row,data.results||[]);
-      if(candidate){
-        const matched={candidate,note:'Invidious verified video'};
-        matchCache.current.set(key,matched);
-        return matched;
+    for(const query of queries){
+      try {
+        const data=await api('/api/invidious/search?q='+encodeURIComponent(query));
+        const candidate=pickInvidiousCandidate(row,data.results||[]);
+        if(candidate){
+          const matched={candidate,note:'Invidious verified video'};
+          matchCache.current.set(key,matched);
+          return matched;
+        }
+        fallbackNote=data.message||'No verified matching video.';
+      }catch(e){
+        if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
+        fallbackNote='Invidious unavailable: '+String(e.message||'Search failed');
+        break;
       }
-      fallbackNote=data.message||'No verified matching video.';
-    }catch(e){
-      if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
-      fallbackNote='Invidious unavailable: '+String(e.message||'Search failed');
     }
     return {candidate:null,note:soulseekNote+' '+fallbackNote};
   };
