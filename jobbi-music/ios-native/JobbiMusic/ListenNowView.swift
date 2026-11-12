@@ -128,10 +128,14 @@ struct ListenNowView: View {
                 player.play(library.home?.songs ?? [song])
             } label: {
                 Label("Play something good", systemImage: "play.fill")
-                    .font(.headline)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, 19)
+                    .padding(.vertical, 13)
+                    .background(Color.white, in: Capsule())
             }
-            .buttonStyle(.glassProminent)
-            .tint(.white)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Play something good")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(24)
