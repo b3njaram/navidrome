@@ -35,7 +35,11 @@ struct SongRow: View {
     let queue: [Song]
     let index: Int
     var showAlbum = true
+    var onRemoveFromPlaylist: (() -> Void)? = nil
+    var onServerRemoved: (() -> Void)? = nil
     @State private var showPlaylists = false
+    @State private var confirmRemoveFromPlaylist = false
+    @State private var showServerRemoval = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -55,6 +59,13 @@ struct SongRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Play \(song.title) by \(song.artist)")
             Menu {
+                Button { player.playNext(song) } label: {
+                    Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                }
+                Button { player.addToQueue(song) } label: {
+                    Label("Add to Queue", systemImage: "text.badge.plus")
+                }
+                Divider()
                 Button {
                     Task { await library.toggleFavorite(song, api: api) }
                 } label: {
@@ -68,11 +79,25 @@ struct SongRow: View {
                 if offline.localURL(for: song) == nil {
                     Button {
                         Task { await offline.download(song, api: api) }
-                    } label: { Label("Save offline", systemImage: "arrow.down.circle") }
+                    } label: {
+                        Label(offline.downloading.contains(song.id) ? "Downloading…" : "Download song",
+                              systemImage: "arrow.down.circle")
+                    }
+                    .disabled(offline.downloading.contains(song.id))
                 } else {
+                    Label("Saved offline", systemImage: "checkmark.circle.fill")
                     Button(role: .destructive) { offline.remove(song) } label: {
                         Label("Remove offline copy", systemImage: "trash")
                     }
+                }
+                Divider()
+                if onRemoveFromPlaylist != nil {
+                    Button(role: .destructive) { confirmRemoveFromPlaylist = true } label: {
+                        Label("Remove from this playlist", systemImage: "minus.circle")
+                    }
+                }
+                Button(role: .destructive) { showServerRemoval = true } label: {
+                    Label("Remove recording from NAS…", systemImage: "externaldrive.badge.xmark")
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -80,6 +105,19 @@ struct SongRow: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("More options for \(song.title)")
+        }
+        .confirmationDialog("Remove from playlist?", isPresented: $confirmRemoveFromPlaylist,
+                            titleVisibility: .visible) {
+            Button("Remove playlist entry", role: .destructive) {
+                onRemoveFromPlaylist?()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This only removes the playlist entry. The recording remains on the NAS and in other playlists.")
+        }
+        .sheet(isPresented: $showServerRemoval) {
+            ServerRemovalView(song: song, onRemoved: onServerRemoved)
+                .presentationDragIndicator(.visible)
         }
         .confirmationDialog("Add to playlist", isPresented: $showPlaylists,
                             titleVisibility: .visible) {
