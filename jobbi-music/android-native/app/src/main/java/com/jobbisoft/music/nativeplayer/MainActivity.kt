@@ -200,6 +200,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     var invite by remember { mutableStateOf(false) }
     var bulkChoice by remember { mutableStateOf<BulkChoice?>(null) }
     var downloadChoice by remember { mutableStateOf<DownloadChoice?>(null) }
+    var offlineRemovalChoice by remember { mutableStateOf<DownloadChoice?>(null) }
     var downloadWifiOnly by remember { mutableStateOf(true) }
     var removalConfirm by remember { mutableStateOf("") }
     LaunchedEffect(vm.removalPreviews) { removalConfirm = "" }
@@ -299,9 +300,13 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
                         "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true},
                             onDownloadPlaylist={p->downloadChoice=DownloadChoice("playlist",p.name,p.id)},
+                            onRemovePlaylist={p->offlineRemovalChoice=DownloadChoice("playlist",p.name,p.id)},
                             onDownloadAll={downloadChoice=DownloadChoice("all","All playlists")},
                             onDownloadFavorites={downloadChoice=DownloadChoice("favorites","Favorites")})
-                        "Downloads" -> DownloadedSongsScreen(vm,player)
+                        "Downloads" -> DownloadedSongsScreen(vm,player,
+                            onRemovePlaylist={id,title->
+                                offlineRemovalChoice=DownloadChoice("playlist",title,id)
+                            })
                         "Favorites" -> SongsScreen(vm.favorites,vm,player,onSongAdd={addSong=it},
                             emptyText="Heart songs to save them here.",isFavorites=true,
                             onDownloadFavorites={downloadChoice=DownloadChoice("favorites","Favorites")},
@@ -309,6 +314,9 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             onQuarantine={vm.prepareSongRemoval(it)})
                         "Detail" -> DetailScreen(vm,player,onSongAdd={addSong=it},onInvite={invite=true},
                             onDownloadPlaylist={id,title->downloadChoice=DownloadChoice("playlist",title,id)},
+                            onRemovePlaylist={id,title->
+                                offlineRemovalChoice=DownloadChoice("playlist",title,id)
+                            },
                             onBulkPlaylist={songs,indices,move->
                                 bulkChoice=BulkChoice(songs,if(move)vm.detail?.id else null,indices,move)
                             },onQuarantine={vm.prepareSongRemoval(it)})
@@ -366,6 +374,24 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     downloadChoice=null
                 }){Text("Download")}},
                 dismissButton={TextButton(onClick={downloadChoice=null}){Text("Cancel")}}
+            )
+        }
+        if(offlineRemovalChoice!=null){
+            val choice=offlineRemovalChoice!!
+            AlertDialog(
+                onDismissRequest={offlineRemovalChoice=null},
+                title={Text("Remove offline copies of "+choice.title+"?")},
+                text={Text("Cancel this playlist's pending downloads and remove its "+
+                    "device-only recordings. Songs also saved through other playlists, "+
+                    "Favorites or individually are kept. The playlist and all original "+
+                    "files on your NAS will remain untouched.")},
+                confirmButton={TextButton(onClick={
+                    vm.removePlaylistDownloads(choice.id)
+                    offlineRemovalChoice=null
+                },enabled=!vm.busy){
+                    Text("Remove downloads",color=MaterialTheme.colorScheme.error)
+                }},
+                dismissButton={TextButton(onClick={offlineRemovalChoice=null}){Text("Cancel")}}
             )
         }
         if(bulkChoice!=null) {
@@ -932,7 +958,8 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
 }
 
 @Composable
-private fun DownloadedSongsScreen(vm:MusicViewModel,player:NativePlayer) {
+private fun DownloadedSongsScreen(vm:MusicViewModel,player:NativePlayer,
+                                  onRemovePlaylist:(String,String)->Unit) {
     val collection=vm.offlineCollections.firstOrNull{it.id==vm.offlineCollectionId}
     val visibleSongs=collection?.songs ?: vm.downloadedSongs
     Column {
@@ -1001,7 +1028,16 @@ private fun DownloadedSongsScreen(vm:MusicViewModel,player:NativePlayer) {
                                     Text("${entry.songs.size} downloaded songs",
                                         style=MaterialTheme.typography.bodySmall)
                                 }
-                                Icon(Icons.Rounded.ChevronRight,contentDescription=null)
+                                if(entry.id.startsWith("playlist:")) {
+                                    IconButton(onClick={
+                                        onRemovePlaylist(entry.id.removePrefix("playlist:"),entry.title)
+                                    },enabled=!vm.busy){
+                                        Icon(Icons.Rounded.Delete,
+                                            contentDescription="Remove offline downloads for "+entry.title)
+                                    }
+                                }else{
+                                    Icon(Icons.Rounded.ChevronRight,contentDescription=null)
+                                }
                             }
                         }
                     }
@@ -1037,6 +1073,7 @@ private fun DownloadedSongsScreen(vm:MusicViewModel,player:NativePlayer) {
 @Composable
 private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                           onDownloadPlaylist:(MusicPlaylist)->Unit,
+                          onRemovePlaylist:(MusicPlaylist)->Unit,
                           onDownloadAll:()->Unit,onDownloadFavorites:()->Unit) {
     LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -1084,6 +1121,12 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                     IconButton(onClick={onDownloadPlaylist(playlist)}){
                         Icon(Icons.Rounded.Download,contentDescription="Download ${playlist.name}")
                     }
+                    if(vm.hasOfflinePlaylist(playlist.id)){
+                        IconButton(onClick={onRemovePlaylist(playlist)},enabled=!vm.busy){
+                            Icon(Icons.Rounded.Delete,
+                                contentDescription="Remove offline downloads for "+playlist.name)
+                        }
+                    }
                 }
             }
         }
@@ -1126,6 +1169,7 @@ private fun CustomCollectionCover(detail:Listing,revision:Int){
 @Composable
 private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
                          onInvite:()->Unit,onDownloadPlaylist:(String,String)->Unit,
+                          onRemovePlaylist:(String,String)->Unit,
                          onBulkPlaylist:(List<Song>,List<Int>,Boolean)->Unit,
                          onQuarantine:(List<Song>)->Unit) {
     val detail = vm.detail ?: return
@@ -1169,6 +1213,12 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                         OutlinedButton(onClick={onDownloadPlaylist(detail.id,detail.title)}){
                             Icon(Icons.Rounded.Download,null);Spacer(Modifier.width(5.dp))
                             Text("Download")
+                        }
+                    if(detail.isPlaylist && vm.hasOfflinePlaylist(detail.id))
+                        OutlinedButton(onClick={onRemovePlaylist(detail.id,detail.title)},
+                            enabled=!vm.busy){
+                            Icon(Icons.Rounded.Delete,null);Spacer(Modifier.width(5.dp))
+                            Text("Remove offline")
                         }
                 }
                 Row(verticalAlignment=Alignment.CenterVertically){
