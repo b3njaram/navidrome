@@ -18,7 +18,13 @@ const api = async (url, opts={}) => {
   if(method!=='GET'&&method!=='HEAD'&&currentCsrfToken)headers['X-CSRF-Token']=currentCsrfToken;
   const res = await fetch(url, {credentials:'same-origin', ...opts, headers});
   const data = await res.json().catch(()=>({}));
-  if(!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if(!res.ok){
+    const error=new Error(data.error || `Request failed (${res.status})`);
+    error.status=res.status;
+    error.retryAfterSeconds=Math.min(600,Math.max(0,
+      Number(res.headers.get('Retry-After'))||Number(data.retryAfterSeconds)||0));
+    throw error;
+  }
   if((url==='/api/session'||url==='/api/login')&&data?.csrfToken)currentCsrfToken=data.csrfToken;
   if(url==='/api/logout')currentCsrfToken='';
   return data;
