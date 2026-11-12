@@ -51,6 +51,12 @@ final class OfflineLibrary: ObservableObject {
     private var indexURL: URL? { directory?.appendingPathComponent("index.json") }
     private var sourcesURL: URL? { directory?.appendingPathComponent("download-sources.json") }
 
+    /// Deterministic ownership rule, also used by the iOS unit tests.
+    static func unsharedOfflineIDs(_ requested: Set<String>,
+                                   retainedByOthers: Set<String>) -> Set<String> {
+        requested.subtracting(retainedByOthers)
+    }
+
     func hasPlaylistDownloads(_ id: String) -> Bool {
         !(sources["playlist:" + id] ?? []).isEmpty
     }
@@ -247,29 +253,32 @@ final class OfflineLibrary: ObservableObject {
         let requested = Set((sources[source] ?? []) + tracks.map(\.id))
         let retained = Set(sources.filter { $0.key != source }
             .values.flatMap { $0 })
+        let eligible = Self.unsharedOfflineIDs(requested, retainedByOthers: retained)
         var removed = Set<String>()
-        var failures = 0
-        for song in songs where requested.contains(song.id) && !retained.contains(song.id) {
+        var failed = Set<String>()
+        for song in songs where eligible.contains(song.id) {
             do {
                 try deleteCopies(id: song.id)
                 removed.insert(song.id)
-            } catch { failures += 1; lastError = error.localizedDescription }
+            } catch {
+                failed.insert(song.id)
+                lastError = error.localizedDescription
+            }
         }
         songs.removeAll { removed.contains($0.id) }
         var updated = sources
-        // If removal failed, retain those references so the operation is retryable.
-        let failedIDs = requested.subtracting(removed).subtracting(retained)
-        if failedIDs.isEmpty {
+        // Only failed file deletions need a retry. Already missing files do not.
+        if failed.isEmpty {
             updated.removeValue(forKey: source)
         } else {
-            updated[source] = Array(failedIDs).sorted()
+            updated[source] = Array(failed).sorted()
         }
         do {
             try saveIndex()
             try saveSources(updated)
         } catch { lastError = "Could not save offline changes: \(error.localizedDescription)" }
         batchLabel = "Removed \(removed.count) offline songs. \(requested.intersection(retained).count) shared songs kept." +
-            (failures > 0 ? " \(failures) could not be removed." : "")
+            (!failed.isEmpty ? " \(failed.count) could not be removed." : "")
     }
 
     func remove(_ song: Song) {
