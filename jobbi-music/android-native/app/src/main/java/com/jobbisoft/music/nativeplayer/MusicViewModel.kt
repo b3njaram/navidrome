@@ -328,6 +328,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun downloadSong(song:Song,wifiOnly:Boolean=false)=execute {
         enqueueOffline(listOf(song),song.title,wifiOnly)
+        withContext(Dispatchers.IO){
+            JobbiDownloads.rememberIndividual(getApplication(),account,server,song.id)
+        }
+    }
+    fun hasOfflinePlaylist(id:String):Boolean =
+        account.isNotBlank() &&
+            JobbiDownloads.hasPlaylist(getApplication(),account,server,id)
+
+    fun removePlaylistDownloads(id:String)=execute {
+        val result=withContext(Dispatchers.IO) {
+            JobbiDownloads.removePlaylist(getApplication(),account,server,id)
+        }
+        if(offlineCollectionId=="playlist:"+id)closeOfflineCollection()
+        refreshDownloadedSongs()
+        message="Removed "+result.removed+" offline recordings from this device. "+
+            result.keptShared+" shared songs kept. The NAS playlist was not changed."
     }
     fun downloadPlaylist(id:String,wifiOnly:Boolean=true)=execute {
         val playlist=JobbiApi.openPlaylist(id)
