@@ -157,13 +157,16 @@
         if(row&&!candidates.includes(row))candidates.push(row);
       }
     }
-    // Apple sometimes renders a semantic row inside two other row-like
-    // wrappers. Keep only leaf track rows, not all three nested containers.
-    return candidates.filter(row=>!row.querySelector(selectors));
+    // Some old Apple rows contain title/artist *spans* whose class names
+    // happen to match broad row selectors. Only prefer a nested candidate
+    // if it is itself a complete, readable song, not just a child span.
+    const parse=provider==='spotify'?spotifyRow:appleRow;
+    return candidates.filter(row=>parse(row)&&
+      ![...row.querySelectorAll(selectors)].some(child=>parse(child)));
   };
   const readRows=()=>{
     const rows=getRowCandidates();
-    const results=[],seen=new Set();
+    const results=[],seen=new Set(),occurrences=new Map();
     diagnostics.rows=Math.max(diagnostics.rows,rows.length);
     for(const row of rows){
       const song=provider==='spotify'?spotifyRow(row):appleRow(row);
@@ -173,7 +176,15 @@
       // positions only when the provider supplies a trustworthy index.
       const fingerprint=[song.sourceUrl,song.title,song.artist,song.album,song.duration]
         .map(x=>clean(x).toLocaleLowerCase()).join('|');
-      const key=song.position!=null?'position:'+song.position:'track:'+fingerprint;
+      const number=(occurrences.get(fingerprint)||0)+1;
+      occurrences.set(fingerprint,number);
+      // Spotify really can contain the same track twice. Its separate
+      // tracklist rows are genuine occurrences even without row indices.
+      // Apple has unstable parallel wrappers, so prefer one identity per
+      // unindexed song and rely on explicit indices for deliberate repeats.
+      const key=song.position!=null?'position:'+song.position:
+        provider==='spotify'?'track:'+fingerprint+':occurrence:'+number:
+          'track:'+fingerprint;
       if(!seen.has(key)){seen.add(key);results.push({key,song})}
     }
     diagnostics.readable=Math.max(diagnostics.readable,results.length);
