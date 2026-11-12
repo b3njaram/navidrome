@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jobbi Music — My Collection Exporter
 // @namespace    https://music.jobbisoft.com.mx
-// @version      1.2.0
+// @version      1.3.0
 // @description  Export YOUR currently displayed Spotify or Apple Music playlist metadata to a Jobbi Music JSON manifest; never copies audio or login credentials.
 // @match        https://open.spotify.com/*
 // @match        https://music.apple.com/*
@@ -139,23 +139,23 @@
         if(row&&!candidates.includes(row))candidates.push(row);
       }
     }
-    // Suppress outer wrapper rows that contain actual song rows.
-    return candidates.filter(row=>!row.matches('[role="row"]')||!row.querySelector(
-      '[data-testid="track-list-item"], [data-testid^="track-item-"], .songs-list-row, [class*="songs-list-row"]'
-    ));
+    // Apple sometimes renders a semantic row inside two other row-like
+    // wrappers. Keep only leaf track rows, not all three nested containers.
+    return candidates.filter(row=>!row.querySelector(selectors));
   };
   const readRows=()=>{
     const rows=getRowCandidates();
-    const results=[],seen=new Set(),occurrences=new Map();
+    const results=[],seen=new Set();
     diagnostics.rows=Math.max(diagnostics.rows,rows.length);
     for(const row of rows){
       const song=provider==='spotify'?spotifyRow(row):appleRow(row);
       if(!song)continue;
-      const fingerprint=[song.sourceUrl,song.title,song.artist,song.album,song.duration].join('|');
-      const number=(occurrences.get(fingerprint)||0)+1;
-      occurrences.set(fingerprint,number);
-      const key=song.position!=null?'position:'+song.position:
-        'track:'+fingerprint+':occurrence:'+number;
+      // Without a real provider row index, three nested Apple containers
+      // describe ONE track, not three separate occurrences. Keep distinct
+      // positions only when the provider supplies a trustworthy index.
+      const fingerprint=[song.sourceUrl,song.title,song.artist,song.album,song.duration]
+        .map(x=>clean(x).toLocaleLowerCase()).join('|');
+      const key=song.position!=null?'position:'+song.position:'track:'+fingerprint;
       if(!seen.has(key)){seen.add(key);results.push({key,song})}
     }
     diagnostics.readable=Math.max(diagnostics.readable,results.length);
@@ -229,7 +229,7 @@
     '<p class="small">You choose which playlists to capture. Sign in only through Spotify or Apple Music. This script reads visible track metadata, never passwords or music audio. Web layouts can change; always inspect the captured counts. Some providers restrict automated collection access.</p></div></div>';
   document.documentElement.appendChild(host);
   const $=id=>shadow.getElementById(id);
-  $('provider').textContent=(provider==='spotify'?'Spotify':'Apple Music')+' · exporter v1.2.0 · Saves one combined file across both providers';
+  $('provider').textContent=(provider==='spotify'?'Spotify':'Apple Music')+' · exporter v1.3.0 · Saves one combined file across both providers';
   const resetForm=()=>{$('title').value=inferredName();$('favorites').checked=inferredFavorites()};
   resetForm();
   let lastUrl=location.href;
