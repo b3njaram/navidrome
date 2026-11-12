@@ -44,12 +44,14 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const [notice,setNotice]=useState('');
   const [error,setError]=useState('');
   const [showAll,setShowAll]=useState(false);
+  const [autoResume,setAutoResume]=useState(null);
   const stateRef=useRef([]);
   const activeRef=useRef(false);
   const stopRef=useRef(false);
   const queryCache=useRef(new Map());
   const matchCache=useRef(new Map());
   const pollRef=useRef(null);
+  const runRef=useRef(null);
 
   useEffect(()=>{
     let restored=[];
@@ -62,6 +64,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     setSelected(restored[0]?.id||'');
     queryCache.current.clear();
     matchCache.current.clear();
+    setAutoResume(null);
   },[storageKey]);
   const persist=updated=>{
     stateRef.current=updated;setCollections(updated);
@@ -93,6 +96,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       setSelected(parsed.collections[0]?.id||'');
       queryCache.current.clear();
       matchCache.current.clear();
+      setAutoResume(null);
       const fixed=parsed.collections.reduce((n,c)=>n+(c.removedDuplicates||0),0);
       setNotice('Loaded '+parsed.collections.length+' collection(s), '+
         parsed.collections.reduce((n,c)=>n+c.tracks.length,0)+
@@ -160,7 +164,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         }
         soulseekNote=search.message||'No matching studio FLAC or MP3 on Soulseek.';
       }catch(e){
-        if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
+        if(e.status===429||/429|rate limit|search limit|allowance|quota/i.test(String(e.message||'')))throw e;
         soulseekNote='Soulseek unavailable: '+String(e.message||'Search failed');
         break;
       }
@@ -177,7 +181,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         }
         fallbackNote=data.message||'No verified matching video.';
       }catch(e){
-        if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
+        if(e.status===429||/429|rate limit|search limit|allowance|quota/i.test(String(e.message||'')))throw e;
         fallbackNote='Invidious unavailable: '+String(e.message||'Search failed');
         break;
       }
@@ -276,13 +280,25 @@ export default function PlaylistTransfer({api,onLibrary,user}){
               await scanRow(col,row,autoQueue);updated++;
             }
           }catch(e){
-            failed++;
             const message=String(e?.message||'Import failed');
-            patchTrack(col.id,row.id,{status:'failed',note:message});
-            if(/429|limit reached|allowance|too many|rate/i.test(message)){
-              setError('Import paused due to the server quota: '+message+
-                '. Your progress is saved. Continue after the limit resets.');
+            const limited=e?.status===429||
+              /429|search limit|limit reached|allowance|too many|rate limit/i.test(message);
+            if(limited){
+              patchTrack(col.id,row.id,{status:'unsearched',
+                note:'Search quota temporarily exhausted; pending retry.'});
+              const seconds=Number(e?.retryAfterSeconds)||0;
+              setError('Searches paused by the NAS: '+message+
+                '. Your progress is saved.'+
+                (seconds>0&&all&&!recheck?' This page will resume automatically.':
+                  ' Continue when the quota resets.'));
+              if(seconds>0&&all&&!recheck){
+                setAutoResume({until:Date.now()+seconds*1000,
+                  collectionId:col.id,options:{autoQueue,all,recheck}});
+              }
               stopRef.current=true;
+            }else{
+              failed++;
+              patchTrack(col.id,row.id,{status:'failed',note:message});
             }
           }
           attempted++;
@@ -294,6 +310,19 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       onLibrary?.();
     }finally{activeRef.current=false;setWorking(false)}
   };
+  runRef.current=run;
+  useEffect(()=>{
+    if(!autoResume||autoResume.collectionId!==selected)return;
+    const wait=Math.max(250,autoResume.until-Date.now());
+    const timer=setTimeout(()=>{
+      if(activeRef.current)return;
+      const options=autoResume.options;
+      setAutoResume(null);
+      void runRef.current?.(options);
+    },wait);
+    return ()=>clearTimeout(timer);
+  },[autoResume,selected]);
+
   const checkQueueStatus=async({silent=false}={})=>{
     if(activeRef.current)return;
     activeRef.current=true;
@@ -353,7 +382,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   },[storageKey]);
   const clear=()=>{
     if(!window.confirm('Clear your saved migration data in this browser? It will not delete playlists or favorites already imported to Navidrome.'))return;
-    queryCache.current.clear();matchCache.current.clear();persist([]);setSelected('');
+    queryCache.current.clear();matchCache.current.clear();setAutoResume(null);persist([]);setSelected('');
     setNotice('Cleared browser progress. Previously imported music remains untouched.');
   };
   const retry=()=>{
@@ -362,6 +391,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     persist(stateRef.current.map(c=>c.id===selected?{...c,
       tracks:c.tracks.map(row=>['review','failed'].includes(row.status)
         ?{...row,status:'unsearched',note:'Ready to retry'}:row)}:c));
+    setAutoResume(null);
     setNotice('Unmatched and failed rows reset to Ready to retry.');
   };
   const current=collections.find(c=>c.id===selected);
@@ -420,6 +450,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       </div>
     </div>
     {error&&<p className="inline-error" role="alert">{error}</p>}
+    {autoResume&&<p className="import-notice" role="status">Automatic search retry scheduled for {new Date(autoResume.until).toLocaleTimeString()}. You can cancel it below. Leave this page open to continue automatically.</p>}
     {notice&&<p className="import-notice">{notice}</p>}
     {incomplete.length>0&&<p className="inline-error"><AlertTriangle size={16}/> {incomplete.length} source collection(s)
       appear partially captured. Their saved counts may be incomplete; check the exporter before processing.</p>}
@@ -451,15 +482,19 @@ export default function PlaylistTransfer({api,onLibrary,user}){
           <span><b>{totals?.unsearched||0}</b> not checked</span>
         </div>
         <div className="transfer-controls">
-          <button type="button" className="primary" disabled={working||!totals?.unsearched}
+          <button type="button" className="primary" disabled={working||Boolean(autoResume)||!totals?.unsearched}
             onClick={()=>run({all:false,autoQueue:authorized})}>{working?<LoaderCircle size={17}/>:<Search size={17}/>}
             Check next {Math.min(SCAN_LIMIT,totals?.unsearched||0)}</button>
           <button type="button" className="playlist-tool-button"
-            disabled={working||!totals?.unsearched} onClick={()=>run({all:true,autoQueue:authorized})}>
+            disabled={working||Boolean(autoResume)||!totals?.unsearched} onClick={()=>run({all:true,autoQueue:authorized})}>
             <RefreshCw size={16}/> Process remaining songs {authorized?'and queue matches':'(no downloads)'}</button>
           <button type="button" className="playlist-tool-button" disabled={!working}
-            onClick={()=>{stopRef.current=true}}>
+            onClick={()=>{stopRef.current=true;setAutoResume(null)}}>
             <Pause size={16}/> Stop after current song</button>
+           {autoResume&&<button type="button" className="playlist-tool-button"
+             onClick={()=>setAutoResume(null)}>
+             <Pause size={16}/> Cancel scheduled retry
+           </button>}
           <button type="button" className="playlist-tool-button"
             disabled={!authorized||working||!candidates.length}
             onClick={async()=>{
