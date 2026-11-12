@@ -278,7 +278,7 @@ For real long-term updates, use the **same release signing key** and package ide
 
 **Discover → Soulseek · New music** now searches the configured slskd peers **and** a configured Invidious instance concurrently. If slskd returns zero peer responses, Invidious results are shown as a separate source, not disguised as Navidrome music. Artist and album names in Navidrome track lists open the matching local catalog pages. An artist page loads the first 18 albums' real track lists (up to 360 songs); long discographies may require opening additional albums.
 
-**All authenticated listeners can queue supported Soulseek audio files** directly to the existing NAS downloader without administrator approval. Imports are validated server-side, protected by CSRF and session authentication, and subject to a fresh read-only NAS capacity snapshot: at least 4 GiB free **plus** the recording's declared size, max 350 MiB per track, 20 tracks / 2 GiB per user per day, and 80 tracks / 10 GiB across the shared library per day. The importer rejects duplicates that have been queued recently. Status reads for normal users show only their own import metadata. These checks do not bypass licensing requirements; import only material you're authorized to retain.
+**All authenticated listeners can queue supported Soulseek audio files** directly to the existing NAS downloader without administrator approval. Imports are validated server-side, protected by CSRF and session authentication, and subject to a fresh read-only NAS capacity snapshot: at least 4 GiB free **plus** the recording's declared size, max 350 MiB per track, no artificial daily download-count or cumulative-size quotas. The importer rejects duplicates that have been queued recently. Status reads for normal users show only their own import metadata. These checks do not bypass licensing requirements; import only material you're authorized to retain.
 
 ### Diagnose slskd reporting "connected" but zero search peers
 
@@ -317,6 +317,18 @@ Post-deployment check (from the Jobbi Music container's logged-in browser): open
 
 Existing Navidrome, slskd, social PostgreSQL, and Android APK installations remain unchanged by web-only UI updates. If a Synology DSM auto-update task is installed, it updates only the Jobbi frontend; it does **not** automatically enable optional worker profiles.
 
+
+## Saved collection imports — NAS background jobs (web, APK and IPA)
+
+**Import Music on the website** accepts an authorized Apple Music / Spotify export (JSON, CSV or TSV, maximum 8 MB). Every upload is validated and stored with its original metadata document, per-song statuses and destination playlist IDs in the existing **jobbi-social-db PostgreSQL volume**. This is **metadata only**, not DRM-protected media or audio files. The original upload is downloadable again from the saved job. Only the signed-in owner can access the stored source and progress. Deleting browser cookies or closing the browser does not delete the saved job.
+
+With explicit recording authorization, the NAS processes queued collections independently of the browser: it checks the Navidrome library, searches Soulseek for safe studio **FLAC first**, then **MP3**, and only then searches Invidious for a verified alternate recording. The optional Invidious audio worker must be enabled for Invidious imports. Completed transfers enter the collection only **after Navidrome indexes them**. Favorites are starred; other collections populate their own named Navidrome playlist. Shared songs across several imported playlists are submitted only once when possible.
+
+**Web:** Import Music → Saved NAS imports shows each account's jobs, progress, waiting/downloaded/review counts, pause/resume/retry and saved source downloads. **Native Android and iOS:** Library → Saved NAS imports shows the same account's jobs; they can pause/resume and monitor progress. Neither native app has to keep running for the NAS job to continue.
+
+**Restart and sign-in behavior:** No plaintext Navidrome password, web cookie or login token is saved with the job in PostgreSQL. While the Jobbi Music server retains an authenticated login session, imports continue even if the tab and phone apps close. If the NAS service restarts or a login expires, jobs are safely marked **reauth** and resume after their owner signs back into Jobbi Music. Work already completed and the original source file remain in the database. Include the jobbi-social-data volume in NAS backups; do not remove named volumes.
+
+The internal search-count and daily import-count/GB quotas are removed for this small private installation. There is still a per-file audio limit, a real-time **4 GiB free-space reserve**, filename/extension validation, CSRF checks, authenticated-user isolation, duplicate detection and a single NAS worker processing one metadata item per interval. Soulseek peers and Invidious hosts may apply their own independent restrictions. Only obtain audio you are permitted to retain.
 
 ## Import progress and collaborative playlist invitations
 

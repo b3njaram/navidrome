@@ -1,7 +1,7 @@
 name: Jobbi Music native SwiftUI iOS
 on:
   push:
-    branches: [main]
+    branches: [main, fix/playlist-import-search-quota-20261112]
     paths:
       - 'jobbi-music/ios-native/**'
       - '.github/workflows/jobbi-ios-native.yml'

@@ -22,6 +22,25 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var offlineCollections by androidx.compose.runtime.mutableStateOf<List<OfflineCollection>>(emptyList())
         private set
+    var collectionJobs by androidx.compose.runtime.mutableStateOf<List<RemoteCollectionImport>>(emptyList())
+        private set
+    var collectionJobsError by androidx.compose.runtime.mutableStateOf("")
+        private set
+    fun refreshCollectionJobs(){
+        if(!signedIn||offlineMode)return
+        viewModelScope.launch {
+            try{
+                collectionJobs=JobbiApi.collectionJobs()
+                collectionJobsError=""
+            }catch(e:Exception){
+                collectionJobsError=e.message ?: "Saved imports are temporarily unavailable."
+            }
+        }
+    }
+    fun controlCollectionJob(id:String,action:String)=execute{
+        JobbiApi.controlCollectionJob(id,action)
+        collectionJobs=JobbiApi.collectionJobs()
+    }
     var offlineCollectionId by androidx.compose.runtime.mutableStateOf<String?>(null)
         private set
     fun viewOfflineCollection(id:String){offlineCollectionId=id}
@@ -248,6 +267,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         offlineMode = false
         downloadedSongs = emptyList()
         offlineCollections = emptyList()
+        collectionJobs = emptyList()
+        collectionJobsError = ""
         offlineCollectionId = null
         isAdmin = false
         account = ""
@@ -271,7 +292,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         when(tab) {
             "Downloads" -> refreshDownloadedSongs()
             "Home" -> refresh()
-            "Library" -> loadLibrary()
+            "Library" -> {loadLibrary();refreshCollectionJobs()}
             "Favorites" -> loadFavorites()
             "Search" -> if(searchQuery.isNotBlank()) search(searchQuery)
             "Community", "Profile", "Admin" -> Unit

@@ -17,6 +17,31 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+data class RemoteCollectionImport(
+    val id:String,
+    val filename:String,
+    val status:String,
+    val message:String,
+    val total:Int,
+    val completed:Int,
+    val queued:Int,
+    val review:Int,
+    val pending:Int,
+    val authorized:Boolean
+)
+fun JSONObject.collectionImport():RemoteCollectionImport=RemoteCollectionImport(
+    id=optStr("id"),
+    filename=optStr("filename","Collection"),
+    status=optStr("status"),
+    message=optStr("message"),
+    total=optInt("total"),
+    completed=optInt("completed"),
+    queued=optInt("queued"),
+    review=optInt("review"),
+    pending=optInt("pending"),
+    authorized=optBoolean("authorized")
+)
+
 data class Song(
     val id: String,
     val title: String,
@@ -279,6 +304,17 @@ object JobbiApi {
     suspend fun search(term: String): SearchResult {
         val data = getObject("/api/search?q=" + Uri.encode(term.take(120)))
         return SearchResult(data.optJSONArray("song").songs(), data.optJSONArray("album").albums())
+    }
+    suspend fun collectionJobs():List<RemoteCollectionImport>{
+        val jobs=getObject("/api/collection-jobs").optJSONArray("jobs")?:JSONArray()
+        return (0 until jobs.length()).mapNotNull { idx ->
+            jobs.optJSONObject(idx)?.collectionImport()
+        }
+    }
+    suspend fun controlCollectionJob(id:String,action:String){
+        require(action in setOf("pause","resume","retry"))
+        post("/api/collection-jobs/"+Uri.encode(id)+"/control",
+            JSONObject().put("action",action))
     }
     suspend fun albums(): List<Album> =
         getObject("/api/library/albums?offset=0&size=100").optJSONArray("albums").albums()

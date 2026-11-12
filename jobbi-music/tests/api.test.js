@@ -445,3 +445,80 @@ test('real authenticated cover upload: JPEG bytes round-trip, invalid image and 
   assert.equal(tooBig.status,413);
   assert.equal((await get(path)).status,200,'Rejected uploads must not remove valid existing cover');
 });
+
+
+test('saved background collection import continues without an open browser request',async()=>{
+  const file=JSON.stringify({format:'jobbi-collection-export/v1',collections:[{
+    id:'apple:job-test',name:'Resumable favorites',kind:'favorites',provider:'apple',
+    tracks:[{title:'Группа крови',artist:'Кино'}]
+  }]});
+  received.romanizedCatalog=true;
+  const request=(url,body)=>fetch(base+url,{
+    method:'POST',
+    headers:{cookie:listenerCookie,'content-type':'application/json',
+      'x-csrf-token':listenerCsrfToken},
+    body:JSON.stringify(body)
+  });
+  const submitted=await request('/api/collection-jobs',
+    {filename:'music-collection.json',content:file,authorized:true});
+  assert.equal(submitted.status,201);
+  const stored=await submitted.json();
+  assert.equal(stored.job.total,1);
+  assert.equal(stored.job.status,'running');
+  const savedSource=await fetch(base+'/api/collection-jobs/'+stored.job.id+'/source',
+    {headers:{cookie:listenerCookie}});
+  assert.equal(savedSource.status,200);
+  assert.equal(await savedSource.text(),file);
+  // Unrelated users never see another user's collection, including its JSON.
+  const adminList=await get('/api/collection-jobs');
+  assert.equal(adminList.status,200);
+  const adminJobs=await adminList.json();
+  assert.equal(adminJobs.jobs.some(j=>j.id===stored.job.id),false);
+  const privateDetails=await get('/api/collection-jobs/'+stored.job.id);
+  assert.equal(privateDetails.status,404);
+  let completed=false;
+  for(let i=0;i<24;i++){
+    await new Promise(resolve=>setTimeout(resolve,500));
+    const status=await fetch(base+'/api/collection-jobs',
+      {headers:{cookie:listenerCookie}});
+    const body=await status.json();
+    const job=body.jobs.find(x=>x.id===stored.job.id);
+    if(job?.completed===1){completed=true;break}
+  }
+  assert.equal(completed,true,'NAS worker should update favorites without another browser action');
+  const done=await fetch(base+'/api/collection-jobs/'+stored.job.id,
+    {headers:{cookie:listenerCookie}});
+  const data=await done.json();
+  assert.equal(data.manifest.collections[0].tracks[0].status,'hearted');
+  assert.equal(data.manifest.collections[0].tracks[0].songId,'kino-song');
+  const second=await request('/api/collection-jobs',
+    {filename:'music-collection.json',content:file,authorized:true});
+  assert.equal(second.status,201,'Finished import can be deliberately imported anew');
+});
+
+test('saved collection can be paused and safely resumed without uploading again',async()=>{
+  const file=JSON.stringify({format:'jobbi-collection-export/v1',collections:[{
+    id:'apple:pause-test',name:'Pauses',kind:'playlist',provider:'apple',
+    tracks:[{title:'Another Track',artist:'Another Artist'}]
+  }]});
+  const request=(url,body)=>fetch(base+url,{
+    method:'POST',headers:{cookie:listenerCookie,'content-type':'application/json',
+      'x-csrf-token':listenerCsrfToken},body:JSON.stringify(body)
+  });
+  const created=await request('/api/collection-jobs',
+    {filename:'pause.json',content:file,authorized:false});
+  assert.equal(created.status,201);
+  const body=await created.json();
+  assert.equal(body.job.status,'paused');
+  const resumed=await request('/api/collection-jobs/'+body.job.id+'/control',
+    {action:'resume',authorized:true});
+  assert.equal(resumed.status,200);
+  assert.equal((await resumed.json()).job.status,'running');
+  const paused=await request('/api/collection-jobs/'+body.job.id+'/control',
+    {action:'pause'});
+  assert.equal(paused.status,200);
+  assert.equal((await paused.json()).job.status,'paused');
+  const wrongUser=await post('/api/collection-jobs/'+body.job.id+'/control',
+    {action:'resume'});
+  assert.equal(wrongUser.status,404);
+});

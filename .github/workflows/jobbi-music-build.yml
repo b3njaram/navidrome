@@ -1,7 +1,7 @@
 name: Jobbi Music preview build
 on:
   push:
-    branches: [main, feature/jobbi-music-preview]
+    branches: [main, feature/jobbi-music-preview, fix/playlist-import-search-quota-20261112]
     paths:
       - 'jobbi-music/**'
       - '.github/workflows/jobbi-music-build.yml'

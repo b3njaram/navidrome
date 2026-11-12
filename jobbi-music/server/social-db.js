@@ -125,6 +125,28 @@ CREATE TABLE IF NOT EXISTS invidious_imports (
 );
 CREATE INDEX IF NOT EXISTS invidious_imports_user_idx
   ON invidious_imports(requester,created_at DESC);
+-- Signed-in users' saved Spotify/Apple Music metadata imports.
+-- This is metadata only: never store Navidrome passwords, sessions or tokens.
+CREATE TABLE IF NOT EXISTS collection_import_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
+  filename TEXT NOT NULL CHECK(length(filename) BETWEEN 1 AND 180),
+  source_text TEXT NOT NULL CHECK(octet_length(source_text) <= 8000000),
+  fingerprint TEXT NOT NULL CHECK(length(fingerprint)=64),
+  manifest JSONB NOT NULL,
+  authorized BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'paused'
+    CHECK(status IN ('paused','running','monitoring','reauth','finished','cancelled')),
+  message TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  lease_until TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS collection_jobs_owner_idx
+  ON collection_import_jobs(owner,created_at DESC);
+CREATE INDEX IF NOT EXISTS collection_jobs_work_idx
+  ON collection_import_jobs(status,updated_at)
+  WHERE status IN ('running','monitoring','reauth');
 CREATE TABLE IF NOT EXISTS personalized_cover_art (
   username TEXT NOT NULL REFERENCES social_profiles(username) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK(kind IN ('album','playlist')),

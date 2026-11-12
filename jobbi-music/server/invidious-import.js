@@ -60,14 +60,8 @@ export function createInvidiousImportRouter({mustAuth,url,secret,statsFile}){
           WHERE video_id=$1 AND status IN ('processing','queued')
           AND created_at>now()-interval '30 days' LIMIT 1`,[videoId]);
         if(prior.rowCount)return {error:'Recording has already been submitted for import',status:409};
-        const daily=await client.query(`SELECT requester,COUNT(*)::int AS n FROM invidious_imports
-          WHERE created_at>now()-interval '24 hours'
-          AND status IN ('processing','queued')
-          GROUP BY requester`);
-        const mine=daily.rows.find(x=>x.requester===actor);
-        if(Number(mine?.n||0)>=5)return {error:'You reached the 5-video daily import limit',status:429};
-        const globalCount=daily.rows.reduce((n,x)=>n+Number(x.n),0);
-        if(globalCount>=40)return {error:'The shared daily import budget has been reached',status:429};
+        // Only authenticated, authorized requests can submit recordings.
+        // Deduplication and disk-reserve checks remain enabled; no daily count cap.
         const row=await client.query(`INSERT INTO invidious_imports
           (id,requester,video_id,title,artist,status)
           VALUES($1,$2,$3,$4,$5,'processing') RETURNING id`,

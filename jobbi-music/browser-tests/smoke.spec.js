@@ -1,11 +1,12 @@
 import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
+import {parseCollectionManifest} from '../src/playlist-export.js';
 
 async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[],weatherRequests:[],scrobbles:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[],savedJobs:[],weatherRequests:[],scrobbles:[]};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -16,6 +17,34 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
     if(pathname.startsWith('/api/invidious/thumbnail/'))return route.fulfill({status:404,body:''});
     if(pathname.startsWith('/api/cover/'))return route.fulfill({status:404,body:''});
     if(pathname.startsWith('/api/stream/'))return route.fulfill({status:200,contentType:'audio/mpeg',body:''});
+    if(pathname==='/api/collection-jobs'&&method==='GET')
+      return reply({jobs:state.savedJobs.map(x=>x.job)});
+    if(pathname==='/api/collection-jobs'&&method==='POST'){
+      const manifest=parseCollectionManifest(body.content,body.filename);
+      const job={id:'10000000-0000-4000-8000-00000000000'+(state.savedJobs.length+1),
+        filename:body.filename,authorized:body.authorized===true,
+        status:body.authorized?'running':'paused',
+        message:'Saved metadata on NAS',
+        total:manifest.collections.reduce((n,c)=>n+c.tracks.length,0),
+        completed:0,queued:0,review:0,
+        pending:manifest.collections.reduce((n,c)=>n+c.tracks.length,0)};
+      state.savedJobs.unshift({job,manifest,raw:body.content});
+      return reply({job,existing:false},201);
+    }
+    if(pathname.startsWith('/api/collection-jobs/')){
+      const id=pathname.split('/')[3];
+      const selected=state.savedJobs.find(x=>x.job.id===id);
+      if(!selected)return reply({error:'Saved job unavailable'},404);
+      if(pathname.endsWith('/source'))
+        return route.fulfill({status:200,contentType:'application/json',body:selected.raw});
+      if(pathname.endsWith('/control')&&method==='POST'){
+        selected.job.status=body.action==='pause'?'paused':
+          body.action==='cancel'?'cancelled':'running';
+        selected.job.authorized=selected.job.authorized||body.authorized===true;
+        return reply({job:selected.job});
+      }
+      if(method==='GET')return reply({job:selected.job,manifest:selected.manifest});
+    }
     if(pathname==='/api/session')return reply(state.session);
     if(pathname==='/api/login'){const isAdmin=body.username==='testadmin';state.session={username:body.username,admin:isAdmin,csrfToken:'test-csrf-token'};return reply(state.session);}
     if(pathname==='/api/logout'){state.session=null;return reply({ok:true});}
@@ -828,7 +857,7 @@ test('Favorites have a shuffle button and bulk copy to another playlist',async({
 
 test('playlist migration import parses Spotify CSV locally',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await setupMocks(page);await login(page,'listener');
+  const state=await setupMocks(page);await login(page,'listener');
   if(await page.locator('.mobile-nav').isVisible()){
     await page.getByRole('button',{name:'More options'}).click();
     await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
@@ -838,13 +867,15 @@ test('playlist migration import parses Spotify CSV locally',async({page})=>{
     name:'Spotify Favorites.csv',mimeType:'text/csv',
     buffer:Buffer.from('Track Name,Artist Name,Album Name\\nKino,Test Artist,Test Album\\nRoving Gambler,The Country Gentlemen,Vintage\\n'.replace(/\\n/g,'\n'))
   });
-  await expect(page.getByText(/Loaded 1 collection\(s\), 2 track entries/)).toBeVisible();
-  await expect(page.getByRole('button',{name:/Check next 2/})).toBeEnabled();
+  await expect(page.getByText(/Saved 2 tracks on your NAS/)).toBeVisible();
+  await expect(page.getByRole('button',{name:/Start \/ Resume/})).toBeDisabled();
+  expect(state.savedJobs).toHaveLength(1);
+  expect(state.savedJobs[0].manifest.collections[0].tracks).toHaveLength(2);
   expect(errors).toEqual([]);
 });
 
 
-test('collection migration automatically falls back to verified Invidious after Soulseek',async({page})=>{
+test('collection migration persists authorized job on NAS for cross-device processing',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const state=await setupMocks(page);
   await login(page,'listener');
@@ -856,54 +887,48 @@ test('collection migration automatically falls back to verified Invidious after 
     id:'apple:fallback',provider:'apple',name:'Fallback test',kind:'playlist',
     tracks:[{title:'Test Music',artist:'Luis Miguel',position:1}]
   }]};
+  await page.getByLabel('I have permission to obtain and store recordings').check();
   await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
     name:'apple-music.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(manifest))
   });
-  await page.getByLabel('I have permission to obtain and store recordings').check();
-  await page.getByRole('button',{name:'Check next 1'}).click();
-  await expect.poll(()=>state.fallbackJobs.length).toBe(1);
-  expect(state.fallbackJobs[0].videoId).toBe('dQw4w9WgXcQ');
-  expect(state.fallbackJobs[0].authorized).toBe(true);
-  await expect(page.getByText(/Invidious audio queued/)).toBeVisible();
+  await expect.poll(()=>state.savedJobs.length).toBe(1);
+  expect(state.savedJobs[0].job.status).toBe('running');
+  expect(state.savedJobs[0].job.total).toBe(1);
+  await expect(page.getByText(/Saved 1 tracks on your NAS/)).toBeVisible();
+  await expect(page.getByText(/The NAS background worker controls this import/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
 
-test('bulk import pauses on HTTP 429, keeps song pending, then resumes automatically',async({page})=>{
+test('saved import survives browser reload and preserves NAS ownership',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const state=await setupMocks(page);
-  let requests=0;
-  await page.route('**/api/soulseek/search',async route=>{
-    requests++;
-    if(requests===1)
-      return route.fulfill({status:429,contentType:'application/json',
-        headers:{'Retry-After':'2'},
-        body:JSON.stringify({quota:'search',retryAfterSeconds:2,
-          error:'Soulseek search pause: 60 searches per 10 minutes. Resume in 2 seconds.'})});
-    return route.fulfill({status:200,contentType:'application/json',
-      body:JSON.stringify({source:'slskd',results:[],total:0,
-        message:'No verified Soulseek recordings'})});
-  });
   await login(page,'listener');
   if(await page.locator('.mobile-nav').isVisible()){
     await page.getByRole('button',{name:'More options'}).click();
     await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
   }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
   const manifest={format:'jobbi-collection-export/v1',collections:[{
-    id:'apple:limit',provider:'apple',name:'Quota Test',kind:'playlist',
+    id:'apple:recovery',provider:'apple',name:'Resumable playlist',kind:'playlist',
     tracks:[{title:'Test Music',artist:'Luis Miguel',position:1}]
   }]};
-  await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
-    name:'test-quota.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(manifest))
-  });
   await page.getByLabel('I have permission to obtain and store recordings').check();
-  await page.getByRole('button',{name:/Process remaining songs/}).click();
-  await expect(page.getByText(/Automatic search retry scheduled/)).toBeVisible();
-  await expect(page.getByText(/Search quota temporarily exhausted/)).toBeVisible();
-  await expect(page.locator('.transfer-stats')).toContainText('1');
-  await expect.poll(()=>state.fallbackJobs.length,{timeout:12000}).toBe(1);
-  await expect(page.getByText(/Invidious audio queued/)).toBeVisible();
-  expect(requests).toBeGreaterThanOrEqual(2);
+  await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
+    name:'resumable.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(manifest))
+  });
+  await expect.poll(()=>state.savedJobs.length).toBe(1);
+  await expect(page.getByText(/Saved 1 tracks on your NAS/)).toBeVisible();
+  const job=state.savedJobs[0];
+  expect(job.job.status).toBe('running');
+  await page.reload();
+  // Session restores without reuploading the user's JSON.
+  if(await page.locator('.mobile-nav').isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
+  }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
+  await expect(page.locator('[aria-label="Saved NAS collection imports"]')).toContainText('resumable.json');
+  await expect(page.locator('[aria-label="Saved NAS collection imports"]')).toContainText('0/1 added');
+  expect(state.savedJobs[0].raw).toBe(JSON.stringify(manifest));
   expect(errors).toEqual([]);
 });
 
@@ -948,7 +973,7 @@ test('web Import music exposes script, setup guide and both provider choices',as
   expect(await script.text()).toContain('// ==UserScript==');
 });
 
-test('combined collection JSON automatically hearts Liked Songs and builds a separate playlist',async({page})=>{
+test('saved combined JSON preserves Favorites and separately named playlists',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const state=await setupMocks(page);
   await login(page,'listener');
@@ -963,19 +988,21 @@ test('combined collection JSON automatically hearts Liked Songs and builds a sep
       {id:'spotify:road',kind:'playlist',name:'Road Trip',provider:'spotify',
         tracks:[{title:'Kino',artist:'Test Artist',album:'Test Album'}]}
     ]};
+  await page.getByLabel('I have permission to obtain and store recordings').check();
   await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
     name:'jobbi-music-collections.json',mimeType:'application/json',
     buffer:Buffer.from(JSON.stringify(manifest))
   });
+  await expect.poll(()=>state.savedJobs.length).toBe(1);
   await expect(page.locator('.transfer-collection')).toHaveCount(2);
-  await expect(page.getByText(/Favorites remain favorites; playlists remain separate/)).toBeVisible();
-  await page.getByRole('button',{name:'Check next 1'}).click();
-  await expect.poll(()=>state.stars.has('s1')).toBe(true);
-  await expect(page.getByText('Saved in your Jobbi Music Favorites')).toBeVisible();
-  await page.locator('.transfer-collection').filter({hasText:'Road Trip'}).click();
-  await page.getByRole('button',{name:'Check next 1'}).click();
-  await expect.poll(()=>state.playlists.some(p=>p.name==='Road Trip')).toBe(true);
-  await expect.poll(()=>state.addedTracks.some(x=>x.songId==='s1'&&x.playlistId==='p2')).toBe(true);
+  const stored=state.savedJobs[0].manifest.collections;
+  expect(stored.map(c=>c.kind)).toEqual(['favorites','playlist']);
+  expect(stored.map(c=>c.name)).toEqual(['Liked Songs','Road Trip']);
+  expect(state.savedJobs[0].job.total).toBe(2);
+  await expect(page.locator('[aria-label="Saved NAS collection imports"]'))
+    .toContainText('2');
+  // Actual Navidrome playlist/favorite writes are exercised by the API
+  // integration tests, not by an obsolete client-side matching button.
   expect(errors).toEqual([]);
 });
 
