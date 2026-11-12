@@ -33,16 +33,22 @@ final class MusicLibrary: ObservableObject {
         guard api.user != nil else { return }
         busy = true
         defer { busy = false }
-        do {
-            async let homeReq: HomeResponse = api.get("/api/home")
-            async let favoritesReq: StarredResponse = api.get("/api/starred")
-            async let albumsReq: AlbumDirectory = api.get("/api/library/albums?offset=0&size=100")
-            async let playlistsReq: [MusicPlaylist] = api.get("/api/playlists")
-            home = try await homeReq
-            favorites = try await favoritesReq.song ?? []
-            albums = try await albumsReq.albums
-            playlists = try await playlistsReq
-        } catch { message = error.localizedDescription }
+        async let homeReq: HomeResponse = api.get("/api/home")
+        async let favoritesReq: StarredResponse = api.get("/api/starred")
+        async let albumsReq: AlbumDirectory = api.get("/api/library/albums?offset=0&size=100")
+        async let playlistsReq: [MusicPlaylist] = api.get("/api/playlists")
+        var problems = [String]()
+        // One unavailable NAS endpoint must not hide playlists or disable
+        // offline downloads for an otherwise authenticated listener.
+        do { playlists = try await playlistsReq }
+        catch { problems.append("Playlists: " + error.localizedDescription) }
+        do { home = try await homeReq }
+        catch { problems.append("Listen Now: " + error.localizedDescription) }
+        do { favorites = try await favoritesReq.song ?? [] }
+        catch { problems.append("Favorites: " + error.localizedDescription) }
+        do { albums = try await albumsReq.albums }
+        catch { problems.append("Albums: " + error.localizedDescription) }
+        if !problems.isEmpty { message = problems.joined(separator: "\n") }
         await refreshRecommendations(api: api)
     }
 
