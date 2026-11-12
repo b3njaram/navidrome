@@ -15,7 +15,17 @@ The app defaults to https://music.jobbisoft.com.mx and requires HTTPS. Account c
 
 Native tabs for Listen Now, Search, Library, Community and Settings. Albums, playlists, Favorites, personalized weekly/monthly and time-of-day mixes, optional city weather mix, original-file offline downloads, AVPlayer with Control Center/lock screen, signed-in Soulseek discovery and NAS import requests, shared playlist browsing, friends and profile editing, and native profile/album/playlist photo upload. User-chosen photos are downsampled using ImageIO and converted to valid JPEG under 1 MiB; no GPS access needed.
 
-The original NAS library is not modified when downloading to the iPhone. Local downloads are stored per account/server in Application Support. This first iPhone version does not duplicate all advanced Android admin controls or bulk import flows; those remain accessible through the website.
+## New in 1.1.0
+
+- Every song has Play Next, Add to Queue, Add to Playlist, Favorite, and individual offline download. Now Playing has an editable Up Next screen to move, remove, jump and clear future songs, plus Shuffle, Repeat One and a sleep timer.
+- Playlist tracks can be removed from the playlist (PATCH /api/playlists/:id with removeIndex) without removing the recording from the NAS.
+- Remove recording from NAS is a separate, explicitly confirmed operation. The iPhone requests /api/songs/:id/removal-impact, shows other listeners' visible references (never private playlist names), and requires typing REMOVE and posting a server-issued ticket to /api/songs/:id/quarantine. This is only available when the isolated, opt-in NAS quarantine worker is enabled. Otherwise no audio is removed.
+- Find New Music searches Soulseek and, independently, the authenticated /api/invidious/search alternate source. Audio import is only enabled when the NAS Invidious worker reports importEnabled.
+- Verified administrators see the native Admin Console in Settings: indexed song/album counts, storage and user stats, scan trigger, account listing and optional listener management. The backend independently authorizes all mutations.
+- Library and Settings expose Download all playlists; playlist screens and Favorites offer their own downloads. Each unique song is saved only once on the device and the UI reports progress and errors. The iPhone preserves the recording's real .flac, .mp3, .m4a and other supported extensions rather than a generic .audio file.
+- The Listen Now call-to-action now has opaque white background and black text for clear contrast.
+
+The original NAS library is not modified when downloading to the iPhone. Local downloads are private to each account and server in Application Support and excluded from iCloud backups. A queued import is not proof of a playable song. These code paths have automated tests, but real NAS permissions, FLAC compatibility, HTTPS cookies and background downloads must still be verified on a signed physical iPhone. The advanced web-based bulk import and some account controls may remain web-only.
 
 ## IPA installation and signing
 
