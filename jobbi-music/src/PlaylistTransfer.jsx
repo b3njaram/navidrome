@@ -282,33 +282,60 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       onLibrary?.();
     }finally{activeRef.current=false;setWorking(false)}
   };
-  const checkQueueStatus=async()=>{
+  const checkQueueStatus=async({silent=false}={})=>{
     if(activeRef.current)return;
-    setWorking(true);setError('');
+    activeRef.current=true;
+    if(!silent){setWorking(true);setError('')}
     try{
-      const data=await api('/api/music-imports');
+      let data={items:[]};
+      try{data=await api('/api/music-imports')}
+      catch(e){if(!silent)throw e}
       const statuses=new Map((data.items||[]).map(row=>[
         songKey(row.artist)+'|'+songKey(row.title),row
       ]));
-      let updated=0;
+      let updated=0,checked=0;
       for(const col of stateRef.current){
         for(const row of col.tracks){
-          const match=statuses.get(sameSong(row));
-          if(!match||!['queued','waiting','failed'].includes(row.status))continue;
-          if(match.stage==='available'&&match.songId){
+          if(!['queued','waiting'].includes(row.status))continue;
+          const match=row.source==='invidious'?null:statuses.get(sameSong(row));
+          if(match?.stage==='available'&&match.songId){
             try{await applyLocal(col,row,{id:match.songId});updated++}
             catch(e){patchTrack(col.id,row.id,{status:'failed',note:'Could not apply song: '+e.message})}
-          }else if(['failed','unconfirmed'].includes(match.stage))
+            continue;
+          }
+          // Also recheck Navidrome itself: the Invidious worker and previously
+          // queued Soulseek imports can finish without a music-imports result.
+          if(checked<8){
+            checked++;
+            try{
+              const local=await fetchLocal(row,{refresh:true});
+              if(local?.id){await applyLocal(col,row,local);updated++;continue}
+            }catch{/* Keep the queued state until the library is available. */}
+          }
+          if(match&&['failed','unconfirmed'].includes(match.stage))
             patchTrack(col.id,row.id,{note:match.reason||match.label||'Transfer needs review'});
-          else patchTrack(col.id,row.id,{note:match.label||'Download pending'});
+          else if(match?.label)patchTrack(col.id,row.id,{note:match.label});
         }
       }
-      setNotice('Updated '+updated+' songs from confirmed Navidrome downloads. '+
-        'Use Recheck selected for older transfers no longer in recent activity.');
-      onLibrary?.();
-    }catch(e){setError(e.message)}
-    finally{setWorking(false)}
+      if(!silent||updated) {
+        setNotice('Applied '+updated+' newly indexed songs to their playlists/Favorites. '+
+          (checked?'Checked '+checked+' pending recordings. ':'')+
+          'Remaining transfers will be rechecked while this page is open.');
+      }
+      if(updated)onLibrary?.();
+    }catch(e){if(!silent)setError(e.message)}
+    finally{activeRef.current=false;if(!silent)setWorking(false)}
   };
+  // System downloads continue after the page closes, but applying their
+  // finished tracks to playlists requires an authenticated browser session.
+  useEffect(()=>{
+    const timer=setInterval(()=>{
+      if(!activeRef.current&&stateRef.current.some(c=>
+        c.tracks.some(t=>['queued','waiting'].includes(t.status))))
+        void checkQueueStatus({silent:true});
+    },45000);
+    return ()=>clearInterval(timer);
+  },[api,storageKey]);
   const clear=()=>{
     if(!window.confirm('Clear your saved migration data in this browser? It will not delete playlists or favorites already imported to Navidrome.'))return;
     queryCache.current.clear();matchCache.current.clear();persist([]);setSelected('');
