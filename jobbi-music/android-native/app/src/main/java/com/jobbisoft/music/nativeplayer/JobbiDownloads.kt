@@ -17,6 +17,17 @@ data class JobbiQueuedResult(val queued:Int,val alreadySaved:Int,val failed:Int,
                              val estimatedBytes:Long,val notice:String)
 data class OfflineCollection(val id:String,val title:String,val songs:List<Song>)
 
+/** A pending Android DownloadManager job may not have created its file yet.
+ * Do not schedule the same recording again until the OS has marked it failed.
+ */
+internal fun shouldEnqueueDownload(status:Int?,fileReady:Boolean):Boolean =
+    when(status){
+        DownloadManager.STATUS_PENDING,DownloadManager.STATUS_RUNNING,
+        DownloadManager.STATUS_PAUSED -> false
+        DownloadManager.STATUS_SUCCESSFUL -> !fileReady
+        else -> true
+    }
+
 private data class OfflineEntry(
     val id:String,val title:String,val artist:String,val album:String,
     val fileName:String,val downloadId:Long,val status:Int,val size:Long
@@ -131,10 +142,9 @@ object JobbiDownloads {
         val pending=unique.filter {song->
             val current=existing[song.id]
             if(current==null)true
-            else !(runCatching{status(c,current.downloadId)}.getOrNull() in listOf(
-                DownloadManager.STATUS_PENDING,DownloadManager.STATUS_RUNNING,
-                DownloadManager.STATUS_PAUSED,DownloadManager.STATUS_SUCCESSFUL)
-                && file(c,user,server,current).isFile)
+            else shouldEnqueueDownload(
+                runCatching{status(c,current.downloadId)}.getOrNull(),
+                file(c,user,server,current).let{it.isFile&&it.length()>0L})
         }
         val bytes=pending.sumOf {it.size.coerceAtLeast(0)}
         val free=StatFs(root.absolutePath).availableBytes
