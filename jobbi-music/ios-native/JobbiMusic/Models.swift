@@ -181,3 +181,27 @@ struct SongImportReply: Decodable {
     let status: String?
     let message: String?
 }
+
+
+struct InvidiousVideo: Decodable, Identifiable {
+    let videoId: String
+    let title: String
+    let artist: String?
+    let duration: Double?
+    let url: String?
+    let thumbnail: String?
+    var id: String { videoId }
+}
+
+struct InvidiousSearchResponse: Decodable {
+    let available: Bool?
+    let instance: String?
+    let message: String?
+    let results: [InvidiousVideo]?
+}
+
+struct InvidiousImportStatus: Decodable {
+    let configured: Bool?
+    let importEnabled: Bool?
+    let message: String?
+}
