@@ -14,6 +14,21 @@ struct LibraryView: View {
     @State private var showingCreate = false
     @State private var playlistName = ""
     @State private var playlistToClear: MusicPlaylist?
+    @State private var playlistSearch = ""
+    @State private var showingSharedCreate = false
+    @State private var sharedPlaylists: [SocialPlaylist] = []
+
+    private var matchingPlaylists: [MusicPlaylist] {
+        library.playlists.filter {
+            playlistSearch.isEmpty || $0.name.localizedStandardContains(playlistSearch)
+        }
+    }
+
+    private var matchingSharedPlaylists: [SocialPlaylist] {
+        sharedPlaylists.filter {
+            playlistSearch.isEmpty || $0.title.localizedStandardContains(playlistSearch)
+        }
+    }
 
     var body: some View {
         List {
@@ -31,7 +46,7 @@ struct LibraryView: View {
                 }
             }
             Section {
-                ForEach(library.playlists) { playlist in
+                ForEach(matchingPlaylists) { playlist in
                     NavigationLink {
                         CollectionView(kind: .playlist, id: playlist.id)
                     } label: {
@@ -54,10 +69,13 @@ struct LibraryView: View {
                         }
                     }
                 }
-                if library.playlists.isEmpty {
-                    ContentUnavailableView("No playlists yet",
-                        systemImage: "text.badge.plus",
-                        description: Text("Create one to organize your music."))
+                if matchingPlaylists.isEmpty {
+                    ContentUnavailableView(
+                        playlistSearch.isEmpty ? "No playlists yet" : "No matching playlists",
+                        systemImage: "music.note.list",
+                        description: Text(playlistSearch.isEmpty
+                            ? "Create one to organize your music."
+                            : "Try a different playlist name."))
                 }
             } header: {
                 HStack {
@@ -65,6 +83,37 @@ struct LibraryView: View {
                     Spacer()
                     Button { showingCreate = true } label: { Image(systemName: "plus") }
                         .accessibilityLabel("Create playlist")
+                }
+            }
+            Section {
+                ForEach(matchingSharedPlaylists) { playlist in
+                    NavigationLink {
+                        SocialPlaylistView(id: playlist.id)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(playlist.title)
+                                Text("@" + (playlist.owner ?? "unknown") +
+                                     " · \(playlist.song_count ?? 0) tracks")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "person.2.wave.2") }
+                    }
+                }
+                if matchingSharedPlaylists.isEmpty {
+                    Text(playlistSearch.isEmpty
+                        ? "No shared playlists yet."
+                        : "No shared playlists match your search.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                HStack {
+                    Text("Shared playlists")
+                    Spacer()
+                    Button { showingSharedCreate = true } label: {
+                        Image(systemName: "person.2.badge.plus")
+                    }
+                    .accessibilityLabel("Create shared playlist")
                 }
             }
             Section("Offline downloads") {
@@ -108,7 +157,20 @@ struct LibraryView: View {
             }
         }
         .navigationTitle("Library")
-        .refreshable { await library.refresh(api: api) }
+        .searchable(text: $playlistSearch,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "Search playlists by name")
+        .task { await refreshSharedPlaylists() }
+        .refreshable {
+            await library.refresh(api: api)
+            await refreshSharedPlaylists()
+        }
+        .sheet(isPresented: $showingSharedCreate) {
+            SharedPlaylistComposer(mode: .create) { _ in
+                Task { await refreshSharedPlaylists() }
+            }
+            .environmentObject(api)
+        }
         .confirmationDialog("Remove offline playlist downloads?",
             isPresented: Binding(get: { playlistToClear != nil },
                 set: { if !$0 { playlistToClear = nil } })) {
@@ -137,6 +199,15 @@ struct LibraryView: View {
             Button("Cancel", role: .cancel) { playlistName = "" }
         }
     }
+
+    private func refreshSharedPlaylists() async {
+        do {
+            let result: SocialOverview = try await api.get("/api/social/home")
+            sharedPlaylists = result.playlists ?? []
+        } catch {
+            // Keep native library available when the optional social service is down.
+        }
+    }
 }
 
 struct CollectionView: View {
@@ -152,6 +223,7 @@ struct CollectionView: View {
     @State private var coverRevision = 0
     @State private var showDelete = false
     @State private var showRemoveOffline = false
+    @State private var showingCollaboration = false
     @State private var rename = ""
     @State private var showRename = false
 
@@ -208,6 +280,11 @@ struct CollectionView: View {
                         .disabled(offline.isBatchDownloading ||
                             (!offline.hasPlaylistDownloads(id) &&
                              !detail.tracks.contains(where: { offline.localURL(for: $0) != nil })))
+                        Button {
+                            showingCollaboration = true
+                        } label: {
+                            Label("Invite collaborators", systemImage: "person.2.badge.plus")
+                        }
                         Button("Add all to Favorites") {
                             Task {
                                 do {
@@ -264,6 +341,11 @@ struct CollectionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: id) { await reload() }
         .refreshable { await reload() }
+        .sheet(isPresented: $showingCollaboration) {
+            SharedPlaylistComposer(mode: .importPlaylist(id: id,
+                title: detail?.title ?? "Playlist"))
+                .environmentObject(api)
+        }
         .alert("Rename playlist", isPresented: $showRename) {
             TextField("Name", text: $rename)
             Button("Save") {

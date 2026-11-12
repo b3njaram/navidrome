@@ -105,6 +105,48 @@ struct CreatePlaylistResponse: Decodable {
     let playlist: MusicPlaylist
 }
 
+
+struct LyricLine: Decodable {
+    /// Lyrics endpoint uses milliseconds; nil means untimed.
+    let at: Double?
+    let text: String
+}
+
+struct LyricsResponse: Decodable {
+    let available: Bool
+    let synced: Bool
+    let source: String?
+    let lines: [LyricLine]
+
+    static func activeLine(in lines: [LyricLine], seconds: Double) -> Int? {
+        guard seconds.isFinite else { return nil }
+        var active: Int?
+        for (index, line) in lines.enumerated() {
+            guard let at = line.at else { continue }
+            if at <= seconds * 1_000 { active = index }
+            else { break }
+        }
+        return active
+    }
+}
+
+struct SocialPlaylistInvite: Decodable, Identifiable {
+    let id: String
+    let playlist_id: String?
+    let sender: String?
+    let title: String?
+    let can_edit: Bool?
+}
+
+struct CreateSocialPlaylistResponse: Decodable {
+    let playlist: SocialPlaylist
+}
+
+struct ImportSocialPlaylistResponse: Decodable {
+    let id: String
+    let existing: Bool?
+}
+
 struct SocialPerson: Codable, Identifiable {
     var username: String
     var display_name: String?
@@ -132,6 +174,7 @@ struct SocialOverview: Decodable {
     let outgoing: [SocialPerson]?
     let playlists: [SocialPlaylist]?
     let discover: [SocialPlaylist]?
+    let playlistInvitations: [SocialPlaylistInvite]?
 }
 
 struct SocialProfile: Decodable {
@@ -142,6 +185,18 @@ struct SocialProfile: Decodable {
 struct SocialPlaylistDetail: Decodable {
     let playlist: SocialPlaylist
     let tracks: [SocialTrack]?
+    let members: [SocialPlaylistMember]?
+    let pendingInvitations: [PendingSocialInvitation]?
+}
+struct SocialPlaylistMember: Decodable, Identifiable {
+    let username: String
+    let can_edit: Bool?
+    var id: String { username }
+}
+struct PendingSocialInvitation: Decodable, Identifiable {
+    let id: String
+    let recipient: String
+    let can_edit: Bool?
 }
 
 struct SocialTrack: Decodable, Identifiable {

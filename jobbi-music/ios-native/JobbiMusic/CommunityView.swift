@@ -12,6 +12,7 @@ struct CommunityView: View {
     @State private var people: [SocialPerson] = []
     @State private var error: String?
     @State private var busy = false
+    @State private var showingSharedCreate = false
 
     var body: some View {
         List {
@@ -88,6 +89,30 @@ struct CommunityView: View {
                         }
                     }
                 }
+                Section("Playlist invitations") {
+                    if (overview?.playlistInvitations ?? []).isEmpty {
+                        Text("No pending playlist invitations.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    ForEach(overview?.playlistInvitations ?? []) { invite in
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(invite.title ?? "Shared playlist").font(.headline)
+                            Text("From @" + (invite.sender ?? "unknown") +
+                                 (invite.can_edit == true ? " · Can edit" : " · Can listen"))
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Accept") {
+                                    Task { await respondToInvitation(invite, accept: true) }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                Button("Decline", role: .destructive) {
+                                    Task { await respondToInvitation(invite, accept: false) }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                }
                 Section("Shared with me") {
                     ForEach(overview?.playlists ?? []) { playlist in
                         NavigationLink {
@@ -122,11 +147,20 @@ struct CommunityView: View {
         }
         .navigationTitle("Community")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button("New shared playlist", systemImage: "person.2.badge.plus") {
+                    showingSharedCreate = true
+                }
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     Task { await reload() }
                 }
             }
+        }
+        .sheet(isPresented: $showingSharedCreate) {
+            SharedPlaylistComposer(mode: .create) { _ in
+                Task { await reload() }
+            }
+            .environmentObject(api)
         }
         .task { await reload() }
         .refreshable { await reload() }
@@ -142,6 +176,15 @@ struct CommunityView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func respondToInvitation(_ invite: SocialPlaylistInvite, accept: Bool) async {
+        do {
+            try await api.send("/api/social/invitations/" +
+                JobbiAPI.encode(invite.id) + "/respond",
+                json: ["accept": accept])
+            await reload()
+        } catch { self.error = error.localizedDescription }
     }
 
     private func findPeople() async {
@@ -168,6 +211,11 @@ struct SocialPlaylistView: View {
     let id: String
     @State private var detail: SocialPlaylistDetail?
     @State private var error: String?
+    @State private var showingInvite = false
+
+    private var ownPlaylist: Bool {
+        detail?.playlist.owner?.lowercased() == api.user?.username.lowercased()
+    }
 
     var body: some View {
         List {
@@ -181,6 +229,28 @@ struct SocialPlaylistView: View {
                             player.play((detail.tracks ?? []).map(\.song))
                         } label: { Label("Play playlist", systemImage: "play.fill") }
                         .buttonStyle(.borderedProminent)
+                    }
+                }
+                if ownPlaylist {
+                    Section("Collaborators") {
+                        Button {
+                            showingInvite = true
+                        } label: {
+                            Label("Invite collaborator", systemImage: "person.badge.plus")
+                        }
+                        ForEach(detail.members ?? []) { member in
+                            HStack {
+                                Text("@" + member.username)
+                                Spacer()
+                                Text(member.can_edit == true ? "Can edit" : "Can listen")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        ForEach(detail.pendingInvitations ?? []) { pending in
+                            Label("Pending: @" + pending.recipient,
+                                  systemImage: "clock")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 Section("Tracks") {
@@ -197,10 +267,21 @@ struct SocialPlaylistView: View {
             }
         }
         .navigationTitle("Shared Playlist")
-        .task {
-            do { detail = try await api.get("/api/social/playlists/" + JobbiAPI.encode(id)) }
-            catch { self.error = error.localizedDescription }
+        .sheet(isPresented: $showingInvite) {
+            SharedPlaylistComposer(mode: .invite(id: id,
+                title: detail?.playlist.title ?? "Shared playlist")) { _ in
+                Task { await load() }
+            }
+            .environmentObject(api)
         }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+    private func load() async {
+        do {
+            detail = try await api.get("/api/social/playlists/" + JobbiAPI.encode(id))
+            error = nil
+        } catch { self.error = error.localizedDescription }
     }
 }
 
