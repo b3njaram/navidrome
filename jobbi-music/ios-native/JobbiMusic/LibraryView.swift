@@ -207,7 +207,7 @@ struct CollectionView: View {
                         }
                         .disabled(offline.isBatchDownloading ||
                             (!offline.hasPlaylistDownloads(id) &&
-                             !detail.tracks.contains { offline.localURL(for: $0) != nil }))
+                             !detail.tracks.contains(where: { offline.localURL(for: $0) != nil })))
                         Button("Add all to Favorites") {
                             Task {
                                 do {
