@@ -165,13 +165,32 @@ final class JobbiAPI: ObservableObject {
     }
 
     func download(_ path: String) async throws -> URL {
-        let request = try makeRequest(path, method: "GET", json: nil,
+        var request = try makeRequest(path, method: "GET", json: nil,
                                       upload: nil, contentType: nil)
-        let (temp, response) = try await URLSession.shared.download(for: request)
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
+        // FLAC recordings and bulk playlists can exceed the normal JSON
+        // request timeout on slower connections.
+        request.timeoutInterval = 240
+        let (temp, response): (URL, URLResponse)
+        do {
+            (temp, response) = try await URLSession.shared.download(for: request)
+        } catch {
+            throw JobbiError.server("Could not download original audio: \(error.localizedDescription)")
+        }
+        guard let http = response as? HTTPURLResponse else {
             try? FileManager.default.removeItem(at: temp)
-            throw JobbiError.server("Original recording download failed.")
+            throw JobbiError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let data = (try? Data(contentsOf: temp)) ?? Data()
+            let reason = ((try? JSONSerialization.jsonObject(with: data))
+                as? [String: Any])?["error"] as? String
+            try? FileManager.default.removeItem(at: temp)
+            throw JobbiError.server(reason ?? "Original recording failed to download (HTTP \(http.statusCode)).")
+        }
+        let mime = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        if mime.contains("text/html") || mime.contains("application/json") {
+            try? FileManager.default.removeItem(at: temp)
+            throw JobbiError.server("Server returned a login/error page instead of an audio recording. Sign in again.")
         }
         return temp
     }
