@@ -73,8 +73,10 @@ final class MusicPlayer: ObservableObject {
 
     func play(_ songs: [Song], from position: Int = 0) {
         guard !songs.isEmpty else { return }
-        queue = shuffled ? songs.shuffled() : songs
-        let index = shuffled ? 0 : min(max(position, 0), queue.count - 1)
+        let index = min(max(position, 0), songs.count - 1)
+        queue = shuffled
+            ? Array(songs.prefix(index + 1)) + Array(songs.dropFirst(index + 1)).shuffled()
+            : songs
         playAt(index)
     }
 
@@ -133,6 +135,52 @@ final class MusicPlayer: ObservableObject {
     }
 
     func toggle() { playing ? pause() : resume() }
+
+    /// Manual additions are placed explicitly in playback order; duplicate
+    /// tracks are legal, and the current recording is never interrupted.
+    func playNext(_ song: Song) {
+        guard !song.id.isEmpty else { return }
+        if !hasMusic { play([song]); return }
+        queue.insert(song, at: min(currentIndex + 1, queue.count))
+    }
+
+    func addToQueue(_ song: Song) {
+        guard !song.id.isEmpty else { return }
+        if !hasMusic { play([song]); return }
+        queue.append(song)
+    }
+
+    func moveUpcoming(from: Int, to: Int) {
+        guard from > currentIndex, to > currentIndex,
+              queue.indices.contains(from), queue.indices.contains(to),
+              from != to else { return }
+        let selected = queue.remove(at: from)
+        queue.insert(selected, at: to)
+    }
+
+    func removeUpcoming(at index: Int) {
+        guard index > currentIndex, queue.indices.contains(index) else { return }
+        queue.remove(at: index)
+    }
+
+    func clearUpcoming() {
+        guard queue.indices.contains(currentIndex) else { return }
+        queue = Array(queue.prefix(currentIndex + 1))
+    }
+
+    func jumpTo(_ index: Int) {
+        guard queue.indices.contains(index) else { return }
+        playAt(index)
+    }
+
+    func toggleShuffle() {
+        if !shuffled, currentIndex + 1 < queue.count {
+            queue = Array(queue.prefix(currentIndex + 1)) +
+                Array(queue.dropFirst(currentIndex + 1)).shuffled()
+        }
+        shuffled.toggle()
+    }
+
     func next() {
         if currentIndex + 1 < queue.count { playAt(currentIndex + 1) }
         else if repeatOne { playAt(currentIndex) }
