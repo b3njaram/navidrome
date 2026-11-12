@@ -326,6 +326,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             ". "+result.notice
         refreshDownloadedSongs()
     }
+    fun downloadSong(song:Song,wifiOnly:Boolean=false)=execute {
+        enqueueOffline(listOf(song),song.title,wifiOnly)
+    }
     fun downloadPlaylist(id:String,wifiOnly:Boolean=true)=execute {
         val playlist=JobbiApi.openPlaylist(id)
         enqueueOffline(playlist.songs,playlist.title,wifiOnly)
