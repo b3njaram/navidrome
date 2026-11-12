@@ -12,6 +12,7 @@ final class MusicPlayer: ObservableObject {
     @Published private(set) var duration: Double = 0
     @Published var shuffled = false
     @Published var repeatOne = false
+    @Published private(set) var sleepUntil: Date?
     @Published var error: String?
 
     private let avPlayer = AVPlayer()
@@ -181,6 +182,10 @@ final class MusicPlayer: ObservableObject {
         shuffled.toggle()
     }
 
+    func setSleepTimer(minutes: Int) {
+        sleepUntil = minutes > 0 ? Date().addingTimeInterval(Double(minutes * 60)) : nil
+    }
+
     func next() {
         if currentIndex + 1 < queue.count { playAt(currentIndex + 1) }
         else if repeatOne { playAt(currentIndex) }
@@ -234,6 +239,11 @@ final class MusicPlayer: ObservableObject {
     }
 
     private func tick(_ time: CMTime) {
+        if let sleepUntil, Date() >= sleepUntil {
+            self.sleepUntil = nil
+            pause()
+            return
+        }
         accumulateTime()
         if time.seconds.isFinite { elapsed = max(0, time.seconds) }
         let itemDuration = avPlayer.currentItem?.duration.seconds ?? 0
