@@ -450,6 +450,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       </div>
     </div>
     {error&&<p className="inline-error" role="alert">{error}</p>}
+    {autoResume&&<p className="import-notice" role="status">Automatic search retry scheduled for {new Date(autoResume.until).toLocaleTimeString()}. You can cancel it below. Leave this page open to continue automatically.</p>}
     {notice&&<p className="import-notice">{notice}</p>}
     {incomplete.length>0&&<p className="inline-error"><AlertTriangle size={16}/> {incomplete.length} source collection(s)
       appear partially captured. Their saved counts may be incomplete; check the exporter before processing.</p>}
@@ -481,11 +482,11 @@ export default function PlaylistTransfer({api,onLibrary,user}){
           <span><b>{totals?.unsearched||0}</b> not checked</span>
         </div>
         <div className="transfer-controls">
-          <button type="button" className="primary" disabled={working||!totals?.unsearched}
+          <button type="button" className="primary" disabled={working||Boolean(autoResume)||!totals?.unsearched}
             onClick={()=>run({all:false,autoQueue:authorized})}>{working?<LoaderCircle size={17}/>:<Search size={17}/>}
             Check next {Math.min(SCAN_LIMIT,totals?.unsearched||0)}</button>
           <button type="button" className="playlist-tool-button"
-            disabled={working||!totals?.unsearched} onClick={()=>run({all:true,autoQueue:authorized})}>
+            disabled={working||Boolean(autoResume)||!totals?.unsearched} onClick={()=>run({all:true,autoQueue:authorized})}>
             <RefreshCw size={16}/> Process remaining songs {authorized?'and queue matches':'(no downloads)'}</button>
           <button type="button" className="playlist-tool-button" disabled={!working}
             onClick={()=>{stopRef.current=true;setAutoResume(null)}}>
