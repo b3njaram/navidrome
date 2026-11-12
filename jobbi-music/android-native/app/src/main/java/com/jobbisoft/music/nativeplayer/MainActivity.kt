@@ -600,6 +600,7 @@ private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)
             SongRow(song,index,vm.favoriteIds.contains(song.id),
                 play={player.play(vm.home.songs,index)},favorite={vm.toggleFavorite(song)},
                 playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                downloadOffline={vm.downloadSong(song)},
                 add={onSongAdd(song)},removeFromNas={vm.prepareSongRemoval(listOf(song))})
         }
     }
@@ -726,6 +727,7 @@ private fun Cover(art:String?,size: androidx.compose.ui.unit.Dp,modifier:Modifie
 private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:()->Unit,
                     add:()->Unit, removeFromNas:()->Unit={},
                     playNext:()->Unit={}, addQueue:()->Unit={},
+                    downloadOffline:()->Unit={},
                     selected:Boolean=false,selectionMode:Boolean=false,
                     onSelect:()->Unit={},onLongSelect:()->Unit={}) {
     var moreOpen by remember { mutableStateOf(false) }
@@ -767,6 +769,9 @@ private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:
                     DropdownMenuItem(text={Text("Add to playlist")},
                         leadingIcon={Icon(Icons.Rounded.PlaylistAdd,null)},
                         onClick={moreOpen=false;add()})
+                    DropdownMenuItem(text={Text("Download offline")},
+                        leadingIcon={Icon(Icons.Rounded.Download,null)},
+                        onClick={moreOpen=false;downloadOffline()})
                 }
             }
             IconButton(onClick=removeFromNas,modifier=Modifier.size(40.dp)) {
@@ -837,6 +842,7 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
                 SongRow(song,index,song.id in vm.favoriteIds,
                     play={player.play(songs,index)},favorite={vm.toggleFavorite(song)},
                     playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                    downloadOffline={vm.downloadSong(song)},
                     add={onSongAdd(song)},removeFromNas={vm.prepareSongRemoval(listOf(song))},
                     selected=index in selected,selectionMode=selecting,
                     onSelect={selected=if(index in selected)selected-index else selected+index},
@@ -913,6 +919,7 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                         play={player.play(vm.searchResult.songs,index)},
                         favorite={vm.toggleFavorite(song)},
                         playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                        downloadOffline={vm.downloadSong(song)},
                         add={onSongAdd(song)},
                         removeFromNas={vm.prepareSongRemoval(listOf(song))},
                         selected=index in selected,selectionMode=selecting,
@@ -1233,6 +1240,7 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             SongRow(song,index,song.id in vm.favoriteIds,
                 play={player.play(playingList,index)},favorite={vm.toggleFavorite(song)},
                 playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                downloadOffline={vm.downloadSong(song)},
                 add={onSongAdd(song)},
                 removeFromNas={vm.prepareSongRemoval(listOf(song))},
                 selected=pair.first in selected,selectionMode=selecting,
