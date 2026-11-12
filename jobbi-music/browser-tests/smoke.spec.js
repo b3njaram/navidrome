@@ -868,6 +868,45 @@ test('collection migration automatically falls back to verified Invidious after 
   expect(errors).toEqual([]);
 });
 
+
+test('bulk import pauses on HTTP 429, keeps song pending, then resumes automatically',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const state=await setupMocks(page);
+  let requests=0;
+  await page.route('**/api/soulseek/search',async route=>{
+    requests++;
+    if(requests===1)
+      return route.fulfill({status:429,contentType:'application/json',
+        headers:{'Retry-After':'2'},
+        body:JSON.stringify({quota:'search',retryAfterSeconds:2,
+          error:'Soulseek search pause: 60 searches per 10 minutes. Resume in 2 seconds.'})});
+    return route.fulfill({status:200,contentType:'application/json',
+      body:JSON.stringify({source:'slskd',results:[],total:0,
+        message:'No verified Soulseek recordings'})});
+  });
+  await login(page,'listener');
+  if(await page.locator('.mobile-nav').isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
+  }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
+  const manifest={format:'jobbi-collection-export/v1',collections:[{
+    id:'apple:limit',provider:'apple',name:'Quota Test',kind:'playlist',
+    tracks:[{title:'Test Music',artist:'Luis Miguel',position:1}]
+  }]};
+  await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
+    name:'test-quota.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(manifest))
+  });
+  await page.getByLabel('I have permission to obtain and store recordings').check();
+  await page.getByRole('button',{name:/Process remaining songs/}).click();
+  await expect(page.getByText(/Automatic search retry scheduled/)).toBeVisible();
+  await expect(page.getByText(/Search quota temporarily exhausted/)).toBeVisible();
+  await expect(page.locator('.transfer-stats')).toContainText('1');
+  await expect.poll(()=>state.fallbackJobs.length,{timeout:12000}).toBe(1);
+  await expect(page.getByText(/Invidious audio queued/)).toBeVisible();
+  expect(requests).toBeGreaterThanOrEqual(2);
+  expect(errors).toEqual([]);
+});
+
 test('mobile player shows previous and separate seek timeline',async({page,isMobile})=>{
   if(!isMobile)return;
   await setupMocks(page);await login(page,'listener');
