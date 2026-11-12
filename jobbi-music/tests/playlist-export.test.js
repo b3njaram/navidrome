@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parsePlaylistExport,parseDelimited,findLocalSong,pickSoulseekCandidate,pickInvidiousCandidate,collapseTripleCapture,parseCollectionManifest} from '../src/playlist-export.js';
+import {parsePlaylistExport,parseDelimited,findLocalSong,pickSoulseekCandidate,pickInvidiousCandidate,collapseTripleCapture,romanizeMusic,parseCollectionManifest} from '../src/playlist-export.js';
 test('Spotify CSV and quoted commas',()=>{
  const rows=parsePlaylistExport('Track Name,Artist Name(s),Album Name\n"Long Journey, Home",Billy Strings,Live\n','spotify.csv');
  assert.equal(rows[0].title,'Long Journey, Home');assert.equal(rows[0].artist,'Billy Strings');
@@ -126,4 +126,16 @@ test('Invidious fallback must verify title artist edition and duration',()=>{
  assert.equal(chosen?.videoId,'abcABC12347');
  assert.equal(chosen?.format,'INVIDIOUS');
  assert.equal(pickInvidiousCandidate(song,[results[0],results[1]]),null);
+});
+
+
+test('Cyrillic Kino metadata matches properly transliterated Soulseek filenames',()=>{
+ const cyr={title:'Бездельник №1',artist:'Кино'};
+ assert.equal(romanizeMusic('Кино Бездельник №1').trim(),'kino bezdelnik  no 1');
+ const candidate=pickSoulseekCandidate(cyr,[{
+   username:'peer',filename:'Kino/Bezdelnik No 1.flac',size:43000000
+ }]);
+ assert.equal(candidate?.username,'peer');
+ assert.equal(findLocalSong(cyr,[{id:'latin',title:'Bezdelnik No 1',artist:'Kino'}])?.id,
+   'latin');
 });
