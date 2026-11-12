@@ -21,6 +21,10 @@ data class JobbiRemovalResult(val removed:Int,val keptShared:Int)
 /** A pending Android DownloadManager job may not have created its file yet.
  * Do not schedule the same recording again until the OS has marked it failed.
  */
+/** A track can be erased only if no other downloaded collection owns it. */
+internal fun offlineSongsSafeToDelete(requested:Set<String>, referencedElsewhere:Set<String>):Set<String> =
+    requested - referencedElsewhere
+
 internal fun shouldEnqueueDownload(status:Int?,fileReady:Boolean):Boolean =
     when(status){
         DownloadManager.STATUS_PENDING,DownloadManager.STATUS_RUNNING,
@@ -159,15 +163,14 @@ object JobbiDownloads {
             for(i in 0 until refs.length())protected.add(refs.optString(i))
         }
         val accountFolder=File(root(c),"jobbi/"+scope(user,server)).canonicalFile
+        for(songId in target)if(store.getBoolean(manualKey(user,server,songId),false))
+            protected.add(songId)
+        val removable=offlineSongsSafeToDelete(target,protected)
         val dm=manager(c)
         val editor=store.edit()
         var removed=0
-        var kept=0
-        for(songId in target){
-            if(songId in protected || store.getBoolean(manualKey(user,server,songId),false)){
-                kept++
-                continue
-            }
+        val kept=target.size-removable.size
+        for(songId in removable){
             val item=store.getString(key(user,server,songId),null)?.let(OfflineEntry::from)
                 ?:continue
             val targetFile=file(c,user,server,item).canonicalFile
