@@ -49,6 +49,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const stopRef=useRef(false);
   const queryCache=useRef(new Map());
   const matchCache=useRef(new Map());
+  const pollRef=useRef(null);
 
   useEffect(()=>{
     let restored=[];
@@ -337,16 +338,19 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     }catch(e){if(!silent)setError(e.message)}
     finally{activeRef.current=false;if(!silent)setWorking(false)}
   };
+  // The API callback may be recreated during player updates. Keep the poll
+  // timer stable and call the newest authenticated implementation instead.
+  pollRef.current=checkQueueStatus;
   // System downloads continue after the page closes, but applying their
   // finished tracks to playlists requires an authenticated browser session.
   useEffect(()=>{
     const timer=setInterval(()=>{
       if(!activeRef.current&&stateRef.current.some(c=>
         c.tracks.some(t=>['queued','waiting'].includes(t.status))))
-        void checkQueueStatus({silent:true});
+        void pollRef.current?.({silent:true});
     },45000);
     return ()=>clearInterval(timer);
-  },[api,storageKey]);
+  },[storageKey]);
   const clear=()=>{
     if(!window.confirm('Clear your saved migration data in this browser? It will not delete playlists or favorites already imported to Navidrome.'))return;
     queryCache.current.clear();matchCache.current.clear();persist([]);setSelected('');
