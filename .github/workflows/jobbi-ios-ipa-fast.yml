@@ -1,0 +1,50 @@
+name: Jobbi Music iPhone IPA device build
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'jobbi-music/ios-native/**'
+      - '.github/workflows/jobbi-ios-ipa-fast.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobbi-iphone-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-device-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: jobbi-music/ios-native
+        run: xcodegen generate
+      - name: Compile release build for physical iPhone
+        working-directory: jobbi-music/ios-native
+        run: |
+          set -euo pipefail
+          xcodebuild -project JobbiMusic.xcodeproj -scheme JobbiMusic \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/JobbiDeviceBuild" \
+            CODE_SIGNING_ALLOWED=NO build
+          APP="$RUNNER_TEMP/JobbiDeviceBuild/Build/Products/Release-iphoneos/JobbiMusic.app"
+          test -s "$APP/JobbiMusic"
+          plutil -extract CFBundleShortVersionString raw -o - "$APP/Info.plist"
+          plutil -extract UIBackgroundModes json -o - "$APP/Info.plist" | grep -F '"audio"'
+          mkdir -p "$RUNNER_TEMP/JobbiPayload/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/JobbiPayload/Payload/JobbiMusic.app"
+          cd "$RUNNER_TEMP/JobbiPayload"
+          zip -qry "$GITHUB_WORKSPACE/JobbiMusic-iOS-1.1.0-UNSIGNED.ipa" Payload
+      - name: Upload genuine device IPA (unsigned; Apple provisioning required)
+        uses: actions/upload-artifact@v4
+        with:
+          name: JobbiMusic-iOS-1.1.0-UNSIGNED-NOT-INSTALLABLE
+          path: JobbiMusic-iOS-1.1.0-UNSIGNED.ipa
+          retention-days: 30
+          if-no-files-found: error
