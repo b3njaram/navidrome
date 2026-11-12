@@ -65,8 +65,10 @@ const CYR=Object.freeze({
 export function romanizeMusic(value){
  return String(value||'').toLocaleLowerCase().replace(/[а-яёіїє№]/gu,ch=>CYR[ch]??ch);
 }
-export const songKey=text=>romanizeMusic(field(text).normalize('NFKD')
-  .replace(/[\u0300-\u036f]/g,''))
+// Transliterate before NFKD: Unicode decomposes № into "No" and would
+// otherwise lose the word boundary in "Бездельник №1".
+export const songKey=text=>romanizeMusic(field(text)).normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g,'')
   .replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
 function hasAll(hay,needle){
   const words=songKey(needle).split(' ').filter(w=>w.length>1);
