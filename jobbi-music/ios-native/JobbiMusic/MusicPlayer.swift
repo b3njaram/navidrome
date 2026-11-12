@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import AVFoundation
 import MediaPlayer
+import UIKit
 
 @MainActor
 final class MusicPlayer: ObservableObject {
@@ -23,6 +24,9 @@ final class MusicPlayer: ObservableObject {
     private var realListenSeconds: Double = 0
     private var lastTime: Date?
     private var submittedListen = false
+    private var currentArtwork: MPMediaItemArtwork?
+    private var artworkTask: Task<Void, Never>?
+    private var artworkCache: [String: UIImage] = [:]
 
     var active: Song? { queue.indices.contains(currentIndex) ? queue[currentIndex] : nil }
     var hasMusic: Bool { active != nil }
@@ -87,6 +91,11 @@ final class MusicPlayer: ObservableObject {
         submitIfQualified()
         currentIndex = index
         guard let song = active else { return }
+        // Track changes must immediately discard old artwork, even if the
+        // next cover is still downloading.
+        artworkTask?.cancel()
+        artworkTask = nil
+        currentArtwork = nil
         realListenSeconds = 0
         lastTime = nil
         submittedListen = false
@@ -113,6 +122,7 @@ final class MusicPlayer: ObservableObject {
             avPlayer.play()
             playing = true
             refreshNowPlaying()
+            loadSystemArtwork(for: song, api: api)
         } catch {
             playing = false
             self.error = error.localizedDescription
@@ -259,12 +269,48 @@ final class MusicPlayer: ObservableObject {
         else { next() }
     }
 
+    /// The Lock Screen, Control Center and system Now Playing UI (including
+    /// supported Dynamic Island layouts) use MPMediaItemPropertyArtwork.
+    /// AsyncImage in SwiftUI doesn't publish images to those system surfaces.
+    private func loadSystemArtwork(for song: Song, api: JobbiAPI) {
+        guard let identifier = song.coverArt, !identifier.isEmpty,
+              let url = api.url("/api/cover/" + JobbiAPI.encode(identifier)) else { return }
+        let cacheKey = api.server + "|" + identifier
+        if let cached = artworkCache[cacheKey] {
+            currentArtwork = MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
+            refreshNowPlaying()
+            return
+        }
+        artworkTask = Task { [weak self] in
+            do {
+                var request = URLRequest(url: url)
+                request.setValue("image/*", forHTTPHeaderField: "Accept")
+                request.timeoutInterval = 20
+                // URLSession shares the authenticated server's cookie store.
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard !Task.isCancelled,
+                      let http = response as? HTTPURLResponse,
+                      (200...299).contains(http.statusCode),
+                      http.mimeType?.lowercased().hasPrefix("image/") == true,
+                      data.count > 0, data.count <= 8_000_000,
+                      let image = UIImage(data: data) else { return }
+                guard let self, self.active?.id == song.id else { return }
+                if self.artworkCache.count >= 40 { self.artworkCache.removeAll() }
+                self.artworkCache[cacheKey] = image
+                self.currentArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                self.refreshNowPlaying()
+            } catch {
+                // Missing or unavailable covers must not interrupt playback.
+            }
+        }
+    }
+
     private func refreshNowPlaying() {
         guard let active else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: active.title,
             MPMediaItemPropertyArtist: active.artist,
             MPMediaItemPropertyAlbumTitle: active.displayAlbum,
@@ -272,10 +318,17 @@ final class MusicPlayer: ObservableObject {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
             MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0
         ]
+        if let currentArtwork {
+            info[MPMediaItemPropertyArtwork] = currentArtwork
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     func stop() {
         pause()
+        artworkTask?.cancel()
+        artworkTask = nil
+        currentArtwork = nil
         queue = []
         currentIndex = 0
         avPlayer.replaceCurrentItem(with: nil)
