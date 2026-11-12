@@ -198,7 +198,7 @@ struct AdminDashboardView: View {
         do {
             try await api.send("/api/library/scan")
             notice = "Navidrome library scan requested."
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 
     private func createListener() async {
@@ -218,7 +218,7 @@ struct AdminDashboardView: View {
             notice = "Listener created. Share credentials securely."
             let updated: ManagedAccounts = try await api.get("/api/admin/accounts")
             accounts = updated
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 
     private func deleteAccount(_ account: ManagedAccount) async {
@@ -231,6 +231,6 @@ struct AdminDashboardView: View {
                 + "?confirm=delete", method: "DELETE")
             notice = "Deleted listener \(account.username)."
             accounts = try await api.get("/api/admin/accounts")
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 }
