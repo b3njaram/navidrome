@@ -16,10 +16,15 @@ data class JobbiDownloadStats(val saved:Int=0,val queued:Int=0,val failed:Int=0,
 data class JobbiQueuedResult(val queued:Int,val alreadySaved:Int,val failed:Int,
                              val estimatedBytes:Long,val notice:String)
 data class OfflineCollection(val id:String,val title:String,val songs:List<Song>)
+data class JobbiRemovalResult(val removed:Int,val keptShared:Int)
 
 /** A pending Android DownloadManager job may not have created its file yet.
  * Do not schedule the same recording again until the OS has marked it failed.
  */
+/** A track can be erased only if no other downloaded collection owns it. */
+internal fun offlineSongsSafeToDelete(requested:Set<String>, referencedElsewhere:Set<String>):Set<String> =
+    requested - referencedElsewhere
+
 internal fun shouldEnqueueDownload(status:Int?,fileReady:Boolean):Boolean =
     when(status){
         DownloadManager.STATUS_PENDING,DownloadManager.STATUS_RUNNING,
@@ -60,6 +65,10 @@ object JobbiDownloads {
         hash(server+"\n"+user.lowercase()).take(24)
     private fun prefix(user:String,server:String):String = scope(user,server)+":"
     private fun key(user:String,server:String,id:String):String = prefix(user,server)+hash(id)
+    private fun collectionKey(user:String,server:String,id:String):String =
+        "collection:"+scope(user,server)+":"+hash(id)
+    private fun manualKey(user:String,server:String,id:String):String =
+        "manual:"+scope(user,server)+":"+hash(id)
     private fun prefs(c:Context)=c.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
     private fun manager(c:Context)=c.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private fun extension(song:Song):String =
@@ -111,12 +120,73 @@ object JobbiDownloads {
         if(user.isBlank()||collectionId.isBlank())return
         val ids=JSONArray()
         for(song in songs.distinctBy(Song::id))if(song.id.isNotBlank())ids.put(song.id)
+        val key=collectionKey(user,server,collectionId)
+        // Preserve tracks saved earlier even when the NAS playlist has changed.
+        val old=prefs(c).getString(key,null)?.let {runCatching {JSONObject(it)}.getOrNull()}
+        val oldIds=old?.optJSONArray("ids")
+        if(oldIds!=null)for(i in 0 until oldIds.length()){
+            val id=oldIds.optString(i)
+            if(id.isNotBlank() && (0 until ids.length()).none{ids.optString(it)==id})ids.put(id)
+        }
         val value=JSONObject().put("id",collectionId).put("title",title).put("ids",ids)
-        val key="collection:"+scope(user,server)+":"+hash(collectionId)
         check(prefs(c).edit().putString(key,value.toString()).commit()){
             "Could not remember your offline playlist."
         }
     }
+    fun rememberIndividual(c:Context,user:String,server:String,id:String){
+        if(user.isBlank()||id.isBlank())return
+        check(prefs(c).edit().putBoolean(manualKey(user,server,id),true).commit()){
+            "Could not remember this individual offline download."
+        }
+    }
+    fun hasPlaylist(c:Context,user:String,server:String,id:String):Boolean =
+        user.isNotBlank() && prefs(c).contains(collectionKey(user,server,"playlist:"+id))
+
+    /** Cancel queued files and delete local copies only when no other saved
+     * collection or explicit single-song download claims those recordings.
+     * This never contacts the server or removes songs from the NAS.
+     */
+    fun removePlaylist(c:Context,user:String,server:String,id:String):JobbiRemovalResult {
+        require(user.isNotBlank()){"Select an offline account first."}
+        val store=prefs(c)
+        val targetKey=collectionKey(user,server,"playlist:"+id)
+        val record=store.getString(targetKey,null)?.let {runCatching{JSONObject(it)}.getOrNull()}
+            ?:return JobbiRemovalResult(0,0)
+        val ids=record.optJSONArray("ids") ?: JSONArray()
+        val target=(0 until ids.length()).map {ids.optString(it)}.filter(String::isNotBlank).toSet()
+        val protected=mutableSetOf<String>()
+        val collectionPrefix="collection:"+scope(user,server)+":"
+        for((name,raw) in store.all){
+            if(name==targetKey || !name.startsWith(collectionPrefix))continue
+            val refs=runCatching {JSONObject(raw as String).optJSONArray("ids")}.getOrNull()
+                ?:continue
+            for(i in 0 until refs.length())protected.add(refs.optString(i))
+        }
+        val accountFolder=File(root(c),"jobbi/"+scope(user,server)).canonicalFile
+        for(songId in target)if(store.getBoolean(manualKey(user,server,songId),false))
+            protected.add(songId)
+        val removable=offlineSongsSafeToDelete(target,protected)
+        val dm=manager(c)
+        val editor=store.edit()
+        var removed=0
+        val kept=target.size-removable.size
+        for(songId in removable){
+            val item=store.getString(key(user,server,songId),null)?.let(OfflineEntry::from)
+                ?:continue
+            val targetFile=file(c,user,server,item).canonicalFile
+            check(targetFile.parentFile==accountFolder){"Invalid offline recording path."}
+            if(item.downloadId>0)dm.remove(item.downloadId) // Cancels queued/running jobs too.
+            if(targetFile.exists()&&!targetFile.delete()){
+                throw JobbiException("Could not delete "+item.title+" from device storage.")
+            }
+            editor.remove(key(user,server,songId))
+            removed++
+        }
+        editor.remove(targetKey)
+        check(editor.commit()){"Could not update the offline download library."}
+        return JobbiRemovalResult(removed,kept)
+    }
+
     fun completedCollections(c:Context,user:String,server:String):List<OfflineCollection>{
         if(user.isBlank())return emptyList()
         val available=downloadedSongs(c,user,server).associateBy(Song::id)

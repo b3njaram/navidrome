@@ -13,6 +13,7 @@ struct LibraryView: View {
     @EnvironmentObject private var player: MusicPlayer
     @State private var showingCreate = false
     @State private var playlistName = ""
+    @State private var playlistToClear: MusicPlaylist?
 
     var body: some View {
         List {
@@ -41,6 +42,16 @@ struct LibraryView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: { Image(systemName: "music.note.list") }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if offline.hasPlaylistDownloads(playlist.id) {
+                            Button(role: .destructive) {
+                                playlistToClear = playlist
+                            } label: {
+                                Label("Remove downloads", systemImage: "trash")
+                            }
+                            .disabled(offline.isBatchDownloading)
+                        }
                     }
                 }
                 if library.playlists.isEmpty {
@@ -98,6 +109,19 @@ struct LibraryView: View {
         }
         .navigationTitle("Library")
         .refreshable { await library.refresh(api: api) }
+        .confirmationDialog("Remove offline playlist downloads?",
+            isPresented: Binding(get: { playlistToClear != nil },
+                set: { if !$0 { playlistToClear = nil } })) {
+            Button("Remove from iPhone", role: .destructive) {
+                if let playlist = playlistToClear {
+                    offline.removePlaylistDownloads(playlist.id)
+                }
+                playlistToClear = nil
+            }
+            Button("Cancel", role: .cancel) { playlistToClear = nil }
+        } message: {
+            Text("Only device copies not used by other saved collections are removed. Your NAS and playlist remain unchanged.")
+        }
         .alert("New playlist", isPresented: $showingCreate) {
             TextField("Playlist name", text: $playlistName)
             Button("Create") {
@@ -127,6 +151,7 @@ struct CollectionView: View {
     @State private var error: String?
     @State private var coverRevision = 0
     @State private var showDelete = false
+    @State private var showRemoveOffline = false
     @State private var rename = ""
     @State private var showRename = false
 
@@ -171,11 +196,18 @@ struct CollectionView: View {
                     Section("Playlist controls") {
                         if mayChangeVisibility { visibilityToggle }
                         Button {
-                            Task { await offline.downloadAll(detail.tracks, api: api) }
+                            Task { await offline.downloadAll(detail.tracks, api: api,
+                                source: "playlist:" + id) }
                         } label: {
                             Label("Download playlist offline", systemImage: "arrow.down.circle")
                         }
                         .disabled(offline.isBatchDownloading)
+                        Button("Remove offline downloads", role: .destructive) {
+                            showRemoveOffline = true
+                        }
+                        .disabled(offline.isBatchDownloading ||
+                            (!offline.hasPlaylistDownloads(id) &&
+                             !detail.tracks.contains(where: { offline.localURL(for: $0) != nil })))
                         Button("Add all to Favorites") {
                             Task {
                                 do {
@@ -194,7 +226,8 @@ struct CollectionView: View {
                 } else {
                     Section {
                         Button("Download album") {
-                            Task { await offline.downloadAll(detail.tracks, api: api) }
+                            Task { await offline.downloadAll(detail.tracks, api: api,
+                                source: "album:" + id) }
                         }
                     }
                 }
@@ -244,6 +277,14 @@ struct CollectionView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Remove offline downloads?", isPresented: $showRemoveOffline) {
+            Button("Remove downloaded songs", role: .destructive) {
+                offline.removePlaylistDownloads(id, tracks: detail?.tracks ?? [])
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes only local iPhone copies not needed by other saved collections. The playlist and original music on your NAS stay intact.")
         }
         .confirmationDialog("Delete this playlist?", isPresented: $showDelete) {
             Button("Delete playlist", role: .destructive) {
@@ -319,7 +360,8 @@ struct FavoritesView: View {
                     } label: { Label("Shuffle All", systemImage: "shuffle") }
                         .buttonStyle(.borderedProminent)
                     Button {
-                        Task { await offline.downloadAll(library.favorites, api: api) }
+                        Task { await offline.downloadAll(library.favorites, api: api,
+                            source: "favorites") }
                     } label: { Label("Download All", systemImage: "arrow.down.circle") }
                         .buttonStyle(.bordered)
                 }
