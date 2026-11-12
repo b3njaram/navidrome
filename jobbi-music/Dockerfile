@@ -16,6 +16,8 @@ COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
+# Server-side collection importer shares the audited FLAC/MP3/Invidious matcher.
+COPY --from=build /app/src/playlist-export.js ./src/playlist-export.js
 USER node
 EXPOSE 3131
 CMD ["node", "server/index.js"]

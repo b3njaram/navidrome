@@ -45,6 +45,9 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const [error,setError]=useState('');
   const [showAll,setShowAll]=useState(false);
   const [autoResume,setAutoResume]=useState(null);
+  const [savedJobs,setSavedJobs]=useState([]);
+  const [savedJobId,setSavedJobId]=useState('');
+  const [savedBusy,setSavedBusy]=useState(false);
   const stateRef=useRef([]);
   const activeRef=useRef(false);
   const stopRef=useRef(false);
@@ -52,6 +55,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const matchCache=useRef(new Map());
   const pollRef=useRef(null);
   const runRef=useRef(null);
+  const savedJobsRefresh=useRef(null);
 
   useEffect(()=>{
     let restored=[];
@@ -65,6 +69,14 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     queryCache.current.clear();
     matchCache.current.clear();
     setAutoResume(null);
+    try{setSavedJobId(localStorage.getItem(storageKey+'/nas-job')||'')}
+    catch{setSavedJobId('')}
+    setSavedJobs([]);
+  },[storageKey]);
+  useEffect(()=>{
+    const timer=setInterval(()=>void savedJobsRefresh.current?.(),12000);
+    void savedJobsRefresh.current?.();
+    return ()=>clearInterval(timer);
   },[storageKey]);
   const persist=updated=>{
     stateRef.current=updated;setCollections(updated);
@@ -89,7 +101,8 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     setError('');setNotice('');
     try{
       if(file.size>8_000_000)throw new Error('The metadata export must be below 8 MB.');
-      const parsed=parseCollectionManifest(await file.text(),file.name);
+      const original=await file.text();
+      const parsed=parseCollectionManifest(original,file.name);
       if(stateRef.current.length&&!window.confirm('Replace the saved import progress in this browser with this new export?'))return;
       persist(parsed.collections.map(c=>({...c,destinationId:null,
         tracks:c.tracks.map(t=>({status:'unsearched',note:'',...t}))})));
@@ -102,9 +115,57 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         parsed.collections.reduce((n,c)=>n+c.tracks.length,0)+
         ' track entries.'+(fixed?' Repaired '+fixed+
           ' duplicate entries from an older Apple Music export.':'')+
-        ' Favorites remain favorites; playlists remain separate.');
+        ' Saving the import on your NAS…');
+      try{
+        const result=await api('/api/collection-jobs',jsonOptions('POST',{
+          filename:file.name,content:original,authorized
+        }));
+        const job=result.job;
+        setSavedJobId(job.id);
+        try{localStorage.setItem(storageKey+'/nas-job',job.id)}catch{}
+        setNotice('Saved '+job.total+' tracks on your NAS. '+
+          (job.status==='paused'?
+            'Enable download permission and press Start saved import.':
+            'Importing continues after this tab closes.'));
+        await refreshSavedJobs(job.id);
+      }catch(saveError){
+        setError('Could not save this import to the NAS: '+saveError.message+
+          '. The browser preview is available, but a background import cannot run until the NAS accepts the file.');
+      }
     }catch(e){setError(e.message||'Unable to parse the export');}
   };
+  const refreshSavedJobs=async(forceId)=>{
+    try{
+      const result=await api('/api/collection-jobs');
+      setSavedJobs(result.jobs||[]);
+      const chosen=forceId||((result.jobs||[]).some(j=>j.id===savedJobId)
+        ?savedJobId:(result.jobs?.[0]?.id||''));
+      if(chosen){
+        if(chosen!==savedJobId){
+          setSavedJobId(chosen);
+          try{localStorage.setItem(storageKey+'/nas-job',chosen)}catch{}
+        }
+        const detailed=await api('/api/collection-jobs/'+encodeURIComponent(chosen));
+        if(detailed?.manifest?.collections){
+          persist(detailed.manifest.collections);
+          if(detailed.manifest.collections.length &&
+             !detailed.manifest.collections.some(c=>c.id===selected))
+            setSelected(detailed.manifest.collections[0].id);
+        }
+      }
+    }catch{/* Other music features stay available during an import outage. */}
+  };
+  savedJobsRefresh.current=refreshSavedJobs;
+  const controlSavedJob=async(id,action,authorize=false)=>{
+    setSavedBusy(true);setError('');
+    try{
+      await api('/api/collection-jobs/'+encodeURIComponent(id)+'/control',
+        jsonOptions('POST',{action,authorized:authorize||authorized}));
+      await refreshSavedJobs(id);
+    }catch(e){setError(e.message)}
+    finally{setSavedBusy(false)}
+  };
+  const activeSavedJob=savedJobs.find(job=>job.id===savedJobId)||null;
   const fetchLocal=async(row,{refresh=false}={})=>{
     const key=sameSong(row);
     if(!refresh&&queryCache.current.has(key))return queryCache.current.get(key);
@@ -435,7 +496,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         <h2><ShieldCheck size={20}/> Upload your collection file</h2>
         <p>One JSON file can contain many playlists plus Favorites.
           A regular CSV/TSV export still works as one playlist.
-          This browser keeps your progress so you can resume.</p>
+          Your NAS stores the uploaded JSON and progress, even if this tab closes.</p>
         <label className="playlist-tool-button transfer-file">Choose export (JSON, CSV, TSV)
           <input type="file" aria-label="Upload Spotify or Apple Music collection export"
             accept=".json,.csv,.tsv,.txt,application/json,text/csv,text/plain"
@@ -445,13 +506,51 @@ export default function PlaylistTransfer({api,onLibrary,user}){
             onChange={e=>setAuthorized(e.target.checked)}/>
           I have permission to obtain and store recordings that I queue on the NAS.</label>
         <p className="transfer-help">Matching your existing library never needs this authorization.
-          Queued downloads are limited by the NAS’s existing daily and search quotas.
+          Jobbi Music no longer limits search requests. NAS storage safety checks and source availability still apply.
           Provider subscriptions do not grant rights to copy their protected recordings.</p>
       </div>
     </div>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {autoResume&&<p className="import-notice" role="status">Automatic search retry scheduled for {new Date(autoResume.until).toLocaleTimeString()}. You can cancel it below. Leave this page open to continue automatically.</p>}
     {notice&&<p className="import-notice">{notice}</p>}
+    <div className="transfer-card" aria-label="Saved NAS collection imports">
+      <div className="playlist-tools-row">
+        <h2><Music2 size={20}/> Saved NAS imports</h2>
+        <button type="button" className="playlist-tool-button" disabled={savedBusy}
+          onClick={()=>refreshSavedJobs()}><RefreshCw size={16}/> Refresh</button>
+      </div>
+      <p className="transfer-help">Your uploaded JSON and song-by-song progress are stored on the NAS. Imports run independently from this tab and appear in the Android and iPhone apps. If the NAS restarts, sign in again to resume securely.</p>
+      {savedJobs.length===0&&<p className="transfer-help">Upload a collection to create a background job.</p>}
+      {savedJobs.map(job=><div className="transfer-row" key={job.id}>
+        <div>
+          <button type="button" className="playlist-tool-button"
+            onClick={()=>{setSavedJobId(job.id);void refreshSavedJobs(job.id)}}>
+            {job.filename}{job.id===savedJobId?' · Selected':''}
+          </button>
+          <small>{job.status} · {job.completed}/{job.total} added · {job.queued} downloading · {job.review} review · {job.pending} pending</small>
+          <progress value={job.completed+job.review} max={Math.max(1,job.total)}
+            aria-label={'Background import progress for '+job.filename}/>
+          <span className="transfer-status">{job.message}</span>
+          <a className="playlist-tool-button" href={'/api/collection-jobs/'+encodeURIComponent(job.id)+'/source'}>Download saved source JSON</a>
+        </div>
+        <div className="playlist-tools-row">
+          {['running','monitoring','reauth'].includes(job.status)&&
+            <button className="playlist-tool-button" type="button" disabled={savedBusy}
+              onClick={()=>controlSavedJob(job.id,'pause')}><Pause size={16}/> Pause</button>}
+          {['paused','reauth'].includes(job.status)&&
+            <button className="playlist-tool-button" type="button"
+              disabled={savedBusy||(!job.authorized&&!authorized)}
+              onClick={()=>controlSavedJob(job.id,'resume',authorized)}><RefreshCw size={16}/> Start / Resume</button>}
+          {['finished','paused'].includes(job.status)&&job.review>0&&
+            <button className="playlist-tool-button" type="button" disabled={savedBusy}
+              onClick={()=>controlSavedJob(job.id,'retry',authorized)}><RefreshCw size={16}/> Retry unmatched</button>}
+          {job.status!=='cancelled'&&job.status!=='finished'&&
+            <button className="playlist-tool-button" type="button" disabled={savedBusy}
+              onClick={()=>window.confirm('Cancel this NAS import? Your source JSON remains available.')&&
+                controlSavedJob(job.id,'cancel')}>Cancel</button>}
+        </div>
+      </div>)}
+    </div>
     {incomplete.length>0&&<p className="inline-error"><AlertTriangle size={16}/> {incomplete.length} source collection(s)
       appear partially captured. Their saved counts may be incomplete; check the exporter before processing.</p>}
     {!!collections.length&&<>
@@ -481,7 +580,8 @@ export default function PlaylistTransfer({api,onLibrary,user}){
           <span><b>{(totals?.review||0)+(totals?.failed||0)}</b> review / failed</span>
           <span><b>{totals?.unsearched||0}</b> not checked</span>
         </div>
-        <div className="transfer-controls">
+        {activeSavedJob&&<p className="transfer-help">The NAS background worker controls this import. Use the saved-job controls above; browser-only search buttons are disabled to avoid duplicate downloads.</p>}
+        <div className="transfer-controls" style={activeSavedJob?{display:'none'}:undefined}>
           <button type="button" className="primary" disabled={working||Boolean(autoResume)||!totals?.unsearched}
             onClick={()=>run({all:false,autoQueue:authorized})}>{working?<LoaderCircle size={17}/>:<Search size={17}/>}
             Check next {Math.min(SCAN_LIMIT,totals?.unsearched||0)}</button>

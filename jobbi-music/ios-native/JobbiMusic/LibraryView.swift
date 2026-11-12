@@ -44,6 +44,11 @@ struct LibraryView: View {
                 } label: {
                     Label("Downloaded Music", systemImage: "arrow.down.circle.fill")
                 }
+                NavigationLink {
+                    CollectionImportsView()
+                } label: {
+                    Label("Saved music imports", systemImage: "doc.badge.arrow.up")
+                }
             }
             Section {
                 ForEach(matchingPlaylists) { playlist in

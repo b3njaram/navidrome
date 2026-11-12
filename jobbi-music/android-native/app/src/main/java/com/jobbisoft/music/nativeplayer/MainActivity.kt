@@ -212,6 +212,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     LaunchedEffect(vm.signedIn,vm.account) {
         while(isActive&&vm.signedIn){
             vm.updateDownloadStats()
+            if(vm.selected=="Library")vm.refreshCollectionJobs()
             delay(20000)
         }
     }
@@ -1094,6 +1095,63 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                     Text("Download all playlists")
                 }
                 TextButton(onClick=onDownloadFavorites){Text("Download Favorites")}
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                Text("Saved NAS imports",
+                    style=MaterialTheme.typography.titleLarge,
+                    fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+                TextButton(onClick={vm.refreshCollectionJobs()}){
+                    Icon(Icons.Rounded.Refresh,contentDescription=null)
+                    Text("Refresh")
+                }
+            }
+            Text("Uploaded JSON and progress are saved on your NAS. Imports continue after you close the app.",
+                style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(vm.collectionJobsError.isNotBlank())
+                Text(vm.collectionJobsError,style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.error)
+            if(vm.collectionJobs.isEmpty())
+                Text("Upload your Spotify or Apple Music collection on the website to see progress here.",
+                    style=MaterialTheme.typography.bodySmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        items(vm.collectionJobs,key={ "import:"+it.id }){job->
+            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp)){
+                Column(Modifier.padding(15.dp),
+                    verticalArrangement=Arrangement.spacedBy(8.dp)){
+                    Text(job.filename,fontWeight=FontWeight.SemiBold)
+                    Text(job.status.replaceFirstChar{it.uppercase()}+" · "+
+                        job.completed+"/"+job.total+" added",
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    LinearProgressIndicator(
+                        progress={ (job.completed+job.review).toFloat() /
+                            job.total.coerceAtLeast(1).toFloat() },
+                        modifier=Modifier.fillMaxWidth())
+                    Text(job.queued.toString()+" downloading · "+
+                        job.pending+" pending · "+job.review+" review",
+                        style=MaterialTheme.typography.bodySmall)
+                    if(job.message.isNotBlank())
+                        Text(job.message,style=MaterialTheme.typography.bodySmall,
+                            color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        if(job.status in listOf("running","monitoring","reauth"))
+                            TextButton(onClick={vm.controlCollectionJob(job.id,"pause")}) {
+                                Text("Pause")
+                            }
+                        if(job.status in listOf("paused","reauth") && job.authorized)
+                            TextButton(onClick={vm.controlCollectionJob(job.id,"resume")}) {
+                                Text("Resume")
+                            }
+                        if(job.status in listOf("paused","finished") && job.review>0)
+                            TextButton(onClick={vm.controlCollectionJob(job.id,"retry")}) {
+                                Text("Retry unmatched")
+                            }
+                    }
+                }
             }
         }
         item {

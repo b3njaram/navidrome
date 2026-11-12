@@ -7,10 +7,6 @@ import {libraryQueries,matchingLibrarySong,groupMusicImports,musicKey} from './i
 
 const MIN_FREE_BYTES=4*1024**3;
 const MAX_FILE_BYTES=350*1024**2;
-const MAX_DAY_BYTES=2*1024**3;
-const GLOBAL_DAY_BYTES=10*1024**3;
-const MAX_DAY_JOBS=20;
-const GLOBAL_DAY_JOBS=80;
 const CATALOG_CACHE_MS=45000;
 const catalogCache=new Map();
 function respondError(res,e){
@@ -124,19 +120,9 @@ export function createMusicImportRouter({mustAuth,downloader,statsFile,subsonic}
             AND created_at>now()-interval '12 hours'
             AND status IN ('processing','queued') LIMIT 1`,[actor,song.username,song.filename]);
         if(duplicate.rowCount)throw new ImportError('This recording is already queued for import.',409);
-        const mine=await client.query(`SELECT COUNT(*)::int AS jobs,
-          COALESCE(SUM(size_bytes),0)::bigint AS bytes FROM music_import_requests
-          WHERE requester=$1 AND created_at>now()-interval '24 hours'
-            AND status IN ('processing','queued')`,[actor]);
-        const usage=mine.rows[0];
-        if(usage.jobs>=MAX_DAY_JOBS||Number(usage.bytes)+song.size>MAX_DAY_BYTES)
-          throw new ImportError('Daily import allowance reached (20 tracks / 2 GB).',429);
-        const all=await client.query(`SELECT COUNT(*)::int AS jobs,
-          COALESCE(SUM(size_bytes),0)::bigint AS bytes FROM music_import_requests
-          WHERE created_at>now()-interval '24 hours'
-            AND status IN ('processing','queued')`);
-        if(all.rows[0].jobs>=GLOBAL_DAY_JOBS||Number(all.rows[0].bytes)+song.size>GLOBAL_DAY_BYTES)
-          throw new ImportError('Shared library daily import budget reached.',429);
+        // Large personal library migrations are intentionally not capped by an
+        // artificial daily track/GB limit. Every audio file still passes
+        // extension, deduplication and fresh NAS free-space validation.
         const added=await client.query(`INSERT INTO music_import_requests
           (id,requester,peer_username,filename,size_bytes,artist,title,status)
           VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,'processing') RETURNING id`,

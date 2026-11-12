@@ -14,11 +14,11 @@ import { androidLatest } from './android-update.js';
 import { createSocialRouter } from './social-routes.js';
 import { createMusicRequestsRouter } from './music-requests.js';
 import {createMusicImportRouter,checkStorageStats} from './music-import.js';
+import {createCollectionJobsRouter} from './collection-import-jobs.js';
 import {createArtworkRouter} from './artwork.js';
 import {transliterateMusic} from './import-reconcile.js';
 import {searchInvidious,configuredInvidious,videoIdValid} from './invidious.js';
 import {createInvidiousImportRouter} from './invidious-import.js';
-import {createMusicSearchLimiter} from './search-limiter.js';
 import {countIndexedSongs,countAccountRows} from './admin-stats.js';
 import {socialQuery} from './social-db.js';
 import {collectRemovalImpact,makeRemovalTicket,verifyRemovalTicket,impactForClient} from './removal-impact.js';
@@ -50,15 +50,17 @@ const MAX_SESSIONS = 1000;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const ACTION_WINDOW_MS = 10 * 60 * 1000;
 const actionLimits = new Map();
-const mustLimitSoulseekSearch=createMusicSearchLimiter({source:'Soulseek'});
-const mustLimitInvidiousSearch=createMusicSearchLimiter({source:'Invidious'});
 const attempts = new Map();
 const ttl = 12 * 60 * 60 * 1000;
 const cookieName = 'jobbi_session';
 
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: { useDefaults: true, directives: { upgradeInsecureRequests: SECURE_COOKIE ? [] : null, 'default-src': ["'self'"], 'img-src': ["'self'", 'data:'], 'media-src': ["'self'", 'blob:'], 'connect-src': ["'self'"], 'style-src': ["'self'", "'unsafe-inline'"], 'script-src': ["'self'"] } } }));
-app.use('/api', express.json({ limit: '64kb' }));
+const standardJSON=express.json({limit:'64kb'});
+const collectionUploadJSON=express.json({limit:'16mb'});
+app.use('/api',(req,res,next)=>
+  (req.path==='/collection-jobs'&&req.method==='POST'
+    ?collectionUploadJSON:standardJSON)(req,res,next));
 app.use('/api', (_, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
 const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map(kv => { const i=kv.indexOf('='); return i < 0 ? [] : [kv.slice(0,i).trim(), kv.slice(i+1).trim()]; }).filter(a=>a.length === 2));
@@ -71,6 +73,16 @@ const sess = req => {
   catch{if(token)sessions.delete(token);return null;}
 };
 const mustAuth = (req, res, next) => { req.user = sess(req); if (!req.user) return res.status(401).json({error:'Please sign in'}); next(); };
+// Only active, authenticated sessions can drive background jobs. Nothing
+// sensitive is stored in PostgreSQL; jobs survive restarts and resume once
+// their owner signs in again.
+const activeCollectionSession=owner=>{
+  for(const [token,session] of sessions){
+    if(session.username.toLowerCase()===owner.toLowerCase()&&
+       session.expires>Date.now())return {token,csrf:session.csrfToken};
+  }
+  return null;
+};
 const mustAdmin = async (req, res, next) => {
   if (!req.user?.admin || !ADMIN_USERS.has(req.user.username.toLowerCase())) return res.status(403).json({error:'Administrator access required'});
   try {
@@ -429,7 +441,7 @@ app.get('/api/download/song/:id',mustAuth,route(async(req,res)=>{
 // so the UI can display results; no download/import action is exposed in this safe starter.
 app.use('/api/invidious',createInvidiousImportRouter({mustAuth,
   url:INVIDIOUS_WORKER_URL,secret:INVIDIOUS_WORKER_SECRET,statsFile:STORAGE_STATS_PATH}));
-app.get('/api/invidious/search',mustAuth,mustLimitInvidiousSearch,route(async(req,res)=>{
+app.get('/api/invidious/search',mustAuth,route(async(req,res)=>{
   const query=String(req.query.q||'').trim().slice(0,150);
   if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
   const result=await searchInvidious(query);
@@ -472,7 +484,7 @@ app.get('/api/soulseek/status',mustAuth,route(async(req,res)=>{
   return res.json({mode:'legacy',configured:Boolean(DOWNLOADER),serverConnected:null,
     message:DOWNLOADER?'Using custom downloader search. Direct slskd search is not configured; empty results may not reflect the full peer network.':'Configure slskd access to search the Soulseek network.'});
 }));
-app.post('/api/soulseek/search',mustAuth,mustLimitSoulseekSearch,route(async(req,res)=>{
+app.post('/api/soulseek/search',mustAuth,route(async(req,res)=>{
   const query=String(req.body?.query||'').trim().slice(0,150);
   if(query.length<2)return res.status(400).json({error:'Enter at least 2 characters to search'});
   if(SLSKD&&SLSKD_KEY){
@@ -675,6 +687,10 @@ app.use('/api/music-requests',createMusicRequestsRouter({mustAuth,mustAdmin,down
 app.use('/api/music-imports',createMusicImportRouter({
   mustAuth,downloader:DOWNLOADER,statsFile:STORAGE_STATS_PATH,subsonic
 }));
+const collectionJobs=createCollectionJobsRouter({
+  mustAuth,getSession:activeCollectionSession,port:PORT
+});
+app.use('/api/collection-jobs',collectionJobs.router);
 
 // Available to the designated music admin only. No direct browser access to
 // downloader/slskd. This uses the existing /api/downloads route read-only.
@@ -746,4 +762,7 @@ setInterval(()=>{
     (SELECT id FROM jobbi_listens WHERE played_at < now()-interval '90 days'
      ORDER BY played_at LIMIT 2000)`).catch(()=>{});
 },12*60*60*1000).unref();
-app.listen(PORT,'0.0.0.0',()=>console.log(`Jobbi Music listening on port ${PORT}`));
+app.listen(PORT,'0.0.0.0',()=>{
+  console.log(`Jobbi Music listening on port ${PORT}`);
+  collectionJobs.start();
+});
