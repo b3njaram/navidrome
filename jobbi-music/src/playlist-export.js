@@ -55,7 +55,19 @@ export function parsePlaylistExport(raw,filename='playlist.csv'){
   if(!rows.length)throw new Error('No songs with both a title and artist. Try exporting a playlist as CSV, TSV, or JSON.');
   return rows;
 }
-export const songKey=text=>field(text).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+const CYR=Object.freeze({
+ 'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh',
+ 'з':'z','и':'i','й':'i','к':'k','л':'l','м':'m','н':'n','о':'o',
+ 'п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts',
+ 'ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e',
+ 'ю':'yu','я':'ya','і':'i','ї':'yi','є':'ye','№':' no '
+});
+export function romanizeMusic(value){
+ return String(value||'').toLocaleLowerCase().replace(/[а-яёіїє№]/gu,ch=>CYR[ch]??ch);
+}
+export const songKey=text=>romanizeMusic(field(text).normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g,''))
+  .replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
 function hasAll(hay,needle){
   const words=songKey(needle).split(' ').filter(w=>w.length>1);
   if(!words.length)return false;
