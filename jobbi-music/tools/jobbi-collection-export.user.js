@@ -113,6 +113,24 @@
     if(!title||!artist)return null;
     return {position,title,artist,album,sourceUrl,duration,version:''};
   };
+  // Handle providers that render duplicate siblings instead of nested rows.
+  // Tripled groups are an exporter layout artifact; two intentional entries
+  // remain separate when they have trustworthy distinct source positions.
+  const repairTriples=tracks=>{
+    const fingerprint=t=>[t.title,t.artist,t.album,t.duration,t.sourceUrl,t.version]
+      .map(x=>clean(x).toLocaleLowerCase()).join('|');
+    const runs=[];
+    for(let i=0;i<tracks.length;){
+      let j=i+1;
+      while(j<tracks.length&&fingerprint(tracks[i])===fingerprint(tracks[j]))j++;
+      runs.push({start:i,count:j-i});i=j;
+    }
+    const repeated=runs.filter(r=>r.count>=3&&r.count%3===0);
+    const ratio=repeated.reduce((n,r)=>n+r.count,0)/Math.max(1,tracks.length);
+    if(repeated.length<2||ratio<.6)return tracks;
+    return runs.flatMap(r=>tracks.slice(r.start,
+      r.start+(r.count%3===0?r.count/3:r.count)));
+  };
   const selectors=provider==='spotify'
     ?'[data-testid="tracklist-row"], [role="row"][data-testid*="track"]'
     :[
@@ -283,12 +301,13 @@
         await sleep(provider==='apple'?480:180);
       }
       for(const {key,song} of readRows())found.set(key,song);
-      const tracks=[...found.values()].sort((a,b)=>{
+      const captured=[...found.values()].sort((a,b)=>{
         if(a.position!=null&&b.position!=null)return a.position-b.position;
         return 0;
       }).map(({position,title,artist,album,duration,sourceUrl,version},i)=>({
         position:position??i+1,title,artist,album,duration,sourceUrl,version
       }));
+      const tracks=repairTriples(captured);
       if(!tracks.length)throw new Error(
         'No readable songs detected. Found '+diagnostics.rows+' possible rows, '+
         diagnostics.readable+' with a title and artist. Scrolling: '+diagnostics.scroll+
@@ -307,6 +326,7 @@
       if(index<0)state.collections.push(item);else state.collections[index]=item;
       persist();updateSaved();
       $('status').textContent='Saved '+tracks.length+' songs as '+(item.kind==='favorites'?'Favorites':'playlist')+'.'+
+        (captured.length>tracks.length?' Removed '+(captured.length-tracks.length)+' duplicate rows.':'')+
         (incomplete?' ⚠ Some songs may be missing. Scroll/check the page and capture again.':'')+
         '\nOpen another collection and capture it, or download your file.';
     }catch(error){
