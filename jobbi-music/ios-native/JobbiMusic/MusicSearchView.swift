@@ -13,6 +13,11 @@ struct MusicSearchView: View {
     @State private var picked: SoulseekFile?
     @State private var title = ""
     @State private var artist = ""
+    @State private var videos: [InvidiousVideo] = []
+    @State private var invidiousMessage: String?
+    @State private var invidiousImportEnabled = false
+    @State private var selectedVideo: InvidiousVideo?
+    @State private var importingVideo = false
 
     var body: some View {
         List {
@@ -88,6 +93,43 @@ struct MusicSearchView: View {
                 footer: {
                     Text("Availability depends on the Soulseek server and other users being online. A result is not a confirmed download.")
                 }
+                Section("Invidious alternate source") {
+                    if let invidiousMessage {
+                        Label(invidiousMessage, systemImage: "play.rectangle")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(videos) { video in
+                        HStack(spacing: 12) {
+                            AsyncImage(url: api.url("/api/invidious/thumbnail/"
+                                + JobbiAPI.encode(video.videoId))) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                Image(systemName: "play.rectangle.fill")
+                                    .font(.title2).foregroundStyle(.secondary)
+                            }
+                            .frame(width: 68, height: 48)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(video.title).font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                Text(video.artist ?? "Unknown channel")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 6)
+                            Button { selectedVideo = video } label: {
+                                Label("Import", systemImage: "arrow.down.circle")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .disabled(!invidiousImportEnabled || importingVideo)
+                            .accessibilityLabel("Import \(video.title) from alternate source")
+                        }
+                    }
+                    if !videos.isEmpty && !invidiousImportEnabled {
+                        Text("Alternate-source results are available, but NAS importing is disabled. Enable the optional Invidious worker on the NAS to use these results.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .navigationTitle("Search")
@@ -105,6 +147,34 @@ struct MusicSearchView: View {
                 }
                 .disabled(term.trimmingCharacters(in: .whitespaces).count < 2 || searching)
             }
+        }
+        .sheet(item: $selectedVideo) { video in
+            NavigationStack {
+                Form {
+                    Section("Alternate-source recording") {
+                        Text(video.title).font(.headline)
+                        Text(video.artist ?? "Unknown channel")
+                        Text("The NAS worker will attempt this import; Navidrome must index it. A queued request does not mean the recording is playable yet.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Section {
+                        Button {
+                            Task { await importVideo(video) }
+                        } label: {
+                            Label(importingVideo ? "Requesting import…" : "Import audio to NAS",
+                                  systemImage: "arrow.down.circle")
+                        }
+                        .disabled(importingVideo || !invidiousImportEnabled)
+                    }
+                }
+                .navigationTitle("Alternate-source import")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { selectedVideo = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
         }
         .sheet(item: $picked) { file in
             NavigationStack {
@@ -146,29 +216,65 @@ struct MusicSearchView: View {
         searching = true
         status = nil
         defer { searching = false }
-        do {
-            if mode == 0 {
+        if mode == 0 {
+            do {
                 result = try await api.get("/api/search?q=" + JobbiAPI.encode(query))
                 if (result.song ?? []).isEmpty && (result.album ?? []).isEmpty {
                     status = "Not found in your Navidrome library. Try Find New Music."
                 }
-            } else {
-                let health: SoulseekStatus = try await api.get("/api/soulseek/status")
-                let data = try await api.raw("/api/soulseek/search",
-                        method: "POST", json: ["query": query])
-                let decoded = try JSONSerialization.jsonObject(with: data)
-                peers = Self.extractPeerFiles(decoded)
-                if peers.isEmpty {
-                    status = (health.message ?? "No peer recordings were returned.")
-                        + " The peer network can be temporarily unavailable."
-                } else {
-                    status = "\(peers.count) candidate recordings. Confirm the artist, version, and format before importing."
-                }
-            }
+            } catch { status = error.localizedDescription }
+            return
+        }
+        peers = []
+        videos = []
+        invidiousMessage = nil
+        var notes = [String]()
+        // Providers fail independently; a broken Soulseek connection must
+        // not block the alternate-source fallback.
+        do {
+            let health: SoulseekStatus = try await api.get("/api/soulseek/status")
+            let data = try await api.raw("/api/soulseek/search",
+                method: "POST", json: ["query": query])
+            let decoded = try JSONSerialization.jsonObject(with: data)
+            peers = Self.extractPeerFiles(decoded)
+            notes.append(peers.isEmpty
+                ? (health.message ?? "Soulseek returned no audio recordings.")
+                : "Soulseek: \(peers.count) peer recordings.")
         } catch {
-            status = mode == 1
-                ? "Soulseek search failed: \(error.localizedDescription). The NAS may be disconnected."
-                : error.localizedDescription
+            notes.append("Soulseek failed: \(error.localizedDescription)")
+        }
+        do {
+            let alternate: InvidiousSearchResponse = try await api.get(
+                "/api/invidious/search?q=" + JobbiAPI.encode(query))
+            videos = alternate.results ?? []
+            let capabilities: InvidiousImportStatus = try await api.get("/api/invidious/status")
+            invidiousImportEnabled = capabilities.importEnabled == true
+            invidiousMessage = alternate.message ??
+                (videos.isEmpty ? "No alternate-source results."
+                 : "\(videos.count) alternate-source matches.")
+            notes.append("Invidious: \(videos.count) results.")
+        } catch {
+            invidiousImportEnabled = false
+            invidiousMessage = "Invidious unavailable: \(error.localizedDescription)"
+            notes.append("Invidious unavailable.")
+        }
+        status = notes.joined(separator: " ")
+    }
+
+    private func importVideo(_ video: InvidiousVideo) async {
+        guard !importingVideo && invidiousImportEnabled else { return }
+        importingVideo = true
+        defer { importingVideo = false }
+        do {
+            try await api.send("/api/invidious/import", json: [
+                "videoId": video.videoId, "title": video.title,
+                "artist": video.artist ?? "Unknown channel", "authorized": true
+            ])
+            selectedVideo = nil
+            status = "Alternate-source import queued on the NAS. Check transfer history; playback is not yet confirmed."
+        } catch {
+            selectedVideo = nil
+            status = "Alternate-source import failed: \(error.localizedDescription)"
         }
     }
 
