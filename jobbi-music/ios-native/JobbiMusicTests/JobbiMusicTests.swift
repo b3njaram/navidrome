@@ -114,6 +114,17 @@ final class JobbiMusicTests: XCTestCase {
         player.stop()
     }
 
+    func testPlaylistOfflineRemovalKeepsSharedSinglesAndFavorites() {
+        let playlist: Set<String> = ["a", "b", "shared", "favorite", "manual"]
+        let protected: Set<String> = ["shared", "favorite", "manual"]
+        XCTAssertEqual(OfflineLibrary.unsharedOfflineIDs(
+            playlist, retainedByOthers: protected), Set(["a", "b"]))
+        XCTAssertEqual(OfflineLibrary.unsharedOfflineIDs(
+            Set<String>(), retainedByOthers: protected), Set<String>())
+        XCTAssertEqual(OfflineLibrary.unsharedOfflineIDs(
+            Set(["shared"]), retainedByOthers: protected), Set<String>())
+    }
+
     func testOfflineFileHeadersUsePlayableExtensions() {
         XCTAssertEqual(OfflineLibrary.audioExtension(header: Data("fLaCxxxxsample".utf8),
             declared: "mp3"), "flac")
