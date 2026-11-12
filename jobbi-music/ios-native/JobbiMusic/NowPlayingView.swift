@@ -94,7 +94,7 @@ struct NowPlayingView: View {
                                 .foregroundStyle(.secondary)
                             }
                             HStack(spacing: 27) {
-                                Button { player.shuffled.toggle() } label: {
+                                Button { player.toggleShuffle() } label: {
                                     Image(systemName: "shuffle")
                                         .foregroundStyle(player.shuffled ? .pink : .secondary)
                                 }
@@ -121,10 +121,26 @@ struct NowPlayingView: View {
                                 Image(systemName: "speaker.wave.2")
                                     .foregroundStyle(.secondary)
                                 Spacer()
+                                Menu {
+                                    ForEach([15, 30, 45, 60], id: \.self) { minutes in
+                                        Button("Pause in \(minutes) minutes") {
+                                            player.setSleepTimer(minutes: minutes)
+                                        }
+                                    }
+                                    Button("Cancel sleep timer") {
+                                        player.setSleepTimer(minutes: 0)
+                                    }
+                                } label: {
+                                    Label(player.sleepUntil == nil ? "Sleep" : "Sleep on",
+                                          systemImage: "moon.zzz")
+                                }
+                                .buttonStyle(.glass)
+                                Spacer()
                                 Button {
                                     showingQueue = true
                                 } label: {
-                                    Label("Queue", systemImage: "list.bullet")
+                                    Label("Queue \(max(0, player.queue.count - player.currentIndex - 1))",
+                                          systemImage: "list.bullet")
                                 }
                                 .buttonStyle(.glass)
                             }
@@ -148,11 +164,60 @@ struct NowPlayingView: View {
             .sheet(isPresented: $showingQueue) {
                 NavigationStack {
                     List {
-                        ForEach(Array(player.queue.enumerated()), id: \.element.id) { index, song in
+                        Section {
                             HStack {
-                                SongRow(song: song, queue: player.queue, index: index)
-                                if index == player.currentIndex {
-                                    Image(systemName: "waveform").foregroundStyle(.pink)
+                                Text("\(max(0, player.queue.count - player.currentIndex - 1)) upcoming tracks")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Clear Upcoming", role: .destructive) {
+                                    player.clearUpcoming()
+                                }
+                                .disabled(player.currentIndex >= player.queue.count - 1)
+                            }
+                        }
+                        Section("Playback order") {
+                            ForEach(Array(player.queue.enumerated()), id: \.offset) { index, song in
+                                HStack(spacing: 9) {
+                                    Button { player.jumpTo(index) } label: {
+                                        HStack(spacing: 10) {
+                                            CoverArt(art: song.coverArt, size: 44)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(song.title).font(.subheadline.weight(.medium))
+                                                    .foregroundStyle(.primary).lineLimit(1)
+                                                Text(index == player.currentIndex ? "Now Playing" : song.artist)
+                                                    .font(.caption).foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            Spacer(minLength: 1)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    if index == player.currentIndex {
+                                        Image(systemName: "waveform")
+                                            .foregroundStyle(.pink)
+                                            .accessibilityLabel("Now Playing")
+                                    } else if index > player.currentIndex {
+                                        Button {
+                                            player.moveUpcoming(from: index, to: index - 1)
+                                        } label: {
+                                            Image(systemName: "chevron.up")
+                                        }
+                                        .disabled(index <= player.currentIndex + 1)
+                                        .accessibilityLabel("Move \(song.title) up")
+                                        Button {
+                                            player.moveUpcoming(from: index, to: index + 1)
+                                        } label: {
+                                            Image(systemName: "chevron.down")
+                                        }
+                                        .disabled(index >= player.queue.count - 1)
+                                        .accessibilityLabel("Move \(song.title) down")
+                                        Button(role: .destructive) {
+                                            player.removeUpcoming(at: index)
+                                        } label: {
+                                            Image(systemName: "xmark.circle")
+                                        }
+                                        .accessibilityLabel("Remove \(song.title) from queue")
+                                    }
                                 }
                             }
                         }
