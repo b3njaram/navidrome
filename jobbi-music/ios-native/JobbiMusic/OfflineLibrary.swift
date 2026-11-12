@@ -7,6 +7,8 @@ import CryptoKit
 @MainActor
 final class OfflineLibrary: ObservableObject {
     @Published private(set) var songs: [Song] = []
+    /// Per-device origins prevent removing a song still needed by another download.
+    @Published private(set) var sources: [String: [String]] = [:]
     @Published private(set) var downloading: Set<String> = []
     @Published private(set) var batchLabel = ""
     @Published private(set) var batchDone = 0
@@ -47,6 +49,24 @@ final class OfflineLibrary: ObservableObject {
         ["flac", "mp3", "m4a", "aac", "ogg", "opus", "wav", "aiff", "aif", "alac", "audio"]
 
     private var indexURL: URL? { directory?.appendingPathComponent("index.json") }
+    private var sourcesURL: URL? { directory?.appendingPathComponent("download-sources.json") }
+
+    func hasPlaylistDownloads(_ id: String) -> Bool {
+        !(sources["playlist:" + id] ?? []).isEmpty
+    }
+
+    private func remember(_ source: String, ids: [String]) throws {
+        guard !ids.isEmpty else { return }
+        var updated = sources
+        updated[source] = Array(Set((updated[source] ?? []) + ids)).sorted()
+        try saveSources(updated)
+    }
+
+    private func saveSources(_ updated: [String: [String]]) throws {
+        guard let url = sourcesURL else { throw JobbiError.notSignedIn }
+        try JSONEncoder().encode(updated).write(to: url, options: .atomic)
+        sources = updated
+    }
 
     func localURL(for song: Song) -> URL? {
         guard let directory, songs.contains(where: { $0.id == song.id }) else { return nil }
@@ -62,12 +82,16 @@ final class OfflineLibrary: ObservableObject {
     }
 
     func refresh() {
-        guard let url = indexURL, let data = try? Data(contentsOf: url),
-              let parsed = try? JSONDecoder().decode([Song].self, from: data) else {
+        if let url = indexURL, let data = try? Data(contentsOf: url) {
+            songs = (try? JSONDecoder().decode([Song].self, from: data)) ?? []
+        } else {
             songs = []
-            return
         }
-        songs = parsed
+        if let url = sourcesURL, let data = try? Data(contentsOf: url) {
+            sources = (try? JSONDecoder().decode([String: [String]].self, from: data)) ?? [:]
+        } else {
+            sources = [:]
+        }
     }
 
     private func saveIndex() throws {
@@ -137,11 +161,14 @@ final class OfflineLibrary: ObservableObject {
 
     func download(_ song: Song, api: JobbiAPI) async {
         if await attempt(song, api: api) {
-            batchLabel = "Saved \(song.title) for offline playback."
+            do {
+                try remember("single:" + song.id, ids: [song.id])
+                batchLabel = "Saved \(song.title) for offline playback."
+            } catch { lastError = "Could not remember this download: \(error.localizedDescription)" }
         }
     }
 
-    func downloadAll(_ tracks: [Song], api: JobbiAPI) async {
+    func downloadAll(_ tracks: [Song], api: JobbiAPI, source: String? = nil) async {
         guard !isBatchDownloading else { return }
         let unique = tracks.reduce(into: [Song]()) { items, song in
             if !items.contains(where: { $0.id == song.id }) { items.append(song) }
@@ -158,6 +185,11 @@ final class OfflineLibrary: ObservableObject {
             if !success { batchFailed += 1 }
             batchLabel = "Saving offline: \(batchDone)/\(batchTotal), \(batchFailed) failed"
         }
+        if let source {
+            do {
+                try remember(source, ids: unique.filter { localURL(for: $0) != nil }.map(\.id))
+            } catch { lastError = "Could not remember this collection: \(error.localizedDescription)" }
+        }
         batchLabel = "Finished: \(batchDone - batchFailed) saved or already offline, \(batchFailed) failed."
     }
 
@@ -166,6 +198,7 @@ final class OfflineLibrary: ObservableObject {
         batchLabel = "Collecting tracks from \(playlists.count) playlists…"
         lastError = nil
         var all = [Song]()
+        var collections = [(String, [Song])]()
         var failedCollections = 0
         for playlist in playlists {
             if Task.isCancelled { return }
@@ -173,21 +206,79 @@ final class OfflineLibrary: ObservableObject {
                 let collection: CollectionDetail = try await api.get(
                     "/api/playlists/" + JobbiAPI.encode(playlist.id))
                 all.append(contentsOf: collection.tracks)
+                collections.append(("playlist:" + playlist.id, collection.tracks))
             } catch {
                 failedCollections += 1
                 lastError = "\(playlist.name): \(error.localizedDescription)"
             }
         }
         await downloadAll(all, api: api)
+        for (source, tracks) in collections {
+            do {
+                try remember(source, ids: tracks.filter { localURL(for: $0) != nil }.map(\.id))
+            } catch { lastError = "Could not remember \(source): \(error.localizedDescription)" }
+        }
         if failedCollections > 0 {
             batchLabel += " \(failedCollections) playlists could not be loaded."
         }
     }
 
+    /// Delete only files under this account's private offline folder.
+    private func deleteCopies(id: String) throws {
+        guard let directory else { throw JobbiError.notSignedIn }
+        let prefix = Self.hash(id)
+        for ext in Self.supportedExtensions {
+            let url = directory.appendingPathComponent(prefix + "." + ext)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    /// Removes a playlist's local copies, never its server playlist or NAS files.
+    /// Another saved playlist, album, Favorites or explicit single-song download
+    /// retains its own references to shared recordings.
+    func removePlaylistDownloads(_ playlistID: String, tracks: [Song] = []) {
+        guard !isBatchDownloading else {
+            lastError = "Finish your current download before removing playlist files."
+            return
+        }
+        let source = "playlist:" + playlistID
+        let requested = Set((sources[source] ?? []) + tracks.map(\.id))
+        let retained = Set(sources.filter { $0.key != source }
+            .values.flatMap { $0 })
+        var removed = Set<String>()
+        var failures = 0
+        for song in songs where requested.contains(song.id) && !retained.contains(song.id) {
+            do {
+                try deleteCopies(id: song.id)
+                removed.insert(song.id)
+            } catch { failures += 1; lastError = error.localizedDescription }
+        }
+        songs.removeAll { removed.contains($0.id) }
+        var updated = sources
+        // If removal failed, retain those references so the operation is retryable.
+        let failedIDs = requested.subtracting(removed).subtracting(retained)
+        if failedIDs.isEmpty {
+            updated.removeValue(forKey: source)
+        } else {
+            updated[source] = Array(failedIDs).sorted()
+        }
+        do {
+            try saveIndex()
+            try saveSources(updated)
+        } catch { lastError = "Could not save offline changes: \(error.localizedDescription)" }
+        batchLabel = "Removed \(removed.count) offline songs. \(requested.intersection(retained).count) shared songs kept." +
+            (failures > 0 ? " \(failures) could not be removed." : "")
+    }
+
     func remove(_ song: Song) {
-        if let url = localURL(for: song) { try? FileManager.default.removeItem(at: url) }
-        songs.removeAll(where: { $0.id == song.id })
-        do { try saveIndex() }
-        catch { lastError = error.localizedDescription }
+        do {
+            try deleteCopies(id: song.id)
+            songs.removeAll { $0.id == song.id }
+            try saveIndex()
+            try saveSources(sources.mapValues { $0.filter { $0 != song.id } }
+                .filter { !$0.value.isEmpty })
+        } catch { lastError = error.localizedDescription }
     }
 }
