@@ -89,4 +89,72 @@ final class JobbiMusicTests: XCTestCase {
         XCTAssertNotNil(UIImage(data: jpeg))
         XCTAssertThrowsError(try PhotoPreparation.jpeg(Data("not a photo".utf8)))
     }
+
+    func testAVPlayerQueueEditsPreserveCurrentTrackAndAllowDuplicates() {
+        func track(_ id: String) -> Song {
+            Song(id: id, title: "Test \(id)", artist: "Artist", album: "Album",
+                 coverArt: nil, albumId: nil, duration: 180,
+                 suffix: "mp3", size: 5000, playCount: nil)
+        }
+        let player = MusicPlayer()
+        player.play([track("a"), track("b"), track("c")])
+        XCTAssertEqual(player.queue.map(\.id), ["a", "b", "c"])
+        player.playNext(track("extra"))
+        XCTAssertEqual(player.queue.map(\.id), ["a", "extra", "b", "c"])
+        player.addToQueue(track("b"))
+        XCTAssertEqual(player.queue.map(\.id), ["a", "extra", "b", "c", "b"])
+        player.moveUpcoming(from: 4, to: 1)
+        XCTAssertEqual(player.queue.map(\.id), ["a", "b", "extra", "b", "c"])
+        player.removeUpcoming(at: 2)
+        XCTAssertEqual(player.queue.map(\.id), ["a", "b", "b", "c"])
+        player.removeUpcoming(at: 0)
+        XCTAssertEqual(player.queue.first?.id, "a")
+        player.clearUpcoming()
+        XCTAssertEqual(player.queue.map(\.id), ["a"])
+        player.stop()
+    }
+
+    func testOfflineFileHeadersUsePlayableExtensions() {
+        XCTAssertEqual(OfflineLibrary.audioExtension(header: Data("fLaCxxxxsample".utf8),
+            declared: "mp3"), "flac")
+        XCTAssertEqual(OfflineLibrary.audioExtension(header: Data("ID3xxxxsample".utf8),
+            declared: "mp3"), "mp3")
+        XCTAssertEqual(OfflineLibrary.audioExtension(header: Data("OggSxxxxsample".utf8),
+            declared: "opus"), "ogg")
+        XCTAssertNil(OfflineLibrary.audioExtension(
+            header: Data("{\"error\":\"not signed in\"}".utf8), declared: nil))
+        XCTAssertNil(OfflineLibrary.audioExtension(
+            header: Data("<html>Login required</html>".utf8), declared: nil))
+    }
+
+    func testServerRemovalReferencesHidePrivatePlaylistNames() throws {
+        let impact = try JSONDecoder().decode(RemovalImpact.self, from: Data(
+            """
+            {"ticket":"signed-check-ticket","confirmation":"REMOVE_FROM_SHARED_LIBRARY",
+             "referenceCount":2,"hiddenPrivateCount":1,"incompleteScope":true,
+             "references":[
+               {"id":"p1","name":"My Mix","owner":"me","own":true,"restricted":false},
+               {"id":null,"name":null,"owner":null,"own":false,"restricted":true}]}
+            """.utf8))
+        XCTAssertEqual(impact.references.count, 2)
+        XCTAssertEqual(impact.references[0].safeDescription, "Your playlist: My Mix")
+        XCTAssertEqual(impact.references[1].safeDescription,
+                       "Another user's private playlist (name hidden)")
+    }
+
+    func testInvidiousFallbackAndAdminResponsesDecode() throws {
+        let result = try JSONDecoder().decode(InvidiousSearchResponse.self, from: Data(
+            """
+            {"available":true,"results":[{"videoId":"v123456789A",
+             "title":"Example track","artist":"Example channel","duration":180}]}
+            """.utf8))
+        XCTAssertEqual(result.results?.first?.title, "Example track")
+        let status = try JSONDecoder().decode(InvidiousImportStatus.self,
+            from: Data(#"{"configured":true,"importEnabled":false}"#.utf8))
+        XCTAssertEqual(status.importEnabled, false)
+        let admin = try JSONDecoder().decode(AdminOverview.self,
+            from: Data(#"{"usersCount":3,"indexedSongs":120,"storage":{"status":"ready","files":98}}"#.utf8))
+        XCTAssertEqual(admin.storage?.files, 98)
+    }
+
 }
