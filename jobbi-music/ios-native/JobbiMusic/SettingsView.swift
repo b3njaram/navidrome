@@ -19,6 +19,18 @@ struct SettingsView: View {
                 LabeledContent("Role", value: api.user?.admin == true
                     ? "Administrator" : "Listener")
             }
+            if api.user?.admin == true {
+                Section("Server administration") {
+                    NavigationLink {
+                        AdminDashboardView()
+                    } label: {
+                        Label("Admin Console", systemImage: "server.rack")
+                            .fontWeight(.semibold)
+                    }
+                    Text("NAS storage, user management, library rescans and import configuration.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             Section {
                 Picker("Streaming quality", selection: $quality) {
                     Text("Original / Lossless").tag("original")
@@ -32,6 +44,16 @@ struct SettingsView: View {
             }
             Section("Your iPhone") {
                 LabeledContent("Downloaded tracks", value: "\(offline.songs.count)")
+                if !offline.batchLabel.isEmpty {
+                    LabeledContent("Latest download", value: offline.batchLabel)
+                }
+                if let issue = offline.lastError {
+                    Text(issue).font(.caption).foregroundStyle(.red)
+                }
+                Button("Download all playlists to this iPhone") {
+                    Task { await offline.downloadAllPlaylists(library.playlists, api: api) }
+                }
+                .disabled(library.playlists.isEmpty || offline.isBatchDownloading)
                 NavigationLink {
                     OfflineView()
                 } label: {
