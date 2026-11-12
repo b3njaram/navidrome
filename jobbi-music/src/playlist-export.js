@@ -55,7 +55,21 @@ export function parsePlaylistExport(raw,filename='playlist.csv'){
   if(!rows.length)throw new Error('No songs with both a title and artist. Try exporting a playlist as CSV, TSV, or JSON.');
   return rows;
 }
-export const songKey=text=>field(text).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+const CYR=Object.freeze({
+ 'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh',
+ 'з':'z','и':'i','й':'i','к':'k','л':'l','м':'m','н':'n','о':'o',
+ 'п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts',
+ 'ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e',
+ 'ю':'yu','я':'ya','і':'i','ї':'yi','є':'ye','№':' no '
+});
+export function romanizeMusic(value){
+ return String(value||'').toLocaleLowerCase().replace(/[а-яёіїє№]/gu,ch=>CYR[ch]??ch);
+}
+// Transliterate before NFKD: Unicode decomposes № into "No" and would
+// otherwise lose the word boundary in "Бездельник №1".
+export const songKey=text=>romanizeMusic(field(text)).normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
 function hasAll(hay,needle){
   const words=songKey(needle).split(' ').filter(w=>w.length>1);
   if(!words.length)return false;
@@ -112,28 +126,96 @@ export function pickSoulseekCandidate(item,results=[]){
       matchReason:exactTitle?'Exact title and artist':'Strong title and artist metadata',
       format:ext.toUpperCase()});
   }
-  return candidates.sort((a,b)=>b.matchScore-a.matchScore||
+  // FLAC is preferred first among safe studio matches; MP3 is the fallback.
+  return candidates.sort((a,b)=>
+    (b.format==='FLAC'?1:0)-(a.format==='FLAC'?1:0) ||
+    b.matchScore-a.matchScore ||
     String(a.filename).localeCompare(String(b.filename)))[0]||null;
+}
+
+/**
+ * Invidious is a last resort, never an arbitrary first YouTube video.
+ * Only accept titles that actually contain this artist and track name,
+ * with the correct edition and a plausible recording length.
+ */
+export function pickInvidiousCandidate(item,results=[]){
+  if(!Array.isArray(results))return null;
+  const title=normalizePath(item.title),artist=normalizePath(item.artist);
+  const version=variants([item.title,item.version].filter(Boolean).join(' '));
+  const desiredSeconds=recordedDuration(item.durationSeconds??item.duration);
+  if(!title||!artist)return null;
+  const safe=[];
+  for(const row of results){
+    if(!row||!/^[A-Za-z0-9_-]{11}$/.test(String(row.videoId||'')))continue;
+    const name=normalizePath(row.title),channel=normalizePath(row.artist);
+    const combined=name+' '+channel;
+    if(!name.includes(title)||!combined.includes(artist))continue;
+    const additions=variants(row.title);
+    if(additions.some(v=>!version.includes(v))||version.some(v=>!additions.includes(v)))continue;
+    const seconds=recordedDuration(row.duration);
+    if(desiredSeconds&&seconds&&Math.abs(seconds-desiredSeconds)>Math.max(12,desiredSeconds*.12))
+      continue;
+    const official=/\b(official|topic|provided to youtube|audio)\b/.test(combined);
+    const score=title===name?160:100;
+    safe.push({...row,format:'INVIDIOUS',
+      matchReason:'Verified title and artist (video audio)',
+      matchScore:score+(official?30:0)+(seconds&&desiredSeconds?20:0)});
+  }
+  return safe.sort((a,b)=>b.matchScore-a.matchScore)[0]||null;
+}
+
+/**
+ * Older Apple Music exporter versions captured three nested DOM wrappers per
+ * physical song. Repair only a strong repeated-TRIPLET pattern. Intentional
+ * duplicate songs (two copies or copies elsewhere in the playlist) survive.
+ */
+export function collapseTripleCapture(tracks=[]){
+  if(!Array.isArray(tracks)||tracks.length<6)return {tracks,removed:0};
+  const fingerprint=t=>[t?.title,t?.artist,t?.album,t?.sourceUrl,t?.duration,
+    t?.durationSeconds,t?.version].map(x=>field(x).toLocaleLowerCase()).join('|');
+  const runs=[];
+  for(let start=0;start<tracks.length;){
+    const key=fingerprint(tracks[start]);
+    let end=start+1;
+    while(end<tracks.length&&fingerprint(tracks[end])===key)end++;
+    runs.push({start,count:end-start});
+    start=end;
+  }
+  const tripleRuns=runs.filter(r=>r.count>=3&&r.count%3===0);
+  const tripleCount=tripleRuns.reduce((n,r)=>n+r.count,0);
+  // Avoid collapsing deliberate repetitions in a small unrelated collection.
+  if(tripleRuns.length<2||tripleCount/tracks.length<.6)
+    return {tracks,removed:0};
+  const restored=[];
+  for(const run of runs){
+    const keep=run.count>=3&&run.count%3===0?run.count/3:run.count;
+    restored.push(...tracks.slice(run.start,run.start+keep));
+  }
+  return {tracks:restored,removed:tracks.length-restored.length};
 }
 
 export function parseCollectionManifest(raw,filename='collection.json'){
   if(typeof raw!=='string'||raw.length>8_000_000)throw new Error('Import file exceeds 8 MB');
   const input=raw.trimStart();
   if(!input.startsWith('{')&&!input.startsWith('[') && !/\.json$/i.test(filename)){
-    const tracks=parsePlaylistExport(raw,filename);
+    const cleaned=collapseTripleCapture(parsePlaylistExport(raw,filename));
     return {format:'jobbi-collection-export/v1',collections:[{
       id:'single:'+filename,name:filename.replace(/\.(csv|tsv|txt)$/i,'').slice(0,100),
       kind:'playlist',provider:'unknown',incomplete:false,
-      tracks:tracks.map((track,index)=>({...track,position:index+1}))
+      removedDuplicates:cleaned.removed,
+      tracks:cleaned.tracks.map((track,index)=>({...track,id:'single:'+filename+':'+index,
+        position:index+1}))
     }]};
   }
   const obj=JSON.parse(raw);
   if(obj?.format!=='jobbi-collection-export/v1'){
-    const tracks=parsePlaylistExport(raw,filename);
+    const cleaned=collapseTripleCapture(parsePlaylistExport(raw,filename));
     return {format:'jobbi-collection-export/v1',collections:[{
       id:'single:'+filename,name:filename.replace(/\.(json)$/i,'').slice(0,100),
       kind:'playlist',provider:'unknown',incomplete:false,
-      tracks:tracks.map((track,index)=>({...track,position:index+1}))
+      removedDuplicates:cleaned.removed,
+      tracks:cleaned.tracks.map((track,index)=>({...track,id:'single:'+filename+':'+index,
+        position:index+1}))
     }]};
   }
   if(!Array.isArray(obj.collections)||!obj.collections.length||obj.collections.length>150)
@@ -149,13 +231,15 @@ export function parseCollectionManifest(raw,filename='collection.json'){
     const id=String(c.id||index);
     if(ids.has(id))throw new Error('Duplicate collection identifier');
     ids.add(id);
-    total+=c.tracks.length;
+    const cleaned=collapseTripleCapture(c.tracks);
+    total+=cleaned.tracks.length;
     if(total>16000)throw new Error('This import has too many song entries (limit 16,000)');
     return {id,name:c.name.trim(),kind:c.kind,provider:c.provider,
+      removedDuplicates:cleaned.removed,
       sourceUrl:typeof c.sourceUrl==='string'?c.sourceUrl.slice(0,500):'',
       expectedCount:Number.isInteger(c.expectedCount)?c.expectedCount:null,
       incomplete:Boolean(c.incomplete),
-      tracks:c.tracks.map((track,pos)=>{
+      tracks:cleaned.tracks.map((track,pos)=>{
         const title=field(track?.title),artist=field(track?.artist);
         if(!title||!artist||title.length>200||artist.length>200)
           throw new Error('Missing artist or song title in '+c.name+' at row '+(pos+1));

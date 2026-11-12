@@ -843,6 +843,31 @@ test('playlist migration import parses Spotify CSV locally',async({page})=>{
   expect(errors).toEqual([]);
 });
 
+
+test('collection migration automatically falls back to verified Invidious after Soulseek',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const state=await setupMocks(page);
+  await login(page,'listener');
+  if(await page.locator('.mobile-nav').isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
+  }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
+  const manifest={format:'jobbi-collection-export/v1',collections:[{
+    id:'apple:fallback',provider:'apple',name:'Fallback test',kind:'playlist',
+    tracks:[{title:'Test Music',artist:'Luis Miguel',position:1}]
+  }]};
+  await page.getByLabel('Upload Spotify or Apple Music collection export').setInputFiles({
+    name:'apple-music.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(manifest))
+  });
+  await page.getByLabel('I have permission to obtain and store recordings').check();
+  await page.getByRole('button',{name:'Check next 1'}).click();
+  await expect.poll(()=>state.fallbackJobs.length).toBe(1);
+  expect(state.fallbackJobs[0].videoId).toBe('dQw4w9WgXcQ');
+  expect(state.fallbackJobs[0].authorized).toBe(true);
+  await expect(page.getByText(/Invidious audio queued/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('mobile player shows previous and separate seek timeline',async({page,isMobile})=>{
   if(!isMobile)return;
   await setupMocks(page);await login(page,'listener');
@@ -915,18 +940,22 @@ test('combined collection JSON automatically hearts Liked Songs and builds a sep
   expect(errors).toEqual([]);
 });
 
-test('Apple Music Favorite Songs userscript captures current track-list-item rows and inner-pane scrolling',async({page})=>{
+test('Apple Music exporter deduplicates nested row wrappers during scrolling',async({page})=>{
   const rows=[
     ['Circle of Death','Flawed Mangoes','Anomaly IV','2:40'],
     ['Мама-анархия','Кино','Ночь','2:42'],
     ['Feel It','Ayesha Erotica','Feel It - Single','2:30']
   ];
   const row=(title,artist,album,duration,index)=>`
-    <div data-testid="track-list-item" data-index="${index}" style="height:85px">
+    <div class="songs-list-row" data-index="${index}" style="height:85px">
+      <div data-testid="track-list-item" data-index="${index}">
+        <div role="row" data-row-index="${index}">
       <span data-testid="track-title">${title}</span>
       <span data-testid="track-column-secondary">${artist}</span>
       <span data-testid="track-column-tertiary">${album}</span>
       <span data-testid="track-duration">${duration}</span>
+        </div>
+      </div>
     </div>`;
   await page.route('https://music.apple.com/**',route=>route.fulfill({
     status:200,contentType:'text/html; charset=utf-8',

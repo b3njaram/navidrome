@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowDownToLine,CheckCircle2,FileUp,Heart,LoaderCircle,Search,ShieldCheck,Music2,Pause,RefreshCw,Download,Check,AlertTriangle} from 'lucide-react';
-import {parseCollectionManifest,findLocalSong,pickSoulseekCandidate,songKey} from './playlist-export.js';
+import {parseCollectionManifest,findLocalSong,pickSoulseekCandidate,pickInvidiousCandidate,romanizeMusic,songKey} from './playlist-export.js';
 
 const SCAN_LIMIT=3;
 const REPORT_LIMIT=16000;
@@ -48,6 +48,8 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const activeRef=useRef(false);
   const stopRef=useRef(false);
   const queryCache=useRef(new Map());
+  const matchCache=useRef(new Map());
+  const pollRef=useRef(null);
 
   useEffect(()=>{
     let restored=[];
@@ -59,6 +61,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     stateRef.current=restored;setCollections(restored);
     setSelected(restored[0]?.id||'');
     queryCache.current.clear();
+    matchCache.current.clear();
   },[storageKey]);
   const persist=updated=>{
     stateRef.current=updated;setCollections(updated);
@@ -89,18 +92,28 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         tracks:c.tracks.map(t=>({status:'unsearched',note:'',...t}))})));
       setSelected(parsed.collections[0]?.id||'');
       queryCache.current.clear();
+      matchCache.current.clear();
+      const fixed=parsed.collections.reduce((n,c)=>n+(c.removedDuplicates||0),0);
       setNotice('Loaded '+parsed.collections.length+' collection(s), '+
         parsed.collections.reduce((n,c)=>n+c.tracks.length,0)+
-        ' track entries. Favorites remain favorites; playlists remain separate.');
+        ' track entries.'+(fixed?' Repaired '+fixed+
+          ' duplicate entries from an older Apple Music export.':'')+
+        ' Favorites remain favorites; playlists remain separate.');
     }catch(e){setError(e.message||'Unable to parse the export');}
   };
   const fetchLocal=async(row,{refresh=false}={})=>{
     const key=sameSong(row);
     if(!refresh&&queryCache.current.has(key))return queryCache.current.get(key);
-    const data=await api('/api/search?q='+encodeURIComponent(row.title.slice(0,100)));
-    const song=findLocalSong(row,data.song||[])||null;
-    queryCache.current.set(key,song);
-    return song;
+    const query=row.title.slice(0,100);
+    const transliterated=romanizeMusic(query);
+    const variants=transliterated===query.toLowerCase()?[query]:[query,transliterated];
+    for(const variant of variants){
+      const data=await api('/api/search?q='+encodeURIComponent(variant));
+      const found=findLocalSong(row,data.song||[]);
+      if(found){queryCache.current.set(key,found);return found}
+    }
+    queryCache.current.set(key,null);
+    return null;
   };
   const ensurePlaylist=async collectionId=>{
     const c=stateRef.current.find(item=>item.id===collectionId);
@@ -130,10 +143,46 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     return true;
   };
   const remoteMatch=async row=>{
-    const search=await api('/api/soulseek/search',jsonOptions('POST',{
-      query:(row.artist+' '+row.title).slice(0,140)
-    }));
-    return pickSoulseekCandidate(row,search.results||[]);
+    const key=sameSong(row);
+    if(matchCache.current.has(key))return matchCache.current.get(key);
+    const requested=(row.artist+' '+row.title).slice(0,140);
+    const latin=romanizeMusic(requested);
+    const queries=latin===requested.toLowerCase()?[requested]:[requested,latin];
+    let soulseekNote='';
+    for(const query of queries){
+      try {
+        const search=await api('/api/soulseek/search',jsonOptions('POST',{query}));
+        const candidate=pickSoulseekCandidate(row,search.results||[]);
+        if(candidate){
+          const matched={candidate,note:'Soulseek '+candidate.format};
+          matchCache.current.set(key,matched);
+          return matched;
+        }
+        soulseekNote=search.message||'No matching studio FLAC or MP3 on Soulseek.';
+      }catch(e){
+        if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
+        soulseekNote='Soulseek unavailable: '+String(e.message||'Search failed');
+        break;
+      }
+    }
+    let fallbackNote='';
+    for(const query of queries){
+      try {
+        const data=await api('/api/invidious/search?q='+encodeURIComponent(query));
+        const candidate=pickInvidiousCandidate(row,data.results||[]);
+        if(candidate){
+          const matched={candidate,note:'Invidious verified video'};
+          matchCache.current.set(key,matched);
+          return matched;
+        }
+        fallbackNote=data.message||'No verified matching video.';
+      }catch(e){
+        if(/429|rate limit|allowance|quota/i.test(String(e.message||'')))throw e;
+        fallbackNote='Invidious unavailable: '+String(e.message||'Search failed');
+        break;
+      }
+    }
+    return {candidate:null,note:soulseekNote+' '+fallbackNote};
   };
   const queue=async(col,row,candidate)=>{
     if(!authorized)throw new Error('Confirm you have permission to obtain the recordings before queueing.');
@@ -144,18 +193,40 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     const other=stateRef.current.flatMap(x=>x.tracks).find(x=>x.id!==row.id&&
       sameSong(x)===sameSong(row)&&['queued','waiting'].includes(x.status));
     if(other){
-      patchTrack(col.id,row.id,{status:'queued',note:'Waiting for previously queued recording',importId:other.importId});
-      return;
+      patchTrack(col.id,row.id,{status:'queued',source:other.source,
+        note:'Waiting for previously queued recording',importId:other.importId});
+      return true;
     }
-    patchTrack(col.id,row.id,{status:'waiting',note:'Submitting recording to NAS…'});
+    if(c.format==='INVIDIOUS'){
+      let available;
+      try{available=await api('/api/invidious/status')}
+      catch(e){available={importEnabled:false,message:e.message}}
+      if(!available?.importEnabled){
+        patchTrack(col.id,row.id,{status:'review',candidate:c,
+          note:'Invidious match found, but automatic downloads are unavailable: '+
+            (available?.message||'Enable the NAS Invidious import worker.')});
+        return false;
+      }
+    }
+    patchTrack(col.id,row.id,{status:'waiting',note:'Submitting '+c.format+' to NAS…'});
     try{
-      const result=await api('/api/music-imports',jsonOptions('POST',{
-        username:c.username,filename:c.filename,size:Number(c.size),
-        artist:row.artist,title:row.title
-      }));
-      patchTrack(col.id,row.id,{status:'queued',importId:result.importId,
-        note:result.existing?'Already on NAS; waiting for Navidrome index':
-          'Queued for NAS download; recheck after indexing'});
+      if(c.format==='INVIDIOUS'){
+        const result=await api('/api/invidious/import',jsonOptions('POST',{
+          videoId:c.videoId,title:row.title,artist:row.artist,authorized:true
+        }));
+        patchTrack(col.id,row.id,{status:'queued',source:'invidious',
+          importId:result.jobId,note:'Invidious audio queued; waiting for NAS indexing'});
+      }else{
+        const result=await api('/api/music-imports',jsonOptions('POST',{
+          username:c.username,filename:c.filename,size:Number(c.size),
+          artist:row.artist,title:row.title
+        }));
+        patchTrack(col.id,row.id,{status:'queued',source:'soulseek',
+          importId:result.importId,
+          note:result.existing?'Already on NAS; waiting for Navidrome index':
+            'Queued '+c.format+' on NAS; waiting for indexing'});
+      }
+      return true;
     }catch(e){
       patchTrack(col.id,row.id,{status:'failed',note:'Queue failed: '+e.message,candidate:c});
       throw e;
@@ -167,14 +238,17 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     if(local?.id){await applyLocal(col,row,local);return}
     const duplicate=stateRef.current.flatMap(c=>c.tracks).find(x=>
       x.id!==row.id&&sameSong(x)===sameSong(row)&&x.candidate);
-    const candidate=duplicate?.candidate||await remoteMatch(row);
+    const match=duplicate?.candidate
+      ?{candidate:duplicate.candidate,note:'Already matched another collection'}
+      :await remoteMatch(row);
+    const candidate=match.candidate;
     if(candidate){
       patchTrack(col.id,row.id,{status:'matched',candidate,
-        note:'Reviewed '+candidate.format+' · '+candidate.matchReason+
-          ' · '+String(candidate.filename).split(/[\\/]/).pop()});
+        note:'Verified '+match.note+' · '+candidate.matchReason+
+          ' · '+(candidate.filename||candidate.title)});
       if(autoQueue&&authorized)await queue(col,row,candidate);
     }else patchTrack(col.id,row.id,{status:'review',
-      note:'No matching standard studio FLAC/MP3. Search manually in Discover.'});
+      note:match.note||'No verified studio match on Soulseek or Invidious. Review in Discover.'});
   };
   const run=async({autoQueue=false,all=false,recheck=false}={})=>{
     if(activeRef.current)return;
@@ -220,36 +294,66 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       onLibrary?.();
     }finally{activeRef.current=false;setWorking(false)}
   };
-  const checkQueueStatus=async()=>{
+  const checkQueueStatus=async({silent=false}={})=>{
     if(activeRef.current)return;
-    setWorking(true);setError('');
+    activeRef.current=true;
+    if(!silent){setWorking(true);setError('')}
     try{
-      const data=await api('/api/music-imports');
+      let data={items:[]};
+      try{data=await api('/api/music-imports')}
+      catch(e){if(!silent)throw e}
       const statuses=new Map((data.items||[]).map(row=>[
         songKey(row.artist)+'|'+songKey(row.title),row
       ]));
-      let updated=0;
+      let updated=0,checked=0;
       for(const col of stateRef.current){
         for(const row of col.tracks){
-          const match=statuses.get(sameSong(row));
-          if(!match||!['queued','waiting','failed'].includes(row.status))continue;
-          if(match.stage==='available'&&match.songId){
+          if(!['queued','waiting'].includes(row.status))continue;
+          const match=row.source==='invidious'?null:statuses.get(sameSong(row));
+          if(match?.stage==='available'&&match.songId){
             try{await applyLocal(col,row,{id:match.songId});updated++}
             catch(e){patchTrack(col.id,row.id,{status:'failed',note:'Could not apply song: '+e.message})}
-          }else if(['failed','unconfirmed'].includes(match.stage))
+            continue;
+          }
+          // Also recheck Navidrome itself: the Invidious worker and previously
+          // queued Soulseek imports can finish without a music-imports result.
+          if(checked<8){
+            checked++;
+            try{
+              const local=await fetchLocal(row,{refresh:true});
+              if(local?.id){await applyLocal(col,row,local);updated++;continue}
+            }catch{/* Keep the queued state until the library is available. */}
+          }
+          if(match&&['failed','unconfirmed'].includes(match.stage))
             patchTrack(col.id,row.id,{note:match.reason||match.label||'Transfer needs review'});
-          else patchTrack(col.id,row.id,{note:match.label||'Download pending'});
+          else if(match?.label)patchTrack(col.id,row.id,{note:match.label});
         }
       }
-      setNotice('Updated '+updated+' songs from confirmed Navidrome downloads. '+
-        'Use Recheck selected for older transfers no longer in recent activity.');
-      onLibrary?.();
-    }catch(e){setError(e.message)}
-    finally{setWorking(false)}
+      if(!silent||updated) {
+        setNotice('Applied '+updated+' newly indexed songs to their playlists/Favorites. '+
+          (checked?'Checked '+checked+' pending recordings. ':'')+
+          'Remaining transfers will be rechecked while this page is open.');
+      }
+      if(updated)onLibrary?.();
+    }catch(e){if(!silent)setError(e.message)}
+    finally{activeRef.current=false;if(!silent)setWorking(false)}
   };
+  // The API callback may be recreated during player updates. Keep the poll
+  // timer stable and call the newest authenticated implementation instead.
+  pollRef.current=checkQueueStatus;
+  // System downloads continue after the page closes, but applying their
+  // finished tracks to playlists requires an authenticated browser session.
+  useEffect(()=>{
+    const timer=setInterval(()=>{
+      if(!activeRef.current&&stateRef.current.some(c=>
+        c.tracks.some(t=>['queued','waiting'].includes(t.status))))
+        void pollRef.current?.({silent:true});
+    },45000);
+    return ()=>clearInterval(timer);
+  },[storageKey]);
   const clear=()=>{
     if(!window.confirm('Clear your saved migration data in this browser? It will not delete playlists or favorites already imported to Navidrome.'))return;
-    queryCache.current.clear();persist([]);setSelected('');
+    queryCache.current.clear();matchCache.current.clear();persist([]);setSelected('');
     setNotice('Cleared browser progress. Previously imported music remains untouched.');
   };
   const retry=()=>{
@@ -269,8 +373,9 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       <div className="eyebrow">YOUR MUSIC, YOUR COLLECTIONS</div>
       <h1>Bring your music<span className="spark-dot">.</span></h1>
       <p>Move Spotify or Apple Music playlists and favorites into Jobbi Music.
-        Songs already on your NAS are added immediately. Missing tracks can be matched
-        with FLAC first, MP3 second, without accidental live/remix versions.</p>
+        Songs already on your NAS are added immediately. Missing tracks are searched
+        on Soulseek (FLAC first, then MP3), then Invidious for a verified video.
+        When you authorize downloading, matched audio is queued on your NAS.</p>
     </div>
     <div className="transfer-grid">
       <div className="transfer-card">
@@ -280,7 +385,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
           Mark Liked Songs or Favorite Songs as Favorites in the exporter.</p>
         <div className="playlist-tools-row">
           <a className="playlist-tool-button" href="/tools/jobbi-collection-export.user.js" download="jobbi-collection-export.user.js">
-            <Download size={16}/> Download exporter v1.2.0
+            <Download size={16}/> Download exporter v1.3.0
           </a>
           <a className="playlist-tool-button" href="https://github.com/b3njaram/navidrome/blob/main/jobbi-music/tools/README.md" target="_blank" rel="noopener noreferrer">
             Read setup guide
@@ -293,7 +398,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         </div>
         <p className="transfer-help">Capture each playlist and Liked/Favorite Songs, then select “Download all as JSON.”
           You log in only on the provider’s website. No passwords, audio files,
-          or cookies enter your export. Use exporter v1.2.0 with Violentmonkey or Tampermonkey on desktop. Reinstall if an earlier version is already installed. Browser-layout changes can cause incomplete captures;
+          or cookies enter your export. Use exporter v1.3.0 with Violentmonkey or Tampermonkey on desktop. Reinstall if an earlier version is already installed. Browser-layout changes can cause incomplete captures;
           check the track counts before importing. Desktop browsers work best.</p>
       </div>
       <div className="transfer-card">
@@ -347,7 +452,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
         </div>
         <div className="transfer-controls">
           <button type="button" className="primary" disabled={working||!totals?.unsearched}
-            onClick={()=>run({all:false})}>{working?<LoaderCircle size={17}/>:<Search size={17}/>}
+            onClick={()=>run({all:false,autoQueue:authorized})}>{working?<LoaderCircle size={17}/>:<Search size={17}/>}
             Check next {Math.min(SCAN_LIMIT,totals?.unsearched||0)}</button>
           <button type="button" className="playlist-tool-button"
             disabled={working||!totals?.unsearched} onClick={()=>run({all:true,autoQueue:authorized})}>

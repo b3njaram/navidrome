@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jobbi Music — My Collection Exporter
 // @namespace    https://music.jobbisoft.com.mx
-// @version      1.2.0
+// @version      1.3.0
 // @description  Export YOUR currently displayed Spotify or Apple Music playlist metadata to a Jobbi Music JSON manifest; never copies audio or login credentials.
 // @match        https://open.spotify.com/*
 // @match        https://music.apple.com/*
@@ -113,6 +113,24 @@
     if(!title||!artist)return null;
     return {position,title,artist,album,sourceUrl,duration,version:''};
   };
+  // Handle providers that render duplicate siblings instead of nested rows.
+  // Tripled groups are an exporter layout artifact; two intentional entries
+  // remain separate when they have trustworthy distinct source positions.
+  const repairTriples=tracks=>{
+    const fingerprint=t=>[t.title,t.artist,t.album,t.duration,t.sourceUrl,t.version]
+      .map(x=>clean(x).toLocaleLowerCase()).join('|');
+    const runs=[];
+    for(let i=0;i<tracks.length;){
+      let j=i+1;
+      while(j<tracks.length&&fingerprint(tracks[i])===fingerprint(tracks[j]))j++;
+      runs.push({start:i,count:j-i});i=j;
+    }
+    const repeated=runs.filter(r=>r.count>=3&&r.count%3===0);
+    const ratio=repeated.reduce((n,r)=>n+r.count,0)/Math.max(1,tracks.length);
+    if(repeated.length<2||ratio<.6)return tracks;
+    return runs.flatMap(r=>tracks.slice(r.start,
+      r.start+(r.count%3===0?r.count/3:r.count)));
+  };
   const selectors=provider==='spotify'
     ?'[data-testid="tracklist-row"], [role="row"][data-testid*="track"]'
     :[
@@ -139,10 +157,12 @@
         if(row&&!candidates.includes(row))candidates.push(row);
       }
     }
-    // Suppress outer wrapper rows that contain actual song rows.
-    return candidates.filter(row=>!row.matches('[role="row"]')||!row.querySelector(
-      '[data-testid="track-list-item"], [data-testid^="track-item-"], .songs-list-row, [class*="songs-list-row"]'
-    ));
+    // Some old Apple rows contain title/artist *spans* whose class names
+    // happen to match broad row selectors. Only prefer a nested candidate
+    // if it is itself a complete, readable song, not just a child span.
+    const parse=provider==='spotify'?spotifyRow:appleRow;
+    return candidates.filter(row=>parse(row)&&
+      ![...row.querySelectorAll(selectors)].some(child=>parse(child)));
   };
   const readRows=()=>{
     const rows=getRowCandidates();
@@ -151,11 +171,20 @@
     for(const row of rows){
       const song=provider==='spotify'?spotifyRow(row):appleRow(row);
       if(!song)continue;
-      const fingerprint=[song.sourceUrl,song.title,song.artist,song.album,song.duration].join('|');
+      // Without a real provider row index, three nested Apple containers
+      // describe ONE track, not three separate occurrences. Keep distinct
+      // positions only when the provider supplies a trustworthy index.
+      const fingerprint=[song.sourceUrl,song.title,song.artist,song.album,song.duration]
+        .map(x=>clean(x).toLocaleLowerCase()).join('|');
       const number=(occurrences.get(fingerprint)||0)+1;
       occurrences.set(fingerprint,number);
+      // Spotify really can contain the same track twice. Its separate
+      // tracklist rows are genuine occurrences even without row indices.
+      // Apple has unstable parallel wrappers, so prefer one identity per
+      // unindexed song and rely on explicit indices for deliberate repeats.
       const key=song.position!=null?'position:'+song.position:
-        'track:'+fingerprint+':occurrence:'+number;
+        provider==='spotify'?'track:'+fingerprint+':occurrence:'+number:
+          'track:'+fingerprint;
       if(!seen.has(key)){seen.add(key);results.push({key,song})}
     }
     diagnostics.readable=Math.max(diagnostics.readable,results.length);
@@ -229,7 +258,7 @@
     '<p class="small">You choose which playlists to capture. Sign in only through Spotify or Apple Music. This script reads visible track metadata, never passwords or music audio. Web layouts can change; always inspect the captured counts. Some providers restrict automated collection access.</p></div></div>';
   document.documentElement.appendChild(host);
   const $=id=>shadow.getElementById(id);
-  $('provider').textContent=(provider==='spotify'?'Spotify':'Apple Music')+' · exporter v1.2.0 · Saves one combined file across both providers';
+  $('provider').textContent=(provider==='spotify'?'Spotify':'Apple Music')+' · exporter v1.3.0 · Saves one combined file across both providers';
   const resetForm=()=>{$('title').value=inferredName();$('favorites').checked=inferredFavorites()};
   resetForm();
   let lastUrl=location.href;
@@ -283,12 +312,13 @@
         await sleep(provider==='apple'?480:180);
       }
       for(const {key,song} of readRows())found.set(key,song);
-      const tracks=[...found.values()].sort((a,b)=>{
+      const captured=[...found.values()].sort((a,b)=>{
         if(a.position!=null&&b.position!=null)return a.position-b.position;
         return 0;
       }).map(({position,title,artist,album,duration,sourceUrl,version},i)=>({
         position:position??i+1,title,artist,album,duration,sourceUrl,version
       }));
+      const tracks=repairTriples(captured);
       if(!tracks.length)throw new Error(
         'No readable songs detected. Found '+diagnostics.rows+' possible rows, '+
         diagnostics.readable+' with a title and artist. Scrolling: '+diagnostics.scroll+
@@ -307,6 +337,7 @@
       if(index<0)state.collections.push(item);else state.collections[index]=item;
       persist();updateSaved();
       $('status').textContent='Saved '+tracks.length+' songs as '+(item.kind==='favorites'?'Favorites':'playlist')+'.'+
+        (captured.length>tracks.length?' Removed '+(captured.length-tracks.length)+' duplicate rows.':'')+
         (incomplete?' ⚠ Some songs may be missing. Scroll/check the page and capture again.':'')+
         '\nOpen another collection and capture it, or download your file.';
     }catch(error){

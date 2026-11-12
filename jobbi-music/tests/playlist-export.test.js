@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parsePlaylistExport,parseDelimited,findLocalSong,pickSoulseekCandidate,parseCollectionManifest} from '../src/playlist-export.js';
+import {parsePlaylistExport,parseDelimited,findLocalSong,pickSoulseekCandidate,pickInvidiousCandidate,collapseTripleCapture,romanizeMusic,parseCollectionManifest} from '../src/playlist-export.js';
 test('Spotify CSV and quoted commas',()=>{
  const rows=parsePlaylistExport('Track Name,Artist Name(s),Album Name\n"Long Journey, Home",Billy Strings,Live\n','spotify.csv');
  assert.equal(rows[0].title,'Long Journey, Home');assert.equal(rows[0].artist,'Billy Strings');
@@ -78,4 +78,64 @@ test('legacy CSV still imports as a single normal playlist, not favorites',()=>{
   const result=parseCollectionManifest('Track Name,Artist Name\nSong,Artist\n','songs.csv');
   assert.equal(result.collections[0].kind,'playlist');
   assert.equal(result.collections[0].tracks[0].artist,'Artist');
+});
+
+
+test('older Apple Music tripled exports repair three copies to one song',()=>{
+ const tracks=[
+   ...Array.from({length:3},(_,i)=>({position:i+1,title:'Бездельник №1',artist:'Кино',sourceUrl:'https://music.apple.com/song/abc'})),
+   ...Array.from({length:3},(_,i)=>({position:i+4,title:'Circle of Death',artist:'Flawed Mangoes',sourceUrl:'https://music.apple.com/song/def'})),
+   ...Array.from({length:3},(_,i)=>({position:i+7,title:'Requiem',artist:'King Crimson',sourceUrl:'https://music.apple.com/song/ghi'}))
+ ];
+ const json=JSON.stringify({format:'jobbi-collection-export/v1',collections:[
+   {id:'apple:test',kind:'playlist',provider:'apple',name:'Test',tracks}
+ ]});
+ const result=parseCollectionManifest(json,'old-export.json');
+ assert.equal(result.collections[0].tracks.length,3);
+ assert.equal(result.collections[0].removedDuplicates,6);
+ assert.deepEqual(result.collections[0].tracks.map(t=>t.title),
+   ['Бездельник №1','Circle of Death','Requiem']);
+});
+
+test('intentional doubles and isolated triplets are not erased',()=>{
+ const two=[{title:'A',artist:'B'},{title:'A',artist:'B'}];
+ assert.equal(collapseTripleCapture(two).tracks.length,2);
+ const mixed=[...Array.from({length:3},()=>({title:'A',artist:'B'})),
+   {title:'X',artist:'Y'}, {title:'Z',artist:'Q'}, {title:'J',artist:'K'}];
+ assert.equal(collapseTripleCapture(mixed).removed,0);
+});
+
+test('FLAC is selected before MP3 among safe matches',()=>{
+ const song={title:'Dream Song',artist:'Artist'};
+ const choices=[
+   {username:'perfect-mp3',filename:'Artist/Dream Song.mp3',size:7000000,bitrate:320},
+   {username:'good-flac',filename:'Artist/Album/01 - Dream Song.flac',size:42000000}
+ ];
+ assert.equal(pickSoulseekCandidate(song,choices).username,'good-flac');
+});
+
+test('Invidious fallback must verify title artist edition and duration',()=>{
+ const song={title:'Dream Song',artist:'Artist',duration:'3:10'};
+ const results=[
+   {videoId:'abcABC12345',title:'Artist - Dream Song (LIVE)',artist:'Artist',duration:190},
+   {videoId:'abcABC12346',title:'Artist - Dream Song',artist:'Artist - Topic',duration:600},
+   {videoId:'abcABC12347',title:'Artist - Dream Song (Official Audio)',artist:'Artist',duration:190},
+   {videoId:'abcABC12348',title:'Another Artist - Dream Song',artist:'Other',duration:190}
+ ];
+ const chosen=pickInvidiousCandidate(song,results);
+ assert.equal(chosen?.videoId,'abcABC12347');
+ assert.equal(chosen?.format,'INVIDIOUS');
+ assert.equal(pickInvidiousCandidate(song,[results[0],results[1]]),null);
+});
+
+
+test('Cyrillic Kino metadata matches properly transliterated Soulseek filenames',()=>{
+ const cyr={title:'Бездельник №1',artist:'Кино'};
+ assert.equal(romanizeMusic('Кино Бездельник №1').trim(),'kino bezdelnik  no 1');
+ const candidate=pickSoulseekCandidate(cyr,[{
+   username:'peer',filename:'Kino/Bezdelnik No 1.flac',size:43000000
+ }]);
+ assert.equal(candidate?.username,'peer');
+ assert.equal(findLocalSong(cyr,[{id:'latin',title:'Bezdelnik No 1',artist:'Kino'}])?.id,
+   'latin');
 });
