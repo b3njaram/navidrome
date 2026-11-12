@@ -55,18 +55,29 @@ struct LibraryView: View {
                     Button { showingCreate = true } label: { Image(systemName: "plus") }
                         .accessibilityLabel("Create playlist")
                 }
-            } footer: {
-                Button("Download all playlists") {
-                    Task {
-                        for playlist in library.playlists {
-                            if Task.isCancelled { break }
-                            if let detail: CollectionDetail = try? await api.get(
-                                "/api/playlists/" + JobbiAPI.encode(playlist.id)) {
-                                await offline.downloadAll(detail.tracks, api: api)
-                            }
-                        }
-                    }
+            }
+            Section("Offline downloads") {
+                Button {
+                    Task { await offline.downloadAllPlaylists(library.playlists, api: api) }
+                } label: {
+                    Label("Download all playlists", systemImage: "square.and.arrow.down.on.square")
                 }
+                .disabled(library.playlists.isEmpty || offline.isBatchDownloading)
+                if offline.isBatchDownloading {
+                    ProgressView(value: Double(offline.batchDone),
+                                 total: Double(max(offline.batchTotal, 1))) {
+                        Text(offline.batchLabel)
+                    }
+                } else if !offline.batchLabel.isEmpty {
+                    Text(offline.batchLabel)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let failure = offline.lastError {
+                    Label(failure, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.red)
+                }
+                Text("Downloads save individual original recordings on this iPhone. Songs shared across playlists are saved only once.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Albums") {
                 ForEach(library.albums) { album in
@@ -159,9 +170,12 @@ struct CollectionView: View {
                 if kind == .playlist {
                     Section("Playlist controls") {
                         if mayChangeVisibility { visibilityToggle }
-                        Button("Download playlist") {
+                        Button {
                             Task { await offline.downloadAll(detail.tracks, api: api) }
+                        } label: {
+                            Label("Download playlist offline", systemImage: "arrow.down.circle")
                         }
+                        .disabled(offline.isBatchDownloading)
                         Button("Add all to Favorites") {
                             Task {
                                 do {
@@ -184,9 +198,29 @@ struct CollectionView: View {
                         }
                     }
                 }
+                if !offline.batchLabel.isEmpty {
+                    Section("Download status") {
+                        if offline.isBatchDownloading {
+                            ProgressView(value: Double(offline.batchDone),
+                                total: Double(max(offline.batchTotal, 1))) {
+                                Text(offline.batchLabel)
+                            }
+                        } else {
+                            Text(offline.batchLabel)
+                        }
+                        if let failure = offline.lastError {
+                            Text(failure).foregroundStyle(.red)
+                                .font(.footnote)
+                        }
+                    }
+                }
                 Section("Tracks") {
-                    ForEach(Array(detail.tracks.enumerated()), id: \.element.id) { index, song in
-                        SongRow(song: song, queue: detail.tracks, index: index)
+                    ForEach(Array(detail.tracks.enumerated()), id: \.offset) { index, song in
+                        SongRow(song: song, queue: detail.tracks, index: index,
+                            onRemoveFromPlaylist: kind == .playlist ? {
+                                removePlaylistEntry(at: index)
+                            } : nil,
+                            onServerRemoved: { Task { await reload() } })
                     }
                 }
             } else {
@@ -251,6 +285,18 @@ struct CollectionView: View {
         ))
     }
 
+    private func removePlaylistEntry(at index: Int) {
+        guard kind == .playlist else { return }
+        Task {
+            do {
+                try await api.send("/api/playlists/" + JobbiAPI.encode(id),
+                    method: "PATCH", json: ["removeIndex": index])
+                await reload()
+                await library.refresh(api: api)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
     private func reload() async {
         do { detail = try await api.get("/api/" + kind.path + "/" + JobbiAPI.encode(id)) }
         catch { self.error = error.localizedDescription }
@@ -279,8 +325,16 @@ struct FavoritesView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            if !offline.batchLabel.isEmpty {
+                Section("Download status") {
+                    Text(offline.batchLabel)
+                    if let error = offline.lastError {
+                        Text(error).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+            }
             Section("Songs") {
-                ForEach(Array(library.favorites.enumerated()), id: \.element.id) { index, song in
+                ForEach(Array(library.favorites.enumerated()), id: \.offset) { index, song in
                     SongRow(song: song, queue: library.favorites, index: index)
                 }
             }
