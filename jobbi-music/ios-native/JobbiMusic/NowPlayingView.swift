@@ -33,8 +33,16 @@ struct MiniPlayerView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 23))
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 21))
             .padding(.horizontal, 8)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 45).onEnded { value in
+                    guard abs(value.translation.width) >
+                        abs(value.translation.height) else { return }
+                    if value.translation.width < 0 { player.next() }
+                    else { player.previous() }
+                }
+            )
         }
     }
 }
