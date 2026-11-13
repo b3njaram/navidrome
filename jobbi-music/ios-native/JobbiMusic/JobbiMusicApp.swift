@@ -14,7 +14,7 @@ struct JobbiMusicApp: App {
                 .environmentObject(library)
                 .environmentObject(player)
                 .environmentObject(offline)
-                .tint(.pink)
+                .tint(MusicAppearance.accent)
         }
     }
 }
