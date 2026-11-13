@@ -85,7 +85,8 @@ struct SettingsView: View {
                 LabeledContent("Design", value: "SwiftUI · Liquid Glass")
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle("Account")
+        .navigationBarTitleDisplayMode(.large)
         .confirmationDialog("Sign out of Jobbi Music?", isPresented: $signingOut) {
             Button("Sign out", role: .destructive) {
                 Task {
