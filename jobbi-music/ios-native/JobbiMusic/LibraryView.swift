@@ -34,34 +34,89 @@ struct LibraryView: View {
         List {
             Section {
                 NavigationLink {
+                    MusicPlaylistDirectory()
+                } label: {
+                    MusicLibraryCategoryRow(title: "Playlists", symbol: "music.note.list")
+                }
+                NavigationLink {
+                    MusicArtistDirectory()
+                } label: {
+                    MusicLibraryCategoryRow(title: "Artists", symbol: "music.mic")
+                }
+                NavigationLink {
+                    MusicAlbumDirectory()
+                } label: {
+                    MusicLibraryCategoryRow(title: "Albums", symbol: "square.stack")
+                }
+                NavigationLink {
+                    MusicSearchView(initialMode: 0)
+                } label: {
+                    MusicLibraryCategoryRow(title: "Songs", symbol: "music.note")
+                }
+                NavigationLink {
                     FavoritesView()
                 } label: {
-                    Label("Favorite Songs", systemImage: "heart.fill")
-                        .foregroundStyle(.pink)
+                    MusicLibraryCategoryRow(title: "Favorite Songs", symbol: "heart.fill")
                 }
                 NavigationLink {
                     OfflineView()
                 } label: {
-                    Label("Downloaded Music", systemImage: "arrow.down.circle.fill")
+                    MusicLibraryCategoryRow(title: "Downloaded", symbol: "arrow.down.circle")
                 }
                 NavigationLink {
                     CollectionImportsView()
                 } label: {
-                    Label("Saved music imports", systemImage: "doc.badge.arrow.up")
+                    MusicLibraryCategoryRow(title: "Saved Music Imports", symbol: "square.and.arrow.down")
                 }
             }
+            .listRowBackground(MusicAppearance.canvas)
+
+            if !library.albums.isEmpty {
+                Section {
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: 13) {
+                            ForEach(library.albums.prefix(12)) { album in
+                                MusicAlbumTile(album: album, size: 129)
+                            }
+                        }
+                        .padding(.vertical, 5)
+                    }
+                    .scrollIndicators(.hidden)
+                    .listRowSeparator(.hidden)
+                } header: {
+                    HStack {
+                        Text("Recently Added")
+                        Spacer()
+                        NavigationLink {
+                            MusicAlbumDirectory()
+                        } label: {
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.footnote)
+                    }
+                    .textCase(nil)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                }
+            }
+
             Section {
                 ForEach(matchingPlaylists) { playlist in
                     NavigationLink {
                         CollectionView(kind: .playlist, id: playlist.id)
                     } label: {
-                        Label {
-                            VStack(alignment: .leading) {
+                        HStack(spacing: 13) {
+                            MusicListArtwork(symbol: "music.note.list", size: 56)
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(playlist.name)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
                                 Text("\(playlist.songCount ?? 0) songs")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                        } icon: { Image(systemName: "music.note.list") }
+                        }
+                        .padding(.vertical, 3)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if offline.hasPlaylistDownloads(playlist.id) {
@@ -75,57 +130,73 @@ struct LibraryView: View {
                     }
                 }
                 if matchingPlaylists.isEmpty {
-                    ContentUnavailableView(
-                        playlistSearch.isEmpty ? "No playlists yet" : "No matching playlists",
-                        systemImage: "music.note.list",
-                        description: Text(playlistSearch.isEmpty
-                            ? "Create one to organize your music."
-                            : "Try a different playlist name."))
+                    Text(playlistSearch.isEmpty
+                        ? "Your playlists will appear here."
+                        : "No playlists match your search.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 HStack {
                     Text("Playlists")
                     Spacer()
-                    Button { showingCreate = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("Create playlist")
+                    Button { showingCreate = true } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Create playlist")
                 }
+                .textCase(nil)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
             }
+
             Section {
                 ForEach(matchingSharedPlaylists) { playlist in
                     NavigationLink {
                         SocialPlaylistView(id: playlist.id)
                     } label: {
-                        Label {
+                        HStack(spacing: 13) {
+                            MusicListArtwork(symbol: "person.2.fill",
+                                             tint: .indigo, size: 56)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(playlist.title)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
                                 Text("@" + (playlist.owner ?? "unknown") +
-                                     " · \(playlist.song_count ?? 0) tracks")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                     " · \(playlist.song_count ?? 0) songs")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                        } icon: { Image(systemName: "person.2.wave.2") }
+                        }
+                        .padding(.vertical, 3)
                     }
                 }
                 if matchingSharedPlaylists.isEmpty {
                     Text(playlistSearch.isEmpty
                         ? "No shared playlists yet."
                         : "No shared playlists match your search.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 HStack {
-                    Text("Shared playlists")
+                    Text("Shared Playlists")
                     Spacer()
                     Button { showingSharedCreate = true } label: {
                         Image(systemName: "person.2.badge.plus")
                     }
                     .accessibilityLabel("Create shared playlist")
                 }
+                .textCase(nil)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
             }
-            Section("Offline downloads") {
+
+            Section("Offline Downloads") {
                 Button {
                     Task { await offline.downloadAllPlaylists(library.playlists, api: api) }
                 } label: {
-                    Label("Download all playlists", systemImage: "square.and.arrow.down.on.square")
+                    Label("Download all playlists", systemImage: "square.and.arrow.down")
                 }
                 .disabled(library.playlists.isEmpty || offline.isBatchDownloading)
                 if offline.isBatchDownloading {
@@ -135,32 +206,22 @@ struct LibraryView: View {
                     }
                 } else if !offline.batchLabel.isEmpty {
                     Text(offline.batchLabel)
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 if let failure = offline.lastError {
                     Label(failure, systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(.red)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
-                Text("Downloads save individual original recordings on this iPhone. Songs shared across playlists are saved only once.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Albums") {
-                ForEach(library.albums) { album in
-                    NavigationLink {
-                        CollectionView(kind: .album, id: album.id)
-                    } label: {
-                        HStack {
-                            CoverArt(art: album.coverArt, size: 46)
-                            VStack(alignment: .leading) {
-                                Text(album.name).lineLimit(1)
-                                Text(album.artist ?? "Unknown artist")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
+                Text("Offline copies stay on this iPhone. Your NAS recordings are never removed by downloading.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MusicAppearance.canvas)
         .navigationTitle("Library")
         .searchable(text: $playlistSearch,
                     placement: .navigationBarDrawer(displayMode: .always),
