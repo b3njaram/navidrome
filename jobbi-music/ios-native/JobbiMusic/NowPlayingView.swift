@@ -466,12 +466,91 @@ struct NowPlayingView: View {
 }
 
 
-/// In-player lyrics replace only the artwork pane, not playback controls.
+/// A thin, centered progress track that doesn't display a giant system thumb.
+/// Dragging previews the position and commits the seek when released.
+private struct NowPlayingScrubber: View {
+    let position: Double
+    let duration: Double
+    let onSeek: (Double) -> Void
+    @State private var isScrubbing = false
+    @State private var scrubPosition = 0.0
+
+    private var validDuration: Double {
+        duration.isFinite && duration > 0 ? duration : 0
+    }
+
+    private var progress: Double {
+        guard validDuration > 0 else { return 0 }
+        let current = isScrubbing ? scrubPosition : position
+        return min(1, max(0, current / validDuration))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let trackWidth = max(1, geometry.size.width)
+            let thumbSize: CGFloat = isScrubbing ? 14 : 7
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.white.opacity(0.27))
+                    .frame(height: 4)
+                Capsule()
+                    .fill(.white.opacity(0.94))
+                    .frame(width: trackWidth * progress, height: 4)
+                Circle()
+                    .fill(.white)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .offset(x: min(max(0, trackWidth * progress - thumbSize / 2),
+                                   max(0, trackWidth - thumbSize)))
+            }
+            .frame(width: trackWidth, height: 25)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard validDuration > 0 else { return }
+                        isScrubbing = true
+                        scrubPosition = min(1, max(0, value.location.x / trackWidth))
+                            * validDuration
+                    }
+                    .onEnded { value in
+                        guard validDuration > 0 else { return }
+                        let seek = min(1, max(0, value.location.x / trackWidth))
+                            * validDuration
+                        isScrubbing = false
+                        onSeek(seek)
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Playback progress")
+            .accessibilityValue(
+                "\(Int(max(0, position))) of \(Int(validDuration)) seconds"
+            )
+            .accessibilityAdjustableAction { direction in
+                guard validDuration > 0 else { return }
+                switch direction {
+                case .increment:
+                    onSeek(min(validDuration, position + 10))
+                case .decrement:
+                    onSeek(max(0, position - 10))
+                @unknown default:
+                    break
+                }
+            }
+        }
+        .frame(height: 25)
+    }
+}
+
+/// Full-height Apple Music-style lyrics: no boxed card, large readable type,
+/// fade at the edges, synced-line highlighting and tap-to-seek where available.
+/// Untimed lyrics remain fully readable and manually scrollable.
 private struct LyricsPanel: View {
     let lyrics: LyricsResponse?
     let loading: Bool
     let error: String?
     let elapsed: Double
+    let onSeek: (Double) -> Void
 
     private var activeLine: Int? {
         guard let lyrics, lyrics.synced else { return nil }
@@ -481,42 +560,109 @@ private struct LyricsPanel: View {
     var body: some View {
         Group {
             if loading {
-                ProgressView("Loading lyrics…")
+                VStack(spacing: 14) {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Loading lyrics…")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error {
-                ContentUnavailableView("Lyrics unavailable",
-                    systemImage: "text.quote", description: Text(error))
+                lyricsMessage("Lyrics unavailable", detail: error)
             } else if let lyrics, lyrics.available && !lyrics.lines.isEmpty {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 18) {
-                            ForEach(Array(lyrics.lines.enumerated()), id: \.offset) { index, line in
-                                Text(line.text)
-                                    .font(.title3.weight(activeLine == index
-                                        ? .bold : .medium))
-                                    .foregroundStyle(activeLine == nil || activeLine == index
-                                        ? .primary : .secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(index)
-                                    .accessibilityAddTraits(activeLine == index ? .isSelected : [])
+                    ScrollView(.vertical) {
+                        LazyVStack(alignment: .leading, spacing: 25) {
+                            ForEach(Array(lyrics.lines.enumerated()),
+                                    id: \.offset) { index, line in
+                                let selected = !lyrics.synced ||
+                                    index == (activeLine ?? 0)
+                                Button {
+                                    guard lyrics.synced, let at = line.at else {
+                                        return
+                                    }
+                                    onSeek(max(0, at / 1000))
+                                } label: {
+                                    Text(line.text.isEmpty ? "♪" : line.text)
+                                        .font(.system(
+                                            size: 30,
+                                            weight: .bold,
+                                            design: .rounded
+                                        ))
+                                        .tracking(-0.5)
+                                        .multilineTextAlignment(.leading)
+                                        .foregroundStyle(.white.opacity(
+                                            selected ? 1 : 0.40
+                                        ))
+                                        .frame(
+                                            maxWidth: .infinity,
+                                            alignment: .leading
+                                        )
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(
+                                    activeLine == index && lyrics.synced
+                                        ? .isSelected : []
+                                )
+                                .accessibilityHint(
+                                    lyrics.synced && line.at != nil
+                                        ? "Double tap to jump to this lyric"
+                                        : ""
+                                )
+                                .id(index)
                             }
                         }
-                        .padding(24)
+                        .padding(.top, 32)
+                        .padding(.bottom, 45)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .onChange(of: activeLine) { _, index in
-                        if let index {
-                            withAnimation(.easeInOut(duration: 0.32)) {
-                                proxy.scrollTo(index, anchor: .center)
-                            }
+                    .scrollIndicators(.hidden)
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .white, location: 0.07),
+                            .init(color: .white, location: 0.87),
+                            .init(color: .clear, location: 1)
+                        ], startPoint: .top, endPoint: .bottom)
+                    }
+                    .onAppear {
+                        if let activeLine {
+                            proxy.scrollTo(activeLine, anchor: .center)
+                        }
+                    }
+                    .onChange(of: activeLine) { _, current in
+                        guard let current else { return }
+                        withAnimation(.easeInOut(duration: 0.42)) {
+                            proxy.scrollTo(current, anchor: .center)
                         }
                     }
                 }
             } else {
-                ContentUnavailableView("No lyrics found",
-                    systemImage: "text.quote",
-                    description: Text("This track has no lyrics available on your music server."))
+                lyricsMessage(
+                    "No lyrics available",
+                    detail: "Lyrics for this song aren't on your music server."
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.thinMaterial)
+    }
+
+    private func lyricsMessage(_ title: String, detail: String) -> some View {
+        VStack(spacing: 13) {
+            Image(systemName: "quote.bubble")
+                .font(.system(size: 35))
+                .foregroundStyle(.white.opacity(0.75))
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+            Text(detail)
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.7))
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
