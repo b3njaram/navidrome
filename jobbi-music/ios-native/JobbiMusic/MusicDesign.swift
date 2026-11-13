@@ -1,4 +1,6 @@
 import SwiftUI
+import MediaPlayer
+import AVKit
 
 /// Visual vocabulary inspired by the native iOS Music experience.
 /// All icons are SF Symbols, all cover art comes from the user's own NAS.
@@ -153,4 +155,32 @@ struct MusicPlaybackActions: View {
         .font(.subheadline.weight(.semibold))
         .disabled(disabled)
     }
+}
+
+
+/// Real system volume slider: unlike a decorative speaker glyph, it adjusts
+/// the active audio route using Apple's own media volume control.
+struct MusicSystemVolumeSlider: UIViewRepresentable {
+    func makeUIView(context: Context) -> MPVolumeView {
+        let view = MPVolumeView(frame: .zero)
+        view.showsVolumeSlider = true
+        view.showsRouteButton = false
+        view.tintColor = .white
+        return view
+    }
+
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+}
+
+/// Native AirPlay route sheet is available without custom audio routing.
+struct MusicAirPlayControl: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.tintColor = .white
+        view.activeTintColor = .white
+        view.prioritizesVideoDevices = false
+        return view
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
