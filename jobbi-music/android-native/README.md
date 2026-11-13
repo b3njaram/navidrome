@@ -1,3 +1,13 @@
+### Android Auto + Samsung lock-screen artwork (v1.0.11)
+
+**Android Auto:** Jobbi Music now advertises the standard Android Auto media-app descriptor and uses a Media3 **MediaLibraryService** rather than an unbrowsable playback-only service. The built-in car UI can browse Recently Added, Favorite Songs, Playlists, Albums and Downloads. Sign in to Jobbi Music on the phone before opening it in Android Auto. Browsing and car playback share the existing Media3 queue; they do not grant NAS administration or file-import actions to the car.
+
+Because this is an APK installed outside Google Play, Android Auto may hide it until you enable **Android Auto developer settings → Unknown sources** on the phone. You may also need to enable Jobbi Music in Android Auto's app launcher settings. This option may be restricted by your vehicle or phone, and installing from Google Play through a testing track is the more reliable alternative.
+
+**Samsung One UI:** Media3 continues to publish the standard foreground media notification, session, controls and transport state. On each song transition, Jobbi Music now retrieves the private NAS cover art using its authenticated session and includes a small image directly in Media3 playback metadata. This gives Samsung's lock-screen card, expanded media notification and Now Bar access to the artwork even though the art URL requires a private cookie. For devices that support the feature, turn on **Settings → Lock screen and AOD → Now Bar → Media player**. Samsung controls whether the top status-bar media pill or Now Bar appears; the app cannot force a system overlay on unsupported or disabled devices.
+
+Only the native Android Kotlin APK changes. Website and native iPhone remain unchanged. Android Auto, Bluetooth transport controls and notifications should be verified on a real Samsung phone and a compatible vehicle; CI covers compilation and emulator tests, not a full vehicle session.
+
 ### Native recommendations and playback counting (v1.0.6)
 
 Home shows per-user weekly and monthly charts, recently added songs, Made for You and time-of-day mixes. Optional weather mixes require a city that the listener enters; no GPS is accessed. The Android Media3 **service** reports qualified scrobbles for listening continuing in the background, preventing the previous Android gap in weekly/monthly charts. Skipped/seeked tracks do not inflate playback counts. Listening history begins with this version of the server backend; older Navidrome lifetime totals are not assigned arbitrary dates.
@@ -8,7 +18,7 @@ The app has playlist, all-playlists and Favorites download buttons. Background d
 
 # Jobbi Music — fully native Android (Material 3)
 
-**This is a new Kotlin/Jetpack Compose application, not a WebView.** It builds its own UI, uses OkHttp to access the existing Jobbi Music JSON API, and uses a real Media3 ExoPlayer/MediaSessionService for background audio. The previous hybrid Android project in `../android/` is untouched.
+**This is a new Kotlin/Jetpack Compose application, not a WebView.** It builds its own UI, uses OkHttp to access the existing Jobbi Music JSON API, and uses a real Media3 ExoPlayer/MediaLibraryService for background audio. The previous hybrid Android project in `../android/` is untouched.
 
 ## Install the development APK
 
