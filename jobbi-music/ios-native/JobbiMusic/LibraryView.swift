@@ -520,18 +520,35 @@ struct FavoritesView: View {
     var body: some View {
         List {
             Section {
-                HStack {
-                    Button {
+                VStack(spacing: 16) {
+                    MusicListArtwork(symbol: "heart.fill",
+                        tint: MusicAppearance.accent, size: 170)
+                        .shadow(color: MusicAppearance.accent.opacity(0.16),
+                                radius: 17, y: 9)
+                        .padding(.top, 10)
+                    Text("Favorite Songs")
+                        .font(.system(size: 28, weight: .bold))
+                        .tracking(-0.5)
+                    Text("\(library.favorites.count) songs · Your favorite recordings")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    MusicPlaybackActions(play: {
+                        player.play(library.favorites)
+                    }, shuffle: {
                         player.shuffled = true
                         player.play(library.favorites)
-                    } label: { Label("Shuffle All", systemImage: "shuffle") }
-                        .buttonStyle(.borderedProminent)
+                    }, disabled: library.favorites.isEmpty)
                     Button {
                         Task { await offline.downloadAll(library.favorites, api: api,
                             source: "favorites") }
-                    } label: { Label("Download All", systemImage: "arrow.down.circle") }
-                        .buttonStyle(.bordered)
+                    } label: {
+                        Label("Download All", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(library.favorites.isEmpty || offline.isBatchDownloading)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
                 .listRowBackground(Color.clear)
             }
             if !offline.batchLabel.isEmpty {
