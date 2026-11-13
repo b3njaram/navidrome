@@ -97,6 +97,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
                 .setTitle(song.title)
                 .setArtist(song.artist)
                 .setAlbumTitle(song.album)
+                .setDurationMs(SystemMediaControls.durationMillis(song.duration))
                 .setArtworkUri(JobbiApi.coverUrl(song.cover)?.let(Uri::parse))
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
