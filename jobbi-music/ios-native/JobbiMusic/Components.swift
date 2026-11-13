@@ -167,7 +167,7 @@ struct SongShelf: View {
                 .padding(.horizontal, 16)
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 14) {
-                        ForEach(Array(songs.prefix(12).enumerated()), id: \.element.id) { index, song in
+                        ForEach(Array(songs.prefix(12).enumerated()), id: \.offset) { index, song in
                             Button {
                                 player.play(songs, from: index)
                             } label: {
@@ -198,11 +198,7 @@ struct SongShelf: View {
                                 Button("Add to Queue", systemImage: "text.badge.plus") {
                                     player.addToQueue(song)
                                 }
-                                NavigationLink {
-                                    MusicSongShelfDetail(title: title, songs: songs)
-                                } label: {
-                                    Label("All song options", systemImage: "ellipsis")
-                                }
+
                             }
                         }
                     }
