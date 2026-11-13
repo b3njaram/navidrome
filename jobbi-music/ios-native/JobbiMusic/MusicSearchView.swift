@@ -6,7 +6,11 @@ struct MusicSearchView: View {
     @EnvironmentObject private var player: MusicPlayer
     @State private var term = ""
     @State private var searching = false
-    @State private var mode = 0
+    @State private var mode: Int
+
+    init(initialMode: Int = 0) {
+        _mode = State(initialValue: initialMode)
+    }
     @State private var result = SearchResponse(song: [], album: [])
     @State private var peers: [SoulseekFile] = []
     @State private var status: String?
