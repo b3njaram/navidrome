@@ -65,8 +65,24 @@ internal class CarMediaSessionCallback(
         browser: MediaSession.ControllerInfo,
         query: String,
         params: MediaLibraryService.LibraryParams?
-    ): ListenableFuture<LibraryResult<Void>> =
-        Futures.immediateFuture(LibraryResult.ofVoid(params))
+    ): ListenableFuture<LibraryResult<Void>> {
+        val result = SettableFuture.create<LibraryResult<Void>>()
+        scope.launch {
+            try {
+                val tracks = library.search(query)
+                result.set(LibraryResult.ofVoid(params))
+                if (query.isNotBlank()) {
+                    session.notifySearchResultChanged(browser, query, tracks.size, params)
+                }
+            } catch (e: Exception) {
+                result.set(LibraryResult.ofVoid(params))
+                if (query.isNotBlank()) {
+                    session.notifySearchResultChanged(browser, query, 0, params)
+                }
+            }
+        }
+        return result
+    }
 
     override fun onGetSearchResult(
         session: MediaLibraryService.MediaLibrarySession,
