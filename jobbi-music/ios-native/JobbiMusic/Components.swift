@@ -131,63 +131,113 @@ struct SongRow: View {
     }
 }
 
+/// Artwork-forward recommendations, with every original song action preserved
+/// in the See All screen (including queue, offline and NAS operations).
 struct SongShelf: View {
     @EnvironmentObject private var player: MusicPlayer
     let title: String
     let subtitle: String?
     let songs: [Song]
     var showPlays = false
+
     var body: some View {
         if !songs.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.title2.bold())
-                        if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary) }
+                HStack(alignment: .center, spacing: 10) {
+                    MusicSectionHeading(title: title, subtitle: subtitle)
+                    NavigationLink {
+                        MusicSongShelfDetail(title: title, songs: songs)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Button { player.play(songs) } label: { Image(systemName: "play.fill") }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel("Play all \(title)")
+                    .accessibilityLabel("See all \(title)")
                 }
-                ForEach(Array(songs.prefix(8).enumerated()), id: \.element.id) { index, song in
-                    SongRow(song: song, queue: Array(songs.prefix(8)), index: index)
-                    if index < min(songs.count, 8) - 1 {
-                        Divider().padding(.leading, 60)
+                .padding(.horizontal, 16)
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 14) {
+                        ForEach(Array(songs.prefix(12).enumerated()), id: \.element.id) { index, song in
+                            Button {
+                                player.play(songs, from: index)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    CoverArt(art: song.coverArt, size: 145,
+                                             cornerRadius: MusicAppearance.tileRadius)
+                                    Text(song.title)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text(song.artist)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    if showPlays, let count = song.playCount, count > 0 {
+                                        Text("\(count) plays")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(width: 145, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                                    player.playNext(song)
+                                }
+                                Button("Add to Queue", systemImage: "text.badge.plus") {
+                                    player.addToQueue(song)
+                                }
+                                NavigationLink {
+                                    MusicSongShelfDetail(title: title, songs: songs)
+                                } label: {
+                                    Label("All song options", systemImage: "ellipsis")
+                                }
+                            }
+                        }
                     }
+                    .padding(.horizontal, 16)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+}
+
+struct MusicSongShelfDetail: View {
+    let title: String
+    let songs: [Song]
+
+    var body: some View {
+        List {
+            Section("Songs") {
+                ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
+                    SongRow(song: song, queue: songs, index: index)
                 }
             }
-            .padding(.vertical, 8)
         }
+        .listStyle(.plain)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 
 struct AlbumShelf: View {
     let title: String
     let albums: [MusicAlbum]
+
     var body: some View {
         if !albums.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Text(title).font(.title2.bold()).padding(.horizontal)
+                MusicSectionHeading(title: title)
+                    .padding(.horizontal, 16)
                 ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: 15) {
+                    LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(albums) { album in
-                            NavigationLink {
-                                CollectionView(kind: .album, id: album.id)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    CoverArt(art: album.coverArt, size: 150, cornerRadius: 17)
-                                    Text(album.name).font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary).lineLimit(1)
-                                    Text(album.artist ?? "Unknown artist")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                                .frame(width: 150, alignment: .leading)
-                            }
-                            .buttonStyle(.plain)
+                            MusicAlbumTile(album: album, size: 153)
                         }
-                    }.padding(.horizontal)
+                    }
+                    .padding(.horizontal, 16)
                 }
                 .scrollIndicators(.hidden)
             }
