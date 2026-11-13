@@ -52,8 +52,6 @@ struct NowPlayingView: View {
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var api: JobbiAPI
     @Environment(\.dismiss) private var dismiss
-    @State private var dragging = false
-    @State private var draggedValue = 0.0
     @State private var showingQueue = false
     @State private var showingLyrics = false
     @State private var lyrics: LyricsResponse?
@@ -62,238 +60,90 @@ struct NowPlayingView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geo in
-                let artworkSize = min(geo.size.width - 50,
-                                      max(236, geo.size.height * 0.40))
-                ScrollView {
-                    VStack(spacing: 16) {
-                        HStack {
-                            Button { dismiss() } label: {
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 21, weight: .semibold))
-                                    .frame(width: 44, height: 44, alignment: .leading)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Close Now Playing")
-                            Spacer()
-                            VStack(spacing: 2) {
-                                Text("PLAYING FROM")
-                                    .font(.caption2.weight(.semibold))
-                                    .tracking(1.2)
-                                    .foregroundStyle(.white.opacity(0.65))
-                                Text("Your Library")
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Menu {
-                                if let song = player.active {
-                                    Button {
-                                        Task { await library.toggleFavorite(song, api: api) }
-                                    } label: {
-                                        Label("Toggle Favorite", systemImage: "heart")
-                                    }
-                                    Button {
-                                        player.playNext(song)
-                                    } label: {
-                                        Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-                                    }
-                                }
-                                Divider()
-                                ForEach([15, 30, 45, 60], id: \.self) { minutes in
-                                    Button("Pause in \(minutes) minutes") {
-                                        player.setSleepTimer(minutes: minutes)
-                                    }
-                                }
-                                Button("Cancel sleep timer") {
-                                    player.setSleepTimer(minutes: 0)
-                                }
-                            } label: {
-                                Image(systemName: player.sleepUntil == nil
-                                      ? "ellipsis" : "moon.zzz.fill")
-                                    .font(.system(size: 21, weight: .medium))
-                                    .frame(width: 44, height: 44, alignment: .trailing)
-                            }
-                            .accessibilityLabel("More and Sleep Timer")
-                        }
-                        .foregroundStyle(.white)
+            GeometryReader { geometry in
+                let contentWidth = min(max(geometry.size.width - 52, 1), 430)
+                let artworkSize = min(contentWidth,
+                                      max(180, geometry.size.height - 406),
+                                      385)
+
+                VStack(spacing: 0) {
+                    topBar
+                        .frame(height: 52)
                         .padding(.top, 5)
 
-                        if let song = player.active {
-                            Group {
-                                if showingLyrics {
-                                    LyricsPanel(lyrics: lyrics, loading: lyricsLoading,
-                                        error: lyricsError, elapsed: player.elapsed)
-                                } else {
-                                    CoverArt(art: song.coverArt,
+                    if let song = player.active {
+                        Group {
+                            if showingLyrics {
+                                LyricsPanel(
+                                    lyrics: lyrics,
+                                    loading: lyricsLoading,
+                                    error: lyricsError,
+                                    elapsed: player.elapsed,
+                                    onSeek: player.seek
+                                )
+                                .transition(.opacity)
+                            } else {
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 12)
+                                    CoverArt(
+                                        art: song.coverArt,
                                         size: artworkSize,
-                                        cornerRadius: 12)
-                                        .shadow(color: .black.opacity(0.33), radius: 25, y: 13)
-                                        .accessibilityLabel("Cover of \(song.displayAlbum)")
+                                        cornerRadius: 12
+                                    )
+                                    .shadow(
+                                        color: .black.opacity(0.27),
+                                        radius: 18, y: 10
+                                    )
+                                    .accessibilityLabel("Artwork for \(song.displayAlbum)")
+                                    Spacer(minLength: 12)
                                 }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .transition(.opacity)
                             }
-                            .frame(width: artworkSize, height: artworkSize)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding(.top, 5)
-
-                            HStack(alignment: .center, spacing: 13) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(song.title)
-                                        .font(.title2.weight(.bold))
-                                        .tracking(-0.35)
-                                        .lineLimit(2)
-                                    Text(song.artist)
-                                        .font(.title3)
-                                        .foregroundStyle(.white.opacity(0.75))
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 10)
-                                Button {
-                                    Task { await library.toggleFavorite(song, api: api) }
-                                } label: {
-                                    Image(systemName: library.favorites.contains(where: { $0.id == song.id })
-                                          ? "star.fill" : "star")
-                                        .font(.system(size: 24, weight: .medium))
-                                        .frame(width: 44, height: 44)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Toggle Favorite")
-                            }
-                            .padding(.top, 4)
-
-                            VStack(spacing: 3) {
-                                Slider(value: Binding(
-                                    get: { dragging ? draggedValue : player.elapsed },
-                                    set: { draggedValue = $0; dragging = true }
-                                ), in: 0...max(player.duration, 1), onEditingChanged: { editing in
-                                    if !editing {
-                                        player.seek(draggedValue)
-                                        dragging = false
-                                    }
-                                })
-                                .tint(.white)
-                                HStack {
-                                    Text(time(player.elapsed))
-                                    Spacer()
-                                    Text("-" + time(max(0, player.duration - player.elapsed)))
-                                }
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.66))
-                            }
-
-                            HStack(spacing: 24) {
-                                Button { player.toggleShuffle() } label: {
-                                    Image(systemName: "shuffle")
-                                        .font(.system(size: 20))
-                                        .foregroundStyle(player.shuffled
-                                            ? MusicAppearance.accent : .white.opacity(0.77))
-                                        .frame(width: 32, height: 62)
-                                }
-                                .accessibilityLabel("Shuffle")
-                                Spacer(minLength: 0)
-                                Button { player.previous() } label: {
-                                    Image(systemName: "backward.end.fill")
-                                        .font(.system(size: 32))
-                                        .frame(width: 46, height: 70)
-                                }
-                                .accessibilityLabel("Previous")
-                                Spacer(minLength: 0)
-                                Button { player.toggle() } label: {
-                                    Image(systemName: player.playing ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 45, weight: .semibold))
-                                        .frame(width: 70, height: 70)
-                                }
-                                .accessibilityLabel(player.playing ? "Pause" : "Play")
-                                Spacer(minLength: 0)
-                                Button { player.next() } label: {
-                                    Image(systemName: "forward.end.fill")
-                                        .font(.system(size: 32))
-                                        .frame(width: 46, height: 70)
-                                }
-                                .accessibilityLabel("Next")
-                                Spacer(minLength: 0)
-                                Button { player.repeatOne.toggle() } label: {
-                                    Image(systemName: player.repeatOne ? "repeat.1" : "repeat")
-                                        .font(.system(size: 20))
-                                        .foregroundStyle(player.repeatOne
-                                            ? MusicAppearance.accent : .white.opacity(0.77))
-                                        .frame(width: 32, height: 62)
-                                }
-                                .accessibilityLabel(player.repeatOne ? "Repeat one" : "Repeat")
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.top, 2)
-
-                            HStack(spacing: 14) {
-                                Image(systemName: "speaker.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.65))
-                                MusicSystemVolumeSlider()
-                                    .frame(height: 28)
-                                    .accessibilityLabel("Playback volume")
-                                Image(systemName: "speaker.wave.3.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.65))
-                            }
-                            .padding(.top, 1)
-
-                            HStack {
-                                Button {
-                                    showingLyrics.toggle()
-                                    if showingLyrics { Task { await loadLyrics(for: song) } }
-                                } label: {
-                                    Image(systemName: showingLyrics
-                                          ? "quote.bubble.fill" : "quote.bubble")
-                                        .font(.system(size: 23))
-                                        .foregroundStyle(showingLyrics
-                                            ? .white : .white.opacity(0.7))
-                                        .frame(width: 48, height: 48)
-                                        .background(showingLyrics ? Color.white.opacity(0.18) : Color.clear,
-                                                    in: Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(showingLyrics ? "Hide lyrics" : "Show lyrics")
-                                Spacer()
-                                MusicAirPlayControl()
-                                    .frame(width: 48, height: 48)
-                                    .accessibilityLabel("AirPlay and audio output")
-                                Spacer()
-                                Button { showingQueue = true } label: {
-                                    Image(systemName: "list.bullet")
-                                        .font(.system(size: 23))
-                                        .frame(width: 48, height: 48)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Show Up Next queue")
-                            }
-                            .padding(.top, 1)
-                        } else {
-                            ContentUnavailableView("Nothing playing", systemImage: "music.note")
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+
+                        playbackFooter(song)
+                            .padding(.bottom, 12)
+                    } else {
+                        Spacer()
+                        VStack(spacing: 14) {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 52))
+                            Text("Nothing Playing")
+                                .font(.title2.weight(.semibold))
+                        }
+                        .foregroundStyle(.white.opacity(0.82))
+                        Spacer()
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 25)
-                    .padding(.bottom, 34)
-                    .frame(maxWidth: 530)
-                    .frame(maxWidth: .infinity)
                 }
-                .scrollIndicators(.hidden)
+                .foregroundStyle(.white)
+                .frame(maxWidth: 430)
+                .padding(.horizontal, 26)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
                     ZStack {
-                        Color(red: 0.14, green: 0.13, blue: 0.17)
+                        Color(red: 0.19, green: 0.12, blue: 0.16)
                         if let art = player.active?.coverArt, !art.isEmpty {
-                            CoverArt(art: art, size: max(geo.size.width, geo.size.height) + 150,
-                                     cornerRadius: 0)
-                                .blur(radius: 74, opaque: true)
-                                .saturation(1.18)
-                                .opacity(0.66)
+                            CoverArt(
+                                art: art,
+                                size: max(geometry.size.width, geometry.size.height) + 150,
+                                cornerRadius: 0
+                            )
+                            .blur(radius: 74, opaque: true)
+                            .saturation(1.15)
+                            .opacity(0.64)
                         }
                         LinearGradient(
                             colors: [
-                                Color.black.opacity(0.32),
-                                Color.black.opacity(0.25),
-                                Color.black.opacity(0.62)
-                            ], startPoint: .top, endPoint: .bottom)
+                                Color.black.opacity(0.21),
+                                Color.black.opacity(0.18),
+                                Color.black.opacity(0.56)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                     }
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
@@ -378,6 +228,217 @@ struct NowPlayingView: View {
         }
     }
 
+
+    /// A ZStack keeps the source label centered independent of the side buttons.
+    private var topBar: some View {
+        ZStack {
+            VStack(spacing: 2) {
+                Text("PLAYING FROM")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(.white.opacity(0.61))
+                Text("Your Library")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 52)
+            .accessibilityElement(children: .combine)
+
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 21, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Close Now Playing")
+
+                Spacer()
+
+                Menu {
+                    if let song = player.active {
+                        Button {
+                            Task { await library.toggleFavorite(song, api: api) }
+                        } label: {
+                            Label("Toggle Favorite", systemImage: "heart")
+                        }
+                        Button {
+                            player.playNext(song)
+                        } label: {
+                            Label("Play Next",
+                                  systemImage: "text.line.first.and.arrowtriangle.forward")
+                        }
+                    }
+                    Divider()
+                    ForEach([15, 30, 45, 60], id: \.self) { minutes in
+                        Button("Pause in \(minutes) minutes") {
+                            player.setSleepTimer(minutes: minutes)
+                        }
+                    }
+                    Button("Cancel sleep timer") {
+                        player.setSleepTimer(minutes: 0)
+                    }
+                } label: {
+                    Image(systemName: player.sleepUntil == nil
+                          ? "ellipsis" : "moon.zzz.fill")
+                        .font(.system(size: 21, weight: .medium))
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("More and Sleep Timer")
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func playbackFooter(_ song: Song) -> some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(song.title)
+                        .font(.title2.weight(.bold))
+                        .tracking(-0.45)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    Text(song.artist)
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.76))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    Task { await library.toggleFavorite(song, api: api) }
+                } label: {
+                    Image(systemName:
+                          library.favorites.contains(where: { $0.id == song.id })
+                          ? "star.fill" : "star")
+                        .font(.system(size: 23))
+                        .foregroundStyle(.white.opacity(0.94))
+                        .frame(width: 44, height: 48)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Toggle Favorite")
+            }
+            .frame(minHeight: 59)
+
+            VStack(spacing: 1) {
+                NowPlayingScrubber(
+                    position: player.elapsed,
+                    duration: player.duration,
+                    onSeek: player.seek
+                )
+                HStack {
+                    Text(time(player.elapsed))
+                    Spacer(minLength: 8)
+                    Text("-" + time(max(0, player.duration - player.elapsed)))
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.65))
+            }
+
+            HStack(spacing: 0) {
+                Button { player.toggleShuffle() } label: {
+                    Image(systemName: "shuffle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(player.shuffled
+                                         ? MusicAppearance.accent
+                                         : .white.opacity(0.77))
+                }
+                .accessibilityLabel("Shuffle")
+                .frame(maxWidth: .infinity)
+
+                Button { player.previous() } label: {
+                    Image(systemName: "backward.end.fill")
+                        .font(.system(size: 30))
+                }
+                .accessibilityLabel("Previous")
+                .frame(maxWidth: .infinity)
+
+                Button { player.toggle() } label: {
+                    Image(systemName: player.playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 42, weight: .semibold))
+                }
+                .accessibilityLabel(player.playing ? "Pause" : "Play")
+                .frame(maxWidth: .infinity)
+
+                Button { player.next() } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.system(size: 30))
+                }
+                .accessibilityLabel("Next")
+                .frame(maxWidth: .infinity)
+
+                Button { player.repeatOne.toggle() } label: {
+                    Image(systemName: player.repeatOne ? "repeat.1" : "repeat")
+                        .font(.system(size: 20))
+                        .foregroundStyle(player.repeatOne
+                                         ? MusicAppearance.accent
+                                         : .white.opacity(0.77))
+                }
+                .accessibilityLabel(player.repeatOne ? "Repeat one" : "Repeat")
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .frame(height: 66)
+
+            HStack(spacing: 11) {
+                Image(systemName: "speaker.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.64))
+                    .frame(width: 17)
+                MusicSystemVolumeSlider()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 29)
+                    .accessibilityLabel("Playback volume")
+                Image(systemName: "speaker.wave.3.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.64))
+                    .frame(width: 19)
+            }
+            .frame(height: 30)
+
+            HStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showingLyrics.toggle()
+                    }
+                    if showingLyrics { Task { await loadLyrics(for: song) } }
+                } label: {
+                    Image(systemName: showingLyrics
+                          ? "quote.bubble.fill" : "quote.bubble")
+                        .font(.system(size: 23))
+                        .foregroundStyle(.white.opacity(showingLyrics ? 1 : 0.78))
+                        .frame(width: 50, height: 49)
+                        .background {
+                            if showingLyrics {
+                                Circle().fill(.white.opacity(0.19))
+                            }
+                        }
+                }
+                .accessibilityLabel(showingLyrics ? "Hide lyrics" : "Show lyrics")
+                .frame(maxWidth: .infinity)
+
+                MusicAirPlayControl()
+                    .frame(width: 50, height: 49)
+                    .accessibilityLabel("AirPlay and audio output")
+                    .frame(maxWidth: .infinity)
+
+                Button { showingQueue = true } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 23))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 50, height: 49)
+                }
+                .accessibilityLabel("Show Up Next queue")
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .frame(height: 50)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func loadLyrics(for song: Song) async {
         lyrics = nil
         lyricsError = nil
@@ -403,12 +464,91 @@ struct NowPlayingView: View {
 }
 
 
-/// In-player lyrics replace only the artwork pane, not playback controls.
+/// A thin, centered progress track that doesn't display a giant system thumb.
+/// Dragging previews the position and commits the seek when released.
+private struct NowPlayingScrubber: View {
+    let position: Double
+    let duration: Double
+    let onSeek: (Double) -> Void
+    @State private var isScrubbing = false
+    @State private var scrubPosition = 0.0
+
+    private var validDuration: Double {
+        duration.isFinite && duration > 0 ? duration : 0
+    }
+
+    private var progress: Double {
+        guard validDuration > 0 else { return 0 }
+        let current = isScrubbing ? scrubPosition : position
+        return min(1, max(0, current / validDuration))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let trackWidth = max(1, geometry.size.width)
+            let thumbSize: CGFloat = isScrubbing ? 14 : 7
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.white.opacity(0.27))
+                    .frame(height: 4)
+                Capsule()
+                    .fill(.white.opacity(0.94))
+                    .frame(width: trackWidth * progress, height: 4)
+                Circle()
+                    .fill(.white)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .offset(x: min(max(0, trackWidth * progress - thumbSize / 2),
+                                   max(0, trackWidth - thumbSize)))
+            }
+            .frame(width: trackWidth, height: 25)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard validDuration > 0 else { return }
+                        isScrubbing = true
+                        scrubPosition = min(1, max(0, value.location.x / trackWidth))
+                            * validDuration
+                    }
+                    .onEnded { value in
+                        guard validDuration > 0 else { return }
+                        let seek = min(1, max(0, value.location.x / trackWidth))
+                            * validDuration
+                        isScrubbing = false
+                        onSeek(seek)
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Playback progress")
+            .accessibilityValue(
+                "\(Int(max(0, position))) of \(Int(validDuration)) seconds"
+            )
+            .accessibilityAdjustableAction { direction in
+                guard validDuration > 0 else { return }
+                switch direction {
+                case .increment:
+                    onSeek(min(validDuration, position + 10))
+                case .decrement:
+                    onSeek(max(0, position - 10))
+                @unknown default:
+                    break
+                }
+            }
+        }
+        .frame(height: 25)
+    }
+}
+
+/// Full-height Apple Music-style lyrics: no boxed card, large readable type,
+/// fade at the edges, synced-line highlighting and tap-to-seek where available.
+/// Untimed lyrics remain fully readable and manually scrollable.
 private struct LyricsPanel: View {
     let lyrics: LyricsResponse?
     let loading: Bool
     let error: String?
     let elapsed: Double
+    let onSeek: (Double) -> Void
 
     private var activeLine: Int? {
         guard let lyrics, lyrics.synced else { return nil }
@@ -418,42 +558,109 @@ private struct LyricsPanel: View {
     var body: some View {
         Group {
             if loading {
-                ProgressView("Loading lyrics…")
+                VStack(spacing: 14) {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Loading lyrics…")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error {
-                ContentUnavailableView("Lyrics unavailable",
-                    systemImage: "text.quote", description: Text(error))
+                lyricsMessage("Lyrics unavailable", detail: error)
             } else if let lyrics, lyrics.available && !lyrics.lines.isEmpty {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 18) {
-                            ForEach(Array(lyrics.lines.enumerated()), id: \.offset) { index, line in
-                                Text(line.text)
-                                    .font(.title3.weight(activeLine == index
-                                        ? .bold : .medium))
-                                    .foregroundStyle(activeLine == nil || activeLine == index
-                                        ? .primary : .secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(index)
-                                    .accessibilityAddTraits(activeLine == index ? .isSelected : [])
+                    ScrollView(.vertical) {
+                        LazyVStack(alignment: .leading, spacing: 25) {
+                            ForEach(Array(lyrics.lines.enumerated()),
+                                    id: \.offset) { index, line in
+                                let selected = !lyrics.synced ||
+                                    index == (activeLine ?? 0)
+                                Button {
+                                    guard lyrics.synced, let at = line.at else {
+                                        return
+                                    }
+                                    onSeek(max(0, at / 1000))
+                                } label: {
+                                    Text(line.text.isEmpty ? "♪" : line.text)
+                                        .font(.system(
+                                            size: 30,
+                                            weight: .bold,
+                                            design: .rounded
+                                        ))
+                                        .tracking(-0.5)
+                                        .multilineTextAlignment(.leading)
+                                        .foregroundStyle(.white.opacity(
+                                            selected ? 1 : 0.40
+                                        ))
+                                        .frame(
+                                            maxWidth: .infinity,
+                                            alignment: .leading
+                                        )
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(
+                                    activeLine == index && lyrics.synced
+                                        ? .isSelected : []
+                                )
+                                .accessibilityHint(
+                                    lyrics.synced && line.at != nil
+                                        ? "Double tap to jump to this lyric"
+                                        : ""
+                                )
+                                .id(index)
                             }
                         }
-                        .padding(24)
+                        .padding(.top, 32)
+                        .padding(.bottom, 45)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .onChange(of: activeLine) { _, index in
-                        if let index {
-                            withAnimation(.easeInOut(duration: 0.32)) {
-                                proxy.scrollTo(index, anchor: .center)
-                            }
+                    .scrollIndicators(.hidden)
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .white, location: 0.07),
+                            .init(color: .white, location: 0.87),
+                            .init(color: .clear, location: 1)
+                        ], startPoint: .top, endPoint: .bottom)
+                    }
+                    .onAppear {
+                        if let activeLine {
+                            proxy.scrollTo(activeLine, anchor: .center)
+                        }
+                    }
+                    .onChange(of: activeLine) { _, current in
+                        guard let current else { return }
+                        withAnimation(.easeInOut(duration: 0.42)) {
+                            proxy.scrollTo(current, anchor: .center)
                         }
                     }
                 }
             } else {
-                ContentUnavailableView("No lyrics found",
-                    systemImage: "text.quote",
-                    description: Text("This track has no lyrics available on your music server."))
+                lyricsMessage(
+                    "No lyrics available",
+                    detail: "Lyrics for this song aren't on your music server."
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.thinMaterial)
+    }
+
+    private func lyricsMessage(_ title: String, detail: String) -> some View {
+        VStack(spacing: 13) {
+            Image(systemName: "quote.bubble")
+                .font(.system(size: 35))
+                .foregroundStyle(.white.opacity(0.75))
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+            Text(detail)
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.7))
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
