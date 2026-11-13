@@ -55,8 +55,10 @@ struct NowPlayingView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
+                let artworkSize = min(geo.size.width - 50,
+                                      max(236, geo.size.height * 0.40))
                 ScrollView {
-                    VStack(spacing: 24) {
+                    VStack(spacing: 16) {
                         HStack {
                             Button { dismiss() } label: {
                                 Image(systemName: "chevron.down")
@@ -116,16 +118,15 @@ struct NowPlayingView: View {
                                         error: lyricsError, elapsed: player.elapsed)
                                 } else {
                                     CoverArt(art: song.coverArt,
-                                        size: min(geo.size.width - 50, 390),
+                                        size: artworkSize,
                                         cornerRadius: 12)
                                         .shadow(color: .black.opacity(0.33), radius: 25, y: 13)
                                         .accessibilityLabel("Cover of \(song.displayAlbum)")
                                 }
                             }
-                            .frame(width: min(geo.size.width - 50, 390),
-                                   height: min(geo.size.width - 50, 390))
+                            .frame(width: artworkSize, height: artworkSize)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding(.top, max(6, (geo.size.height - 760) * 0.20))
+                            .padding(.top, 5)
 
                             HStack(alignment: .center, spacing: 13) {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -239,7 +240,7 @@ struct NowPlayingView: View {
                                         .foregroundStyle(showingLyrics
                                             ? .white : .white.opacity(0.7))
                                         .frame(width: 48, height: 48)
-                                        .background(showingLyrics ? .white.opacity(0.18) : .clear,
+                                        .background(showingLyrics ? Color.white.opacity(0.18) : Color.clear,
                                                     in: Circle())
                                 }
                                 .buttonStyle(.plain)
