@@ -2,6 +2,10 @@ package com.jobbisoft.music.nativeplayer
 
 import android.content.ComponentName
 import android.content.Context
+import androidx.media3.common.MediaItem
+import androidx.test.platform.app.InstrumentationRegistry
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
 import androidx.media3.session.MediaController
@@ -29,14 +33,23 @@ class AndroidAutoSessionTest {
         val pending = MediaBrowser.Builder(context, token).buildAsync()
         try {
             val browser = pending.get(20, TimeUnit.SECONDS)
-            val root = browser.getLibraryRoot(null).get(15, TimeUnit.SECONDS)
+            // Media3 controllers require calls on their application looper,
+            // which is the main thread. Await futures off main to avoid deadlock.
+            val instrument = InstrumentationRegistry.getInstrumentation()
+            lateinit var rootCall: ListenableFuture<LibraryResult<MediaItem>>
+            instrument.runOnMainSync { rootCall = browser.getLibraryRoot(null) }
+            val root = rootCall.get(15, TimeUnit.SECONDS)
             assertEquals(LibraryResult.RESULT_SUCCESS, root.resultCode)
             assertNotNull(root.value)
             assertEquals(AndroidAutoLibrary.ROOT, root.value?.mediaId)
             assertTrue(root.value?.mediaMetadata?.isBrowsable == true)
 
-            val children = browser.getChildren(
-                AndroidAutoLibrary.ROOT, 0, 20, null).get(15, TimeUnit.SECONDS)
+            lateinit var childrenCall:
+                ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>
+            instrument.runOnMainSync {
+                childrenCall = browser.getChildren(AndroidAutoLibrary.ROOT, 0, 20, null)
+            }
+            val children = childrenCall.get(15, TimeUnit.SECONDS)
             assertEquals(LibraryResult.RESULT_SUCCESS, children.resultCode)
             assertTrue(children.value?.isNotEmpty() == true)
             assertTrue(children.value?.all {
@@ -44,7 +57,9 @@ class AndroidAutoSessionTest {
                     it.mediaMetadata.isPlayable == false
             } == true)
         } finally {
-            MediaController.releaseFuture(pending)
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                MediaController.releaseFuture(pending)
+            }
         }
     }
 }
