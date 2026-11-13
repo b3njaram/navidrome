@@ -1,5 +1,7 @@
 package com.jobbisoft.music.nativeplayer
 
+import android.app.PendingIntent
+import android.content.Intent
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
@@ -11,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.TimeZone
@@ -24,7 +27,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaController
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import androidx.compose.runtime.getValue
@@ -38,8 +41,12 @@ import androidx.compose.runtime.setValue
  * media session. The OS owns the notification and exposes next/previous
  * through the lock screen, Bluetooth, headphones and Android Auto controls.
  */
-class MusicPlaybackService : MediaSessionService() {
-    private var session: MediaSession? = null
+class MusicPlaybackService : MediaLibraryService() {
+    private var session: MediaLibraryService.MediaLibrarySession? = null
+    private val systemArtwork = SystemAlbumArtwork()
+    private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var artworkJob: Job? = null
+    private lateinit var carLibrary: AndroidAutoLibrary
     private var playback: ExoPlayer? = null
     // Account-aware listening history must live with the playback service,
     // not only the activity. Background playback still gets counted.
@@ -105,6 +112,7 @@ class MusicPlaybackService : MediaSessionService() {
                 // already reached the qualified-play threshold.
                 recordIfQualified()
                 activeSongId=mediaItem?.mediaId?.takeIf{it.isNotBlank()}
+                publishCurrentArtwork(mediaItem)
                 activeDurationMs=0L
                 listenedMs=0L
                 lastClockMs=SystemClock.elapsedRealtime()
@@ -123,8 +131,36 @@ class MusicPlaybackService : MediaSessionService() {
         })
     }
 
+    /**
+     * Lock-screen, Android media controls and Samsung Now Bar cannot access
+     * artwork behind our app's HttpOnly NAS cookie. Embed compressed artwork
+     * in the current Media3 metadata without changing the playing stream.
+     */
+    private fun publishCurrentArtwork(item:MediaItem?) {
+        artworkJob?.cancel()
+        val uri=item?.mediaMetadata?.artworkUri ?: return
+        if(item.mediaMetadata.artworkData != null)return
+        val songId=item.mediaId
+        artworkJob=artworkScope.launch {
+            val art=systemArtwork.get(uri) ?: return@launch
+            val player=playback ?: return@launch
+            val index=player.currentMediaItemIndex
+            if(index<0 || player.currentMediaItem?.mediaId!=songId)return@launch
+            val playing=player.currentMediaItem ?: return@launch
+            if(playing.mediaMetadata.artworkData!=null)return@launch
+            val metadata=playing.mediaMetadata.buildUpon()
+                .setArtworkData(art,MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                .build()
+            // Keep the URI and timeline unchanged so playback isn't restarted.
+            player.replaceMediaItem(index,
+                playing.buildUpon().setMediaMetadata(metadata).build())
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        if(JobbiApi.username.isBlank())JobbiApi.configure(this)
+        carLibrary=AndroidAutoLibrary(this)
         val http = OkHttpDataSource.Factory(JobbiApi.client)
         val mediaSource = DefaultMediaSourceFactory(this)
             .setDataSourceFactory(DefaultDataSource.Factory(this, http))
@@ -137,13 +173,22 @@ class MusicPlaybackService : MediaSessionService() {
         player.repeatMode = Player.REPEAT_MODE_OFF
         listenTo(player)
         progressHandler.postDelayed(listenTick,5000L)
-        session = MediaSession.Builder(this, player).build()
+        val launch=PendingIntent.getActivity(this,0,
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        session = MediaLibraryService.MediaLibrarySession.Builder(this, player,
+            CarMediaSessionCallback(carLibrary,artworkScope))
+            .setSessionActivity(launch)
+            .build()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibraryService.MediaLibrarySession? = session
 
     override fun onDestroy() {
         progressHandler.removeCallbacks(listenTick)
+        artworkJob?.cancel()
+        artworkScope.cancel()
         scrobbleScope.cancel()
         session?.run { player.release(); release() }
         session = null
