@@ -348,24 +348,28 @@ struct NowPlayingView: View {
                                          : .white.opacity(0.77))
                 }
                 .accessibilityLabel("Shuffle")
+                .frame(maxWidth: .infinity)
 
                 Button { player.previous() } label: {
                     Image(systemName: "backward.end.fill")
                         .font(.system(size: 30))
                 }
                 .accessibilityLabel("Previous")
+                .frame(maxWidth: .infinity)
 
                 Button { player.toggle() } label: {
                     Image(systemName: player.playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 42, weight: .semibold))
                 }
                 .accessibilityLabel(player.playing ? "Pause" : "Play")
+                .frame(maxWidth: .infinity)
 
                 Button { player.next() } label: {
                     Image(systemName: "forward.end.fill")
                         .font(.system(size: 30))
                 }
                 .accessibilityLabel("Next")
+                .frame(maxWidth: .infinity)
 
                 Button { player.repeatOne.toggle() } label: {
                     Image(systemName: player.repeatOne ? "repeat.1" : "repeat")
@@ -375,11 +379,10 @@ struct NowPlayingView: View {
                                          : .white.opacity(0.77))
                 }
                 .accessibilityLabel(player.repeatOne ? "Repeat one" : "Repeat")
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
             .frame(height: 66)
-            .buttonStyle(.plain)
-            .modifier(EqualWidthTransportButtons())
 
             HStack(spacing: 11) {
                 Image(systemName: "speaker.fill")
