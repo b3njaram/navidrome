@@ -81,7 +81,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
 
     private fun playlist(playlist: MusicPlaylist): MediaItem =
         category(PREFIX_PLAYLIST + playlist.id,
-            playlist.name, "\${playlist.count} songs")
+            playlist.name, "${playlist.count} songs")
 
     private fun playable(song: Song): MediaItem {
         val offline = JobbiDownloads.playableUri(context, JobbiApi.username,
