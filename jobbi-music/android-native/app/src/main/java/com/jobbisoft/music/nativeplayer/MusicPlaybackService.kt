@@ -113,7 +113,9 @@ class MusicPlaybackService : MediaLibraryService() {
                 recordIfQualified()
                 activeSongId=mediaItem?.mediaId?.takeIf{it.isNotBlank()}
                 publishCurrentArtwork(mediaItem)
-                activeDurationMs=0L
+                // A Subsonic stream may not expose duration via HTTP. Use
+                // the catalog's actual track length until ExoPlayer reports it.
+                activeDurationMs=mediaItem?.mediaMetadata?.durationMs ?: 0L
                 listenedMs=0L
                 lastClockMs=SystemClock.elapsedRealtime()
                 wasPlaying=player.isPlaying
@@ -177,9 +179,11 @@ class MusicPlaybackService : MediaLibraryService() {
             Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        session = MediaLibraryService.MediaLibrarySession.Builder(this, player,
+        session = MediaLibraryService.MediaLibrarySession.Builder(
+            this, SystemTimelinePlayer(player),
             CarMediaSessionCallback(carLibrary,artworkScope))
             .setSessionActivity(launch)
+            .setMediaButtonPreferences(SystemMediaControls.transportButtons())
             .build()
     }
 
@@ -279,7 +283,11 @@ class NativePlayer(private val context: Context) {
         duration = if (player.duration > 0 && player.duration != androidx.media3.common.C.TIME_UNSET)
             player.duration else (song?.duration ?: 0L) * 1000L
         position = player.currentPosition.coerceAtLeast(0)
-        hasPrevious = player.hasPreviousMediaItem()
+        // Restarting the current song also counts as a previous action when
+        // the stream is seekable, even at the first track of a playlist.
+        hasPrevious = player.hasPreviousMediaItem() ||
+            (player.isCurrentMediaItemSeekable &&
+                player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS))
         hasNext = player.hasNextMediaItem()
     }
 
@@ -294,6 +302,7 @@ class NativePlayer(private val context: Context) {
             .setTitle(song.title)
             .setArtist(song.artist)
             .setAlbumTitle(song.album)
+            .setDurationMs(SystemMediaControls.durationMillis(song.duration))
             .setArtworkUri(JobbiApi.coverUrl(song.cover)?.let(Uri::parse))
             .build()
         return MediaItem.Builder()
@@ -419,8 +428,11 @@ class NativePlayer(private val context: Context) {
     }
     fun previous() {
         controller?.let {
-            if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem()
-            else it.seekTo(0)
+            if (it.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS)) {
+                it.seekToPrevious()
+            } else if (it.hasPreviousMediaItem()) {
+                it.seekToPreviousMediaItem()
+            }
         }
     }
     fun seek(ms: Long) { controller?.seekTo(ms.coerceIn(0L,duration.coerceAtLeast(0L))) }
