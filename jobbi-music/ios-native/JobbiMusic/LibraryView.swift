@@ -301,32 +301,47 @@ struct CollectionView: View {
         List {
             if let detail {
                 Section {
-                    VStack(spacing: 14) {
+                    VStack(spacing: 15) {
                         CoverArt(art: detail.tracks.first?.coverArt,
-                            size: 220, cornerRadius: 18, customPath: coverURL)
-                            .padding(.vertical)
-                        Text(detail.title)
-                            .font(.title2.bold())
-                            .multilineTextAlignment(.center)
-                        Text("\(detail.tracks.count) songs")
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            Button { player.play(detail.tracks) } label: {
-                                Label("Play", systemImage: "play.fill")
+                            size: 225, cornerRadius: 12, customPath: coverURL)
+                            .shadow(color: .black.opacity(0.16), radius: 12, y: 7)
+                            .padding(.top, 13)
+                        VStack(spacing: 5) {
+                            Text(detail.title)
+                                .font(.system(size: 27, weight: .bold))
+                                .tracking(-0.55)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(3)
+                            if kind == .album, let artist = detail.artist {
+                                Text(artist)
+                                    .font(.title3.weight(.medium))
+                                    .foregroundStyle(MusicAppearance.accent)
+                            } else if kind == .playlist, let owner = detail.owner {
+                                Text("Playlist by \(owner)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(detail.tracks.isEmpty)
-                            Button {
+                            Text("\(detail.tracks.count) songs")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        MusicPlaybackActions(
+                            play: { player.play(detail.tracks) },
+                            shuffle: {
                                 player.shuffled = true
                                 player.play(detail.tracks)
-                            } label: { Label("Shuffle", systemImage: "shuffle") }
-                                .buttonStyle(.bordered)
-                        }
-                        PhotoUploadButton(path: coverURL.components(separatedBy: "?")[0],
-                                          title: "Change cover") {
+                            }, disabled: detail.tracks.isEmpty
+                        )
+                        .padding(.top, 9)
+                        PhotoUploadButton(
+                            path: coverURL.components(separatedBy: "?")[0],
+                            title: "Change artwork"
+                        ) {
                             coverRevision += 1
                         }
+                        .font(.subheadline)
                     }
+                    .padding(.vertical, 11)
                     .frame(maxWidth: .infinity)
                     .listRowBackground(Color.clear)
                 }
@@ -393,6 +408,7 @@ struct CollectionView: View {
                 Section("Tracks") {
                     ForEach(Array(detail.tracks.enumerated()), id: \.offset) { index, song in
                         SongRow(song: song, queue: detail.tracks, index: index,
+                            showTrackNumber: kind == .album,
                             onRemoveFromPlaylist: kind == .playlist ? {
                                 removePlaylistEntry(at: index)
                             } : nil,
@@ -403,6 +419,9 @@ struct CollectionView: View {
                 ProgressView("Loading collection…")
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MusicAppearance.canvas)
         .navigationTitle(detail?.title ?? "Collection")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: id) { await reload() }
@@ -529,7 +548,10 @@ struct FavoritesView: View {
                 }
             }
         }
-        .navigationTitle("Favorites")
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MusicAppearance.canvas)
+        .navigationTitle("Favorite Songs")
     }
 }
 
@@ -549,6 +571,9 @@ struct OfflineView: View {
                 }
             }
         }
-        .navigationTitle("Downloads")
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MusicAppearance.canvas)
+        .navigationTitle("Downloaded")
     }
 }
