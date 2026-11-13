@@ -156,14 +156,12 @@ struct MusicArtistDetailView: View {
                         MusicListArtwork(symbol: "music.mic", size: 150)
                             .clipShape(Circle())
                         Text(detail.name).font(.largeTitle.bold())
-                        MusicPlaybackActions {
+                        MusicPlaybackActions(play: {
                             player.play(detail.song ?? [])
-                        } shuffle: {
+                        }, shuffle: {
                             player.shuffled = true
                             player.play(detail.song ?? [])
-                        } disabled: {
-                            (detail.song ?? []).isEmpty
-                        }
+                        }, disabled: (detail.song ?? []).isEmpty)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 18)
