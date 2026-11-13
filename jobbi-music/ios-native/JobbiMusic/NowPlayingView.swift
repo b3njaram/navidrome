@@ -52,8 +52,6 @@ struct NowPlayingView: View {
     @EnvironmentObject private var library: MusicLibrary
     @EnvironmentObject private var api: JobbiAPI
     @Environment(\.dismiss) private var dismiss
-    @State private var dragging = false
-    @State private var draggedValue = 0.0
     @State private var showingQueue = false
     @State private var showingLyrics = false
     @State private var lyrics: LyricsResponse?
