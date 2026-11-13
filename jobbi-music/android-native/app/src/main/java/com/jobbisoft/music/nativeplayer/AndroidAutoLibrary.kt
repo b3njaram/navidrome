@@ -28,12 +28,14 @@ internal class AndroidAutoLibrary(private val context: Context) {
     }
 
     private val index = ConcurrentHashMap<String, Song>()
+    private val browseIndex = ConcurrentHashMap<String, MediaItem>()
     @Volatile private var indexedAccount = ""
 
     private fun syncAccount() {
         val current = JobbiApi.username
         if (current != indexedAccount) {
             index.clear()
+            browseIndex.clear()
             indexedAccount = current
         }
     }
@@ -54,6 +56,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
     fun cachedItem(id: String): MediaItem? {
         syncAccount()
         if (id == ROOT) return root()
+        browseIndex[id]?.let { return it }
         val parent = when (id) {
             FAVORITES -> "Favorite Songs"
             PLAYLISTS -> "Playlists"
@@ -77,11 +80,12 @@ internal class AndroidAutoLibrary(private val context: Context) {
                 .setIsBrowsable(true)
                 .setIsPlayable(false)
                 .build())
-            .build()
+            .build().also { browseIndex[it.mediaId] = it }
 
     private fun playlist(playlist: MusicPlaylist): MediaItem =
         category(PREFIX_PLAYLIST + playlist.id,
             playlist.name, "${playlist.count} songs")
+            .also { browseIndex[it.mediaId] = it }
 
     private fun playable(song: Song): MediaItem {
         val offline = JobbiDownloads.playableUri(context, JobbiApi.username,
