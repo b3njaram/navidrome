@@ -35,6 +35,7 @@ struct SongRow: View {
     let queue: [Song]
     let index: Int
     var showAlbum = true
+    var showTrackNumber = false
     var onRemoveFromPlaylist: (() -> Void)? = nil
     var onServerRemoved: (() -> Void)? = nil
     @State private var showPlaylists = false
@@ -45,7 +46,14 @@ struct SongRow: View {
         HStack(spacing: 12) {
             Button { player.play(queue, from: index) } label: {
                 HStack(spacing: 12) {
-                    CoverArt(art: song.coverArt, size: 48)
+                    if showTrackNumber {
+                        Text("\(index + 1)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 38, alignment: .center)
+                    } else {
+                        CoverArt(art: song.coverArt, size: 48, cornerRadius: 8)
+                    }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(song.title).font(.body.weight(.medium))
                             .foregroundStyle(.primary).lineLimit(1)
@@ -101,7 +109,9 @@ struct SongRow: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 40, height: 44)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("More options for \(song.title)")
