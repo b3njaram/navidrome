@@ -42,7 +42,7 @@ import androidx.compose.runtime.setValue
  * through the lock screen, Bluetooth, headphones and Android Auto controls.
  */
 class MusicPlaybackService : MediaLibraryService() {
-    private var session: MediaLibrarySession? = null
+    private var session: MediaLibraryService.MediaLibrarySession? = null
     private val systemArtwork = SystemAlbumArtwork()
     private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var artworkJob: Job? = null
@@ -177,13 +177,13 @@ class MusicPlaybackService : MediaLibraryService() {
             Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        session = MediaLibrarySession.Builder(this, player,
+        session = MediaLibraryService.MediaLibrarySession.Builder(this, player,
             CarMediaSessionCallback(carLibrary,artworkScope))
             .setSessionActivity(launch)
             .build()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibraryService.MediaLibrarySession? = session
 
     override fun onDestroy() {
         progressHandler.removeCallbacks(listenTick)
