@@ -1,3 +1,13 @@
+### Samsung lock-screen progress and previous-track controls (v1.0.12)
+
+Android's system media card needs a positive track duration to show elapsed-time progress and an explicit previous command before it offers a back button. Some Navidrome transcoded streams report unknown durations through HTTP even though the Subsonic track catalog knows the real song length.
+
+The native Media3 session now publishes each song's known catalog duration (seconds converted to milliseconds) and falls back to that value whenever ExoPlayer's stream duration is unavailable. Actual ExoPlayer durations take precedence; unknown or invalid values are never fabricated. The session also advertises Previous and Next as preferred media controls. Previous goes to the prior song when available, otherwise restarts the current seekable song following the OS standard. If neither action is possible, the system may hide or disable the button.
+
+This enables **elapsed-time progress** and transport controls on Samsung's supported lock-screen/Now Bar and other Android system surfaces. Seek/scrub availability still depends on whether the underlying NAS stream supports seeking; we do **not** falsely enable scrubbing for unseekable streams. One UI decides which controls and whether a progress bar appear in its compact top-corner pill, and the app cannot force an OEM-specific overlay. Full expanded media controls are the recommended place to check the seek bar.
+
+Only native Android source changed; iPhone and website are untouched. CI validates metadata-duration bounds and system button commands. Please verify using an actual Samsung lock screen and a seekable track, ideally an original-quality or downloaded recording.
+
 ### Android Auto + Samsung lock-screen artwork (v1.0.11)
 
 **Android Auto:** Jobbi Music now advertises the standard Android Auto media-app descriptor and uses a Media3 **MediaLibraryService** rather than an unbrowsable playback-only service. The built-in car UI can browse Recently Added, Favorite Songs, Playlists, Albums and Downloads. Sign in to Jobbi Music on the phone before opening it in Android Auto. Browsing and car playback share the existing Media3 queue; they do not grant NAS administration or file-import actions to the car.
