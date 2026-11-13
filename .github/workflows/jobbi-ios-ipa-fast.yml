@@ -45,11 +45,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/JobbiPayload/Payload"
           cp -R "$APP" "$RUNNER_TEMP/JobbiPayload/Payload/JobbiMusic.app"
           cd "$RUNNER_TEMP/JobbiPayload"
-          zip -qry "$GITHUB_WORKSPACE/JobbiMusic-iOS-1.2.0-UNSIGNED.ipa" Payload
+          zip -qry "$GITHUB_WORKSPACE/JobbiMusic-iOS-1.2.1-UNSIGNED.ipa" Payload
       - name: Upload genuine device IPA (unsigned; Apple provisioning required)
         uses: actions/upload-artifact@v4
         with:
-          name: JobbiMusic-iOS-1.2.0-UNSIGNED-NOT-INSTALLABLE
-          path: JobbiMusic-iOS-1.2.0-UNSIGNED.ipa
+          name: JobbiMusic-iOS-1.2.1-UNSIGNED-NOT-INSTALLABLE
+          path: JobbiMusic-iOS-1.2.1-UNSIGNED.ipa
           retention-days: 30
           if-no-files-found: error
