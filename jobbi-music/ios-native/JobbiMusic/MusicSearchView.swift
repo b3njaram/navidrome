@@ -6,7 +6,11 @@ struct MusicSearchView: View {
     @EnvironmentObject private var player: MusicPlayer
     @State private var term = ""
     @State private var searching = false
-    @State private var mode = 0
+    @State private var mode: Int
+
+    init(initialMode: Int = 0) {
+        _mode = State(initialValue: initialMode)
+    }
     @State private var result = SearchResponse(song: [], album: [])
     @State private var peers: [SoulseekFile] = []
     @State private var status: String?
@@ -33,6 +37,33 @@ struct MusicSearchView: View {
                 }
             }
             if mode == 0 {
+                if term.isEmpty {
+                    Section("Browse Your Library") {
+                        NavigationLink {
+                            MusicAlbumDirectory()
+                        } label: {
+                            MusicLibraryCategoryRow(title: "Albums", symbol: "square.stack")
+                        }
+                        NavigationLink {
+                            MusicArtistDirectory()
+                        } label: {
+                            MusicLibraryCategoryRow(title: "Artists", symbol: "music.mic")
+                        }
+                        NavigationLink {
+                            MusicPlaylistDirectory()
+                        } label: {
+                            MusicLibraryCategoryRow(title: "Playlists", symbol: "music.note.list")
+                        }
+                    }
+                    if !(library.home?.recent ?? []).isEmpty {
+                        Section {
+                            AlbumShelf(title: "Recently Added",
+                                albums: library.home?.recent ?? [])
+                                .padding(.horizontal, -16)
+                                .listRowSeparator(.hidden)
+                        }
+                    }
+                }
                 if !(result.song ?? []).isEmpty {
                     Section("Songs") {
                         ForEach(Array((result.song ?? []).enumerated()), id: \.element.id) { index, song in
@@ -59,6 +90,30 @@ struct MusicSearchView: View {
                     }
                 }
             } else {
+                if term.isEmpty {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Find Something New")
+                                .font(.title2.bold())
+                            Text("Search Soulseek and verified alternate sources for music to add to your personal NAS library.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Label("Lossless FLAC when available", systemImage: "waveform")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(MusicAppearance.accent)
+                        }
+                        .padding(.vertical, 8)
+                        .listRowSeparator(.hidden)
+                    }
+                    if !(library.home?.recent ?? []).isEmpty {
+                        Section {
+                            AlbumShelf(title: "Fresh from Your NAS",
+                                albums: library.home?.recent ?? [])
+                                .padding(.horizontal, -16)
+                                .listRowSeparator(.hidden)
+                        }
+                    }
+                }
                 Section {
                     if peers.isEmpty && !searching {
                         ContentUnavailableView("Search Soulseek",
@@ -132,7 +187,11 @@ struct MusicSearchView: View {
                 }
             }
         }
-        .navigationTitle("Search")
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MusicAppearance.canvas)
+        .navigationTitle(mode == 0 ? "Search" : "New")
+        .navigationBarTitleDisplayMode(.large)
         .searchable(text: $term, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: mode == 0 ? "Songs, artists, albums" : "Song and artist to discover")
         .onSubmit(of: .search) { Task { await performSearch() } }

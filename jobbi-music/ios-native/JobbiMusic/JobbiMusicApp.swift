@@ -14,7 +14,7 @@ struct JobbiMusicApp: App {
                 .environmentObject(library)
                 .environmentObject(player)
                 .environmentObject(offline)
-                .tint(.pink)
+                .tint(MusicAppearance.accent)
         }
     }
 }
@@ -133,20 +133,55 @@ struct RootView: View {
                 }
             } else {
                 TabView(selection: $selectedTab) {
-                    Tab("Listen Now", systemImage: "house.fill", value: 0) {
-                        NavigationStack { ListenNowView() }
+                    Tab("Home", systemImage: "house.fill", value: 0) {
+                        NavigationStack {
+                            ListenNowView()
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        MusicAccountButton()
+                                    }
+                                }
+                        }
                     }
-                    Tab("Search", systemImage: "magnifyingglass", value: 1) {
-                        NavigationStack { MusicSearchView() }
+                    Tab("New", systemImage: "square.grid.2x2.fill", value: 1) {
+                        NavigationStack {
+                            MusicSearchView(initialMode: 1)
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        MusicAccountButton()
+                                    }
+                                }
+                        }
                     }
-                    Tab("Library", systemImage: "square.stack.fill", value: 2) {
-                        NavigationStack { LibraryView() }
+                    Tab("Community", systemImage: "person.2.fill", value: 2) {
+                        NavigationStack {
+                            CommunityView()
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        MusicAccountButton()
+                                    }
+                                }
+                        }
                     }
-                    Tab("Community", systemImage: "person.2.fill", value: 3) {
-                        NavigationStack { CommunityView() }
+                    Tab("Library", systemImage: "square.stack.fill", value: 3) {
+                        NavigationStack {
+                            LibraryView()
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        MusicAccountButton()
+                                    }
+                                }
+                        }
                     }
-                    Tab("Settings", systemImage: "gearshape.fill", value: 4) {
-                        NavigationStack { SettingsView() }
+                    Tab("Search", systemImage: "magnifyingglass", value: 4) {
+                        NavigationStack {
+                            MusicSearchView()
+                                .toolbar {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        MusicAccountButton()
+                                    }
+                                }
+                        }
                     }
                 }
                 .tabBarMinimizeBehavior(.onScrollDown)

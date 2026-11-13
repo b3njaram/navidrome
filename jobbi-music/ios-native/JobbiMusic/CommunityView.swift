@@ -145,7 +145,11 @@ struct CommunityView: View {
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MusicAppearance.canvas)
         .navigationTitle("Community")
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("New shared playlist", systemImage: "person.2.badge.plus") {
