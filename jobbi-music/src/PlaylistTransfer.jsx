@@ -397,7 +397,9 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   },[autoResume,selected]);
 
   const checkQueueStatus=async({silent=false}={})=>{
-    if(activeRef.current)return;
+    // The NAS worker owns saved imports, including post-download playlist
+    // updates. Never run the legacy browser reconciler in parallel with it.
+    if(activeRef.current||savedJobs.some(job=>job.id===savedJobId))return;
     activeRef.current=true;
     if(!silent){setWorking(true);setError('')}
     try{
@@ -443,8 +445,8 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   // The API callback may be recreated during player updates. Keep the poll
   // timer stable and call the newest authenticated implementation instead.
   pollRef.current=checkQueueStatus;
-  // System downloads continue after the page closes, but applying their
-  // finished tracks to playlists requires an authenticated browser session.
+  // Legacy browser-only imports still poll when there is no saved NAS job.
+  // The NAS worker owns persistent imports and already handles indexing.
   useEffect(()=>{
     const timer=setInterval(()=>{
       if(!activeRef.current&&stateRef.current.some(c=>
