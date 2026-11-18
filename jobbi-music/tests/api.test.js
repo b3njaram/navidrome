@@ -476,6 +476,15 @@ test('saved background collection import continues without an open browser reque
   assert.equal(adminJobs.jobs.some(j=>j.id===stored.job.id),false);
   const privateDetails=await get('/api/collection-jobs/'+stored.job.id);
   assert.equal(privateDetails.status,404);
+  const privateHealth=await get('/api/collection-jobs/'+stored.job.id+'/transfer-health');
+  assert.equal(privateHealth.status,404,'Transfer details must remain owner-private');
+  const health=await fetch(base+'/api/collection-jobs/'+stored.job.id+'/transfer-health',
+    {headers:{cookie:listenerCookie}});
+  assert.equal(health.status,200,'Owner can inspect actual NAS transfer health');
+  const healthBody=await health.json();
+  assert.equal(healthBody.counts.queued,0);
+  assert.equal(healthBody.uniqueTransfers,0);
+  assert.equal(typeof healthBody.downloaderConnected,'boolean');
   let completed=false;
   for(let i=0;i<24;i++){
     await new Promise(resolve=>setTimeout(resolve,500));
