@@ -1,5 +1,6 @@
 import express from 'express';
 import crypto from 'node:crypto';
+import {latestTransferSnapshot,findTransfer,transferStage} from './import-progress.js';
 import {ensureSocialProfile,normalUsername,socialQuery} from './social-db.js';
 import {
   parseCollectionManifest,findLocalSong,pickSoulseekCandidate,
@@ -34,6 +35,50 @@ const responseJob=row=>{
 
 export function summarizeCollectionJob(row){return responseJob(row)}
 
+/**
+ * Diagnose the actual downloader snapshot without changing the saved import.
+ * A collection "queued" entry is NOT proof that a peer is downloading it.
+ * Missing transfers remain unconfirmed, never falsely marked successful.
+ */
+export function summarizeCollectionTransferHealth(collections,importRows,snapshot){
+  const requests=new Map(importRows.map(row=>[String(row.id),row]));
+  const counts={queued:0,active:0,waiting:0,indexing:0,failed:0,
+    unconfirmed:0,unknown:0,otherSource:0,successful:0};
+  const examples=[];
+  const items=[];
+  for(const {track} of eligibleTracks(collections)){
+    if(!['queued','waiting'].includes(track.status))continue;
+    counts.queued++;
+    const id=String(track.importId||'');
+    const source=track.source||'unknown';
+    if(source!=='soulseek'){counts.otherSource++;continue}
+    const row=uuid.test(id)?requests.get(id):null;
+    if(!row){counts.unknown++;continue}
+    const stage=row.already_on_nas?
+      {stage:'existing',label:'Downloader knows this file; Navidrome is not indexed yet'}:
+      transferStage(row,findTransfer(row,snapshot.rows),snapshot.healthy);
+    const kind=stage.stage;
+    if(kind==='downloading')counts.active++;
+    else if(kind==='queued')counts.waiting++;
+    else if(['indexing','imported','existing','available'].includes(kind))
+      counts.indexing++;
+    else if(kind==='failed' || (row.status==='needs_review' &&
+      !row.already_on_nas && row.import_error))counts.failed++;
+    else counts.unconfirmed++;
+    if(examples.length<18 && (kind==='failed'||kind==='unconfirmed'||
+       (row.status==='needs_review'&&!row.already_on_nas))){
+      examples.push({title:track.title,artist:track.artist,
+        stage:kind==='failed'?'failed':kind,
+        reason:(row.import_error||stage.label||'Status unknown').slice(0,180)});
+    }
+    items.push({id,stage:kind});
+  }
+  const uniqueTransfers=new Set(items.map(x=>x.id)).size;
+  return {counts,downloaderConnected:snapshot.healthy,
+    uniqueTransfers,examples,checkedAt:new Date().toISOString(),
+    explanation:'Queued tracks are not necessarily active downloads. A missing transfer is unconfirmed, not automatically failed. No recordings or playlists were changed.'};
+}
+
 function checkJobID(id){
   if(!uuid.test(String(id||'')))throw Object.assign(Error('Invalid collection job ID'),{status:400});
   return id;
@@ -57,7 +102,7 @@ function firstPending(state,now){
   return null;
 }
 
-export function createCollectionJobsRouter({mustAuth,getSession,port}){
+export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}){
   const router=express.Router();
   let running=false;
   let timer;
@@ -305,6 +350,32 @@ export function createCollectionJobsRouter({mustAuth,getSession,port}){
       if(!results.rowCount)return res.status(404).json({error:'Saved import not found'});
       res.setHeader('Cache-Control','private, no-store');
       res.json({job:responseJob(results.rows[0]),manifest:results.rows[0].manifest});
+    }catch(error){sendError(res,error)}
+  });
+  router.get('/:id/transfer-health',mustAuth,async(req,res)=>{
+    try{
+      const owner=normalUsername(req.user.username);
+      const id=checkJobID(req.params.id);
+      const result=await socialQuery('SELECT '+META_FIELDS+
+        ' FROM collection_import_jobs WHERE id=$1 AND owner=$2',[id,owner]);
+      if(!result.rowCount)return res.status(404).json({error:'Saved import not found'});
+      const rows=eligibleTracks(result.rows[0].manifest.collections||[])
+        .map(x=>x.track)
+        .filter(x=>['queued','waiting'].includes(x.status) && x.source==='soulseek' &&
+          uuid.test(String(x.importId||'')));
+      const ids=[...new Set(rows.map(x=>String(x.importId)))].slice(0,5000);
+      let records=[];
+      if(ids.length){
+        const data=await socialQuery(`SELECT id,requester,peer_username,downloader_job_id,
+          already_on_nas,import_error,filename,status,created_at
+          FROM music_import_requests WHERE requester=$1 AND id=ANY($2::uuid[])`,[owner,ids]);
+        records=data.rows;
+      }
+      const snapshot=await latestTransferSnapshot(downloader);
+      const diagnostic=summarizeCollectionTransferHealth(
+        result.rows[0].manifest.collections||[],records,snapshot);
+      res.setHeader('Cache-Control','private, no-store');
+      res.json({...diagnostic,limited:rows.length>ids.length});
     }catch(error){sendError(res,error)}
   });
   router.get('/:id/source',mustAuth,async(req,res)=>{
