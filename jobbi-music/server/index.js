@@ -688,7 +688,7 @@ app.use('/api/music-imports',createMusicImportRouter({
   mustAuth,downloader:DOWNLOADER,statsFile:STORAGE_STATS_PATH,subsonic
 }));
 const collectionJobs=createCollectionJobsRouter({
-  mustAuth,getSession:activeCollectionSession,port:PORT
+  mustAuth,getSession:activeCollectionSession,port:PORT,downloader:DOWNLOADER
 });
 app.use('/api/collection-jobs',collectionJobs.router);
 

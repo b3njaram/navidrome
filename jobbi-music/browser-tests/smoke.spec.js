@@ -37,6 +37,14 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
       if(!selected)return reply({error:'Saved job unavailable'},404);
       if(pathname.endsWith('/source'))
         return route.fulfill({status:200,contentType:'application/json',body:selected.raw});
+      if(pathname.endsWith('/transfer-health'))
+        return reply({counts:{queued:2,active:0,waiting:1,indexing:0,
+          failed:0,unconfirmed:1,unknown:0,otherSource:0},
+          downloaderConnected:true,uniqueTransfers:2,
+          examples:[{title:'Lost Song',artist:'Test',stage:'unconfirmed',
+            reason:'Queue entry not found after 10 minutes'}],
+          checkedAt:'2026-11-18T18:00:00.000Z',
+          explanation:'Queued tracks are not necessarily active downloads.'});
       if(pathname.endsWith('/control')&&method==='POST'){
         selected.job.status=body.action==='pause'?'paused':
           body.action==='cancel'?'cancelled':'running';
@@ -928,6 +936,10 @@ test('saved import survives browser reload and preserves NAS ownership',async({p
   }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
   await expect(page.locator('[aria-label="Saved NAS collection imports"]')).toContainText('resumable.json');
   await expect(page.locator('[aria-label="Saved NAS collection imports"]')).toContainText('0/1 added');
+  await page.getByRole('button',{name:'Inspect actual transfers'}).click();
+  await expect(page.getByText(/1 waiting for peers/)).toBeVisible();
+  await expect(page.getByText(/1 unconfirmed/)).toBeVisible();
+  await expect(page.getByText(/Missing transfers are unconfirmed/)).toBeVisible();
   expect(state.savedJobs[0].raw).toBe(JSON.stringify(manifest));
   expect(errors).toEqual([]);
 });

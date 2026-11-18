@@ -48,6 +48,8 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const [savedJobs,setSavedJobs]=useState([]);
   const [savedJobId,setSavedJobId]=useState('');
   const [savedBusy,setSavedBusy]=useState(false);
+  const [transferChecks,setTransferChecks]=useState({});
+  const [transferCheckBusy,setTransferCheckBusy]=useState(null);
   const stateRef=useRef([]);
   const activeRef=useRef(false);
   const stopRef=useRef(false);
@@ -72,6 +74,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
     try{setSavedJobId(localStorage.getItem(storageKey+'/nas-job')||'')}
     catch{setSavedJobId('')}
     setSavedJobs([]);
+    setTransferChecks({});
   },[storageKey]);
   useEffect(()=>{
     const timer=setInterval(()=>void savedJobsRefresh.current?.(),12000);
@@ -164,6 +167,15 @@ export default function PlaylistTransfer({api,onLibrary,user}){
       await refreshSavedJobs(id);
     }catch(e){setError(e.message)}
     finally{setSavedBusy(false)}
+  };
+  const checkSavedTransfers=async(id)=>{
+    setTransferCheckBusy(id);
+    try{
+      const result=await api('/api/collection-jobs/'+encodeURIComponent(id)+'/transfer-health');
+      setTransferChecks(previous=>({...previous,[id]:result}));
+    }catch(e){
+      setTransferChecks(previous=>({...previous,[id]:{error:e.message}}));
+    }finally{setTransferCheckBusy(null)}
   };
   const activeSavedJob=savedJobs.find(job=>job.id===savedJobId)||null;
   const fetchLocal=async(row,{refresh=false}={})=>{
@@ -385,7 +397,9 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   },[autoResume,selected]);
 
   const checkQueueStatus=async({silent=false}={})=>{
-    if(activeRef.current)return;
+    // The NAS worker owns saved imports, including post-download playlist
+    // updates. Never run the legacy browser reconciler in parallel with it.
+    if(activeRef.current||savedJobs.some(job=>job.id===savedJobId))return;
     activeRef.current=true;
     if(!silent){setWorking(true);setError('')}
     try{
@@ -431,8 +445,8 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   // The API callback may be recreated during player updates. Keep the poll
   // timer stable and call the newest authenticated implementation instead.
   pollRef.current=checkQueueStatus;
-  // System downloads continue after the page closes, but applying their
-  // finished tracks to playlists requires an authenticated browser session.
+  // Legacy browser-only imports still poll when there is no saved NAS job.
+  // The NAS worker owns persistent imports and already handles indexing.
   useEffect(()=>{
     const timer=setInterval(()=>{
       if(!activeRef.current&&stateRef.current.some(c=>
@@ -527,10 +541,51 @@ export default function PlaylistTransfer({api,onLibrary,user}){
             onClick={()=>{setSavedJobId(job.id);void refreshSavedJobs(job.id)}}>
             {job.filename}{job.id===savedJobId?' · Selected':''}
           </button>
-          <small>{job.status} · {job.completed}/{job.total} added · {job.queued} downloading · {job.review} review · {job.pending} pending</small>
-          <progress value={job.completed+job.review} max={Math.max(1,job.total)}
-            aria-label={'Background import progress for '+job.filename}/>
+          <small>{job.status} · {job.completed}/{job.total} added · {job.queued} queued / awaiting indexing · {job.review} review · {job.pending} not checked</small>
+          <progress value={job.completed} max={Math.max(1,job.total)}
+            aria-label={'Songs actually added for '+job.filename}/>
           <span className="transfer-status">{job.message}</span>
+          {job.queued>0&&<p className="transfer-help">
+            Queued does not mean currently downloading. If the count has stopped
+            changing, inspect actual transfers before retrying anything.
+          </p>}
+          <button type="button" className="playlist-tool-button"
+            disabled={transferCheckBusy===job.id}
+            onClick={()=>checkSavedTransfers(job.id)}>
+            <RefreshCw size={16}/>
+            {transferCheckBusy===job.id?'Checking downloader…':'Inspect actual transfers'}
+          </button>
+          {transferChecks[job.id]&&<div className="transfer-card"
+            aria-label={'Actual transfer status for '+job.filename}>
+            {transferChecks[job.id].error?
+              <p className="inline-error">{transferChecks[job.id].error}</p>:
+              <>
+                <p className="transfer-help">
+                  Checked {new Date(transferChecks[job.id].checkedAt).toLocaleString()}
+                  {' · Downloader: '}
+                  {transferChecks[job.id].downloaderConnected?'connected':'not responding'}
+                  {' · '}
+                  {transferChecks[job.id].uniqueTransfers} distinct tracked Soulseek jobs
+                </p>
+                <p className="transfer-help">
+                  <b>{transferChecks[job.id].counts.active}</b> actively downloading
+                  {' · '}<b>{transferChecks[job.id].counts.waiting}</b> waiting for peers
+                  {' · '}<b>{transferChecks[job.id].counts.indexing}</b> indexing / on NAS
+                  {' · '}<b>{transferChecks[job.id].counts.failed}</b> failed
+                  {' · '}<b>{transferChecks[job.id].counts.unconfirmed}</b> unconfirmed
+                  {' · '}<b>{transferChecks[job.id].counts.unknown}</b> unknown
+                  {' · '}<b>{transferChecks[job.id].counts.otherSource}</b> alternative source
+                </p>
+                <p className="transfer-help">
+                  Missing transfers are unconfirmed—not proof of failure. This
+                  check never cancels, duplicates, or deletes an import.
+                </p>
+                {transferChecks[job.id].examples?.slice(0,8).map((entry,i)=>
+                  <div className="transfer-status" key={i}>
+                    {entry.title} — {entry.artist}: {entry.reason}
+                  </div>)}
+              </>}
+          </div>}
           <a className="playlist-tool-button" href={'/api/collection-jobs/'+encodeURIComponent(job.id)+'/source'}>Download saved source JSON</a>
         </div>
         <div className="playlist-tools-row">

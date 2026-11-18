@@ -1,5 +1,6 @@
 import express from 'express';
 import crypto from 'node:crypto';
+import {latestTransferSnapshot,findTransfer,transferStage} from './import-progress.js';
 import {ensureSocialProfile,normalUsername,socialQuery} from './social-db.js';
 import {
   parseCollectionManifest,findLocalSong,pickSoulseekCandidate,
@@ -34,6 +35,50 @@ const responseJob=row=>{
 
 export function summarizeCollectionJob(row){return responseJob(row)}
 
+/**
+ * Diagnose the actual downloader snapshot without changing the saved import.
+ * A collection "queued" entry is NOT proof that a peer is downloading it.
+ * Missing transfers remain unconfirmed, never falsely marked successful.
+ */
+export function summarizeCollectionTransferHealth(collections,importRows,snapshot){
+  const requests=new Map(importRows.map(row=>[String(row.id),row]));
+  const counts={queued:0,active:0,waiting:0,indexing:0,failed:0,
+    unconfirmed:0,unknown:0,otherSource:0};
+  const examples=[];
+  const items=[];
+  for(const {track} of eligibleTracks(collections)){
+    if(!['queued','waiting'].includes(track.status))continue;
+    counts.queued++;
+    const id=String(track.importId||'');
+    const source=track.source||'unknown';
+    if(source!=='soulseek'){counts.otherSource++;continue}
+    const row=uuid.test(id)?requests.get(id):null;
+    if(!row){counts.unknown++;continue}
+    const stage=row.already_on_nas?
+      {stage:'existing',label:'Downloader knows this file; Navidrome is not indexed yet'}:
+      transferStage(row,findTransfer(row,snapshot.rows),snapshot.healthy);
+    const kind=stage.stage;
+    if(kind==='downloading')counts.active++;
+    else if(kind==='queued')counts.waiting++;
+    else if(['indexing','imported','existing','available'].includes(kind))
+      counts.indexing++;
+    else if(kind==='failed' || (row.status==='needs_review' &&
+      !row.already_on_nas && row.import_error))counts.failed++;
+    else counts.unconfirmed++;
+    if(examples.length<18 && (kind==='failed'||kind==='unconfirmed'||
+       (row.status==='needs_review'&&!row.already_on_nas))){
+      examples.push({title:track.title,artist:track.artist,
+        stage:kind==='failed'?'failed':kind,
+        reason:(row.import_error||stage.label||'Status unknown').slice(0,180)});
+    }
+    items.push({id,stage:kind});
+  }
+  const uniqueTransfers=new Set(items.map(x=>x.id)).size;
+  return {counts,downloaderConnected:snapshot.healthy,
+    uniqueTransfers,examples,checkedAt:new Date().toISOString(),
+    explanation:'Queued tracks are not necessarily active downloads. A missing transfer is unconfirmed, not automatically failed. No recordings or playlists were changed.'};
+}
+
 function checkJobID(id){
   if(!uuid.test(String(id||'')))throw Object.assign(Error('Invalid collection job ID'),{status:400});
   return id;
@@ -57,11 +102,19 @@ function firstPending(state,now){
   return null;
 }
 
-export function createCollectionJobsRouter({mustAuth,getSession,port}){
+export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}){
   const router=express.Router();
   let running=false;
   let timer;
   let lastDiagnostic=0;
+  let cachedTransfers={at:0,snapshot:null};
+  async function transferSnapshot(){
+    if(!cachedTransfers.snapshot || Date.now()-cachedTransfers.at>25_000){
+      cachedTransfers.snapshot=await latestTransferSnapshot(downloader);
+      cachedTransfers.at=Date.now();
+    }
+    return cachedTransfers.snapshot;
+  }
 
   // Authentication remains exactly the same as for browser or native clients.
   // Tokens and Navidrome credentials stay in RAM, never in the job database.
@@ -92,9 +145,12 @@ export function createCollectionJobsRouter({mustAuth,getSession,port}){
     const result=await localAPI(session,'/api/search?q='+q);
     return findLocalSong(track,result.song||[])||null;
   }
-  async function saveState(job,state,status=job.status,message=job.message){
-    const saved=await socialQuery('UPDATE collection_import_jobs SET manifest=$2::jsonb,status=$3,message=$4,updated_at=now(),lease_until=NULL WHERE id=$1 AND status IN (\'running\',\'monitoring\',\'reauth\') RETURNING id',
-      [job.id,JSON.stringify(state),status,String(message||'').slice(0,300)]);
+  async function saveState(job,state,status=job.status,message=job.message,releaseLease=true){
+    const saved=await socialQuery(`UPDATE collection_import_jobs SET
+      manifest=$2::jsonb,status=$3,message=$4,updated_at=now(),
+      lease_until=CASE WHEN $5 THEN NULL ELSE now()+interval '120 seconds' END
+      WHERE id=$1 AND status IN ('running','monitoring','reauth') RETURNING id`,
+      [job.id,JSON.stringify(state),status,String(message||'').slice(0,300),releaseLease]);
     if(!saved.rowCount)throw Error('Job was paused or cancelled');
   }
   async function applySong(job,session,state,collection,track,song){
@@ -111,7 +167,7 @@ export function createCollectionJobsRouter({mustAuth,getSession,port}){
         collection.destinationId=id;
         // Save the ID immediately so a restarted job never creates a second
         // playlist after a successful createPlaylist response.
-        await saveState(job,state,'running','Created '+collection.name);
+        await saveState(job,state,'running','Created '+collection.name,false);
       }
       const existing=await localAPI(session,'/api/playlists/'+
         encodeURIComponent(collection.destinationId));
@@ -185,8 +241,41 @@ export function createCollectionJobsRouter({mustAuth,getSession,port}){
     if(mode==='reconcile'){
       track.status='queued';
       track.retryAt=Date.now()+WAIT_FOR_INDEX_MS;
-      track.note='Waiting for NAS download and Navidrome indexing';
-      return 'Monitoring downloads';
+      // An accepted queue request is not proof that a peer is downloading.
+      // Once the downloader explicitly reports failure, stop waiting forever.
+      if(track.source==='soulseek' && uuid.test(String(track.importId||''))){
+        const result=await socialQuery(`SELECT id,requester,peer_username,
+          downloader_job_id,filename,status,created_at,already_on_nas,import_error
+          FROM music_import_requests WHERE requester=$1 AND id=$2`,
+          [job.owner,track.importId]);
+        if(result.rowCount){
+          const request=result.rows[0];
+          if(request.status==='needs_review'&&!request.already_on_nas&&
+             request.import_error){
+            track.status='review';
+            track.note='Downloader needs review: '+String(request.import_error).slice(0,190);
+            delete track.retryAt;
+            return track.note;
+          }
+          const snapshot=await transferSnapshot();
+          if(snapshot.healthy){
+            const detail=transferStage(request,
+              findTransfer(request,snapshot.rows),snapshot.healthy);
+            if(detail.stage==='failed'){
+              track.status='review';
+              track.note='Transfer failed: '+detail.label;
+              delete track.retryAt;
+              return track.note;
+            }
+            track.note=detail.label;
+            return detail.label;
+          }
+          track.note='Downloader status unavailable; waiting for NAS indexing';
+          return track.note;
+        }
+      }
+      track.note='Queued or awaiting indexing; transfer not verified active';
+      return track.note;
     }
     // Music represented in multiple collections is queued once, then applied
     // to each collection when it is indexed in Navidrome.
@@ -243,38 +332,48 @@ export function createCollectionJobsRouter({mustAuth,getSession,port}){
         const lock=await socialQuery('UPDATE collection_import_jobs SET lease_until=now()+interval \'120 seconds\' WHERE id=$1 AND (lease_until IS NULL OR lease_until<now()) AND status IN (\'running\',\'monitoring\',\'reauth\') RETURNING id',[job.id]);
         if(!lock.rowCount)continue;
         const state=job.manifest;
-        const candidate=firstPending(state,Date.now());
-        if(!candidate){
-          const rows=eligibleTracks(state.collections);
-          const waiting=rows.filter(x=>['queued','waiting'].includes(x.track.status));
-          const future=rows.some(x=>x.track.status==='unsearched');
-          const status=waiting.length?'monitoring':future?'running':'finished';
-          await saveState(job,state,status,waiting.length?
-            'Waiting for '+waiting.length+' NAS downloads to appear in your library':
-            future?'Waiting for temporary download cooldown':'Import scan finished');
-          break;
+        // One remote search per tick. Once searching is finished, check up to
+        // five previously queued songs without submitting any new downloads.
+        // Hold the lease until the whole batch is persisted: another Node
+        // process must never reconcile the same collection concurrently.
+        let message='Checking NAS library';
+        let overrideStatus=null;
+        let shouldSave=true;
+        for(let reconciled=0;reconciled<5;reconciled++){
+          const candidate=firstPending(state,Date.now());
+          if(!candidate)break;
+          try{
+            message=await processTrack(job,session,state,
+              candidate.row.collection,candidate.row.track,candidate.mode);
+          }catch(error){
+            if(error.message==='Job was paused or cancelled'){
+              shouldSave=false;
+              break;
+            }
+            candidate.row.track.retryAt=Date.now()+
+              (error.status===429?Math.max(60,Number(error.retryAfterSeconds)||3600)*ONE_SECOND:60_000);
+            candidate.row.track.note='Will retry: '+String(error.message||'Temporary server error').slice(0,180);
+            message=candidate.row.track.note;
+            if(error.status===401){
+              overrideStatus='reauth';
+              message='Session expired; sign in again to resume';
+            }
+            break;
+          }
+          if(candidate.mode!=='reconcile')break;
         }
-        try{
-          const message=await processTrack(job,session,state,
-            candidate.row.collection,candidate.row.track,candidate.mode);
+        if(shouldSave){
           const rows=eligibleTracks(state.collections);
           const waiting=rows.some(x=>['queued','waiting'].includes(x.track.status));
           const pending=rows.some(x=>x.track.status==='unsearched');
-          await saveState(job,state,pending?'running':waiting?'monitoring':'finished',
-            !pending&&!waiting?'Import scan finished':message);
-        }catch(error){
-          if(error.message==='Job was paused or cancelled')break;
-          // Only transient errors are retried; no false "no match" results.
-          candidate.row.track.retryAt=Date.now()+
-            (error.status===429?Math.max(60,Number(error.retryAfterSeconds)||3600)*ONE_SECOND:60_000);
-          candidate.row.track.note='Will retry: '+String(error.message||'Temporary server error').slice(0,180);
-          if(error.status===401){
-            await saveState(job,state,'reauth','Session expired; sign in again to resume');
-          }else{
-            await saveState(job,state,'running',candidate.row.track.note);
-          }
+          const status=overrideStatus||
+            (pending?'running':waiting?'monitoring':'finished');
+          if(!waiting&&!pending&&!overrideStatus)message='Import scan finished';
+          else if(waiting&&!pending&&message==='Checking NAS library')
+            message='Waiting for queued NAS recordings to appear in the library';
+          await saveState(job,state,status,message);
         }
-        // Bounded to one track per tick across the NAS, not a daily request cap.
+        // Only one collection job runs per tick to keep NAS demand predictable.
         break;
       }
     }catch(error){
@@ -305,6 +404,32 @@ export function createCollectionJobsRouter({mustAuth,getSession,port}){
       if(!results.rowCount)return res.status(404).json({error:'Saved import not found'});
       res.setHeader('Cache-Control','private, no-store');
       res.json({job:responseJob(results.rows[0]),manifest:results.rows[0].manifest});
+    }catch(error){sendError(res,error)}
+  });
+  router.get('/:id/transfer-health',mustAuth,async(req,res)=>{
+    try{
+      const owner=normalUsername(req.user.username);
+      const id=checkJobID(req.params.id);
+      const result=await socialQuery('SELECT '+META_FIELDS+
+        ' FROM collection_import_jobs WHERE id=$1 AND owner=$2',[id,owner]);
+      if(!result.rowCount)return res.status(404).json({error:'Saved import not found'});
+      const rows=eligibleTracks(result.rows[0].manifest.collections||[])
+        .map(x=>x.track)
+        .filter(x=>['queued','waiting'].includes(x.status) && x.source==='soulseek' &&
+          uuid.test(String(x.importId||'')));
+      const ids=[...new Set(rows.map(x=>String(x.importId)))].slice(0,5000);
+      let records=[];
+      if(ids.length){
+        const data=await socialQuery(`SELECT id,requester,peer_username,downloader_job_id,
+          already_on_nas,import_error,filename,status,created_at
+          FROM music_import_requests WHERE requester=$1 AND id=ANY($2::uuid[])`,[owner,ids]);
+        records=data.rows;
+      }
+      const snapshot=await latestTransferSnapshot(downloader);
+      const diagnostic=summarizeCollectionTransferHealth(
+        result.rows[0].manifest.collections||[],records,snapshot);
+      res.setHeader('Cache-Control','private, no-store');
+      res.json({...diagnostic,limited:new Set(rows.map(x=>String(x.importId))).size>ids.length});
     }catch(error){sendError(res,error)}
   });
   router.get('/:id/source',mustAuth,async(req,res)=>{
