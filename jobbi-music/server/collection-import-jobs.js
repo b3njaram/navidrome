@@ -329,42 +329,46 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
         const lock=await socialQuery('UPDATE collection_import_jobs SET lease_until=now()+interval \'120 seconds\' WHERE id=$1 AND (lease_until IS NULL OR lease_until<now()) AND status IN (\'running\',\'monitoring\',\'reauth\') RETURNING id',[job.id]);
         if(!lock.rowCount)continue;
         const state=job.manifest;
-        // One remote search per tick; once all searches finish, reconcile up to
-        // five previously queued tracks per tick to avoid a 30+ minute scan.
+        // One remote search per tick. Once searching is finished, check up to
+        // five previously queued songs without submitting any new downloads.
+        // Hold the lease until the whole batch is persisted: another Node
+        // process must never reconcile the same collection concurrently.
+        let message='Checking NAS library';
+        let overrideStatus=null;
+        let shouldSave=true;
         for(let reconciled=0;reconciled<5;reconciled++){
           const candidate=firstPending(state,Date.now());
-          if(!candidate){
-            const rows=eligibleTracks(state.collections);
-            const waiting=rows.filter(x=>['queued','waiting'].includes(x.track.status));
-            const future=rows.some(x=>x.track.status==='unsearched');
-            const status=waiting.length?'monitoring':future?'running':'finished';
-            await saveState(job,state,status,waiting.length?
-              'Waiting for '+waiting.length+' queued recordings to appear in your library':
-              future?'Waiting for temporary download cooldown':'Import scan finished');
-            break;
-          }
+          if(!candidate)break;
           try{
-            const message=await processTrack(job,session,state,
+            message=await processTrack(job,session,state,
               candidate.row.collection,candidate.row.track,candidate.mode);
-            const rows=eligibleTracks(state.collections);
-            const waiting=rows.some(x=>['queued','waiting'].includes(x.track.status));
-            const pending=rows.some(x=>x.track.status==='unsearched');
-            await saveState(job,state,pending?'running':waiting?'monitoring':'finished',
-              !pending&&!waiting?'Import scan finished':message);
           }catch(error){
-            if(error.message==='Job was paused or cancelled')break;
-            // Temporary failures remain retriable without discarding imports.
+            if(error.message==='Job was paused or cancelled'){
+              shouldSave=false;
+              break;
+            }
             candidate.row.track.retryAt=Date.now()+
               (error.status===429?Math.max(60,Number(error.retryAfterSeconds)||3600)*ONE_SECOND:60_000);
             candidate.row.track.note='Will retry: '+String(error.message||'Temporary server error').slice(0,180);
+            message=candidate.row.track.note;
             if(error.status===401){
-              await saveState(job,state,'reauth','Session expired; sign in again to resume');
-            }else{
-              await saveState(job,state,'running',candidate.row.track.note);
+              overrideStatus='reauth';
+              message='Session expired; sign in again to resume';
             }
             break;
           }
           if(candidate.mode!=='reconcile')break;
+        }
+        if(shouldSave){
+          const rows=eligibleTracks(state.collections);
+          const waiting=rows.some(x=>['queued','waiting'].includes(x.track.status));
+          const pending=rows.some(x=>x.track.status==='unsearched');
+          const status=overrideStatus||
+            (pending?'running':waiting?'monitoring':'finished');
+          if(!waiting&&!pending&&!overrideStatus)message='Import scan finished';
+          else if(waiting&&!pending&&message==='Checking NAS library')
+            message='Waiting for queued NAS recordings to appear in the library';
+          await saveState(job,state,status,message);
         }
         // Only one collection job runs per tick to keep NAS demand predictable.
         break;
