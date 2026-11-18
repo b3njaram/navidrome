@@ -145,9 +145,12 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
     const result=await localAPI(session,'/api/search?q='+q);
     return findLocalSong(track,result.song||[])||null;
   }
-  async function saveState(job,state,status=job.status,message=job.message){
-    const saved=await socialQuery('UPDATE collection_import_jobs SET manifest=$2::jsonb,status=$3,message=$4,updated_at=now(),lease_until=NULL WHERE id=$1 AND status IN (\'running\',\'monitoring\',\'reauth\') RETURNING id',
-      [job.id,JSON.stringify(state),status,String(message||'').slice(0,300)]);
+  async function saveState(job,state,status=job.status,message=job.message,releaseLease=true){
+    const saved=await socialQuery(`UPDATE collection_import_jobs SET
+      manifest=$2::jsonb,status=$3,message=$4,updated_at=now(),
+      lease_until=CASE WHEN $5 THEN NULL ELSE now()+interval '120 seconds' END
+      WHERE id=$1 AND status IN ('running','monitoring','reauth') RETURNING id`,
+      [job.id,JSON.stringify(state),status,String(message||'').slice(0,300),releaseLease]);
     if(!saved.rowCount)throw Error('Job was paused or cancelled');
   }
   async function applySong(job,session,state,collection,track,song){
@@ -164,7 +167,7 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
         collection.destinationId=id;
         // Save the ID immediately so a restarted job never creates a second
         // playlist after a successful createPlaylist response.
-        await saveState(job,state,'running','Created '+collection.name);
+        await saveState(job,state,'running','Created '+collection.name,false);
       }
       const existing=await localAPI(session,'/api/playlists/'+
         encodeURIComponent(collection.destinationId));
