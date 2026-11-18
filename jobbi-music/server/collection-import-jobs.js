@@ -43,7 +43,7 @@ export function summarizeCollectionJob(row){return responseJob(row)}
 export function summarizeCollectionTransferHealth(collections,importRows,snapshot){
   const requests=new Map(importRows.map(row=>[String(row.id),row]));
   const counts={queued:0,active:0,waiting:0,indexing:0,failed:0,
-    unconfirmed:0,unknown:0,otherSource:0,successful:0};
+    unconfirmed:0,unknown:0,otherSource:0};
   const examples=[];
   const items=[];
   for(const {track} of eligibleTracks(collections)){
@@ -107,6 +107,14 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
   let running=false;
   let timer;
   let lastDiagnostic=0;
+  let cachedTransfers={at:0,snapshot:null};
+  async function transferSnapshot(){
+    if(!cachedTransfers.snapshot || Date.now()-cachedTransfers.at>25_000){
+      cachedTransfers.snapshot=await latestTransferSnapshot(downloader);
+      cachedTransfers.at=Date.now();
+    }
+    return cachedTransfers.snapshot;
+  }
 
   // Authentication remains exactly the same as for browser or native clients.
   // Tokens and Navidrome credentials stay in RAM, never in the job database.
@@ -230,8 +238,41 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
     if(mode==='reconcile'){
       track.status='queued';
       track.retryAt=Date.now()+WAIT_FOR_INDEX_MS;
-      track.note='Waiting for NAS download and Navidrome indexing';
-      return 'Monitoring downloads';
+      // An accepted queue request is not proof that a peer is downloading.
+      // Once the downloader explicitly reports failure, stop waiting forever.
+      if(track.source==='soulseek' && uuid.test(String(track.importId||''))){
+        const result=await socialQuery(`SELECT id,requester,peer_username,
+          downloader_job_id,filename,status,created_at,already_on_nas,import_error
+          FROM music_import_requests WHERE requester=$1 AND id=$2`,
+          [job.owner,track.importId]);
+        if(result.rowCount){
+          const request=result.rows[0];
+          if(request.status==='needs_review'&&!request.already_on_nas&&
+             request.import_error){
+            track.status='review';
+            track.note='Downloader needs review: '+String(request.import_error).slice(0,190);
+            delete track.retryAt;
+            return track.note;
+          }
+          const snapshot=await transferSnapshot();
+          if(snapshot.healthy){
+            const detail=transferStage(request,
+              findTransfer(request,snapshot.rows),snapshot.healthy);
+            if(detail.stage==='failed'){
+              track.status='review';
+              track.note='Transfer failed: '+detail.label;
+              delete track.retryAt;
+              return track.note;
+            }
+            track.note=detail.label;
+            return detail.label;
+          }
+          track.note='Downloader status unavailable; waiting for NAS indexing';
+          return track.note;
+        }
+      }
+      track.note='Queued or awaiting indexing; transfer not verified active';
+      return track.note;
     }
     // Music represented in multiple collections is queued once, then applied
     // to each collection when it is indexed in Navidrome.
@@ -288,38 +329,44 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
         const lock=await socialQuery('UPDATE collection_import_jobs SET lease_until=now()+interval \'120 seconds\' WHERE id=$1 AND (lease_until IS NULL OR lease_until<now()) AND status IN (\'running\',\'monitoring\',\'reauth\') RETURNING id',[job.id]);
         if(!lock.rowCount)continue;
         const state=job.manifest;
-        const candidate=firstPending(state,Date.now());
-        if(!candidate){
-          const rows=eligibleTracks(state.collections);
-          const waiting=rows.filter(x=>['queued','waiting'].includes(x.track.status));
-          const future=rows.some(x=>x.track.status==='unsearched');
-          const status=waiting.length?'monitoring':future?'running':'finished';
-          await saveState(job,state,status,waiting.length?
-            'Waiting for '+waiting.length+' NAS downloads to appear in your library':
-            future?'Waiting for temporary download cooldown':'Import scan finished');
-          break;
-        }
-        try{
-          const message=await processTrack(job,session,state,
-            candidate.row.collection,candidate.row.track,candidate.mode);
-          const rows=eligibleTracks(state.collections);
-          const waiting=rows.some(x=>['queued','waiting'].includes(x.track.status));
-          const pending=rows.some(x=>x.track.status==='unsearched');
-          await saveState(job,state,pending?'running':waiting?'monitoring':'finished',
-            !pending&&!waiting?'Import scan finished':message);
-        }catch(error){
-          if(error.message==='Job was paused or cancelled')break;
-          // Only transient errors are retried; no false "no match" results.
-          candidate.row.track.retryAt=Date.now()+
-            (error.status===429?Math.max(60,Number(error.retryAfterSeconds)||3600)*ONE_SECOND:60_000);
-          candidate.row.track.note='Will retry: '+String(error.message||'Temporary server error').slice(0,180);
-          if(error.status===401){
-            await saveState(job,state,'reauth','Session expired; sign in again to resume');
-          }else{
-            await saveState(job,state,'running',candidate.row.track.note);
+        // One remote search per tick; once all searches finish, reconcile up to
+        // five previously queued tracks per tick to avoid a 30+ minute scan.
+        for(let reconciled=0;reconciled<5;reconciled++){
+          const candidate=firstPending(state,Date.now());
+          if(!candidate){
+            const rows=eligibleTracks(state.collections);
+            const waiting=rows.filter(x=>['queued','waiting'].includes(x.track.status));
+            const future=rows.some(x=>x.track.status==='unsearched');
+            const status=waiting.length?'monitoring':future?'running':'finished';
+            await saveState(job,state,status,waiting.length?
+              'Waiting for '+waiting.length+' queued recordings to appear in your library':
+              future?'Waiting for temporary download cooldown':'Import scan finished');
+            break;
           }
+          try{
+            const message=await processTrack(job,session,state,
+              candidate.row.collection,candidate.row.track,candidate.mode);
+            const rows=eligibleTracks(state.collections);
+            const waiting=rows.some(x=>['queued','waiting'].includes(x.track.status));
+            const pending=rows.some(x=>x.track.status==='unsearched');
+            await saveState(job,state,pending?'running':waiting?'monitoring':'finished',
+              !pending&&!waiting?'Import scan finished':message);
+          }catch(error){
+            if(error.message==='Job was paused or cancelled')break;
+            // Temporary failures remain retriable without discarding imports.
+            candidate.row.track.retryAt=Date.now()+
+              (error.status===429?Math.max(60,Number(error.retryAfterSeconds)||3600)*ONE_SECOND:60_000);
+            candidate.row.track.note='Will retry: '+String(error.message||'Temporary server error').slice(0,180);
+            if(error.status===401){
+              await saveState(job,state,'reauth','Session expired; sign in again to resume');
+            }else{
+              await saveState(job,state,'running',candidate.row.track.note);
+            }
+            break;
+          }
+          if(candidate.mode!=='reconcile')break;
         }
-        // Bounded to one track per tick across the NAS, not a daily request cap.
+        // Only one collection job runs per tick to keep NAS demand predictable.
         break;
       }
     }catch(error){
@@ -375,7 +422,7 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
       const diagnostic=summarizeCollectionTransferHealth(
         result.rows[0].manifest.collections||[],records,snapshot);
       res.setHeader('Cache-Control','private, no-store');
-      res.json({...diagnostic,limited:rows.length>ids.length});
+      res.json({...diagnostic,limited:new Set(rows.map(x=>String(x.importId))).size>ids.length});
     }catch(error){sendError(res,error)}
   });
   router.get('/:id/source',mustAuth,async(req,res)=>{
