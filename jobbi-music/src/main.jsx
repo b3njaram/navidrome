@@ -289,7 +289,8 @@ function NavidromeScanFeedback({scan}) {
   const completed=phase.kind==='completed'&&!active;
   const requested=phase.kind==='requested'&&!active;
   const label=error?'Scan status unavailable':active?'Navidrome scanning…':
-    completed?'Scan finished':requested?'Scan requested — awaiting confirmation':
+    completed?(status?.error?'Scan finished with errors':'Scan finished'):
+    requested?'Scan requested — awaiting confirmation':
     status?'Navidrome idle':'Checking Navidrome…';
   const count=Number.isFinite(Number(status?.count))&&status?.count!=null?
     Number(status.count).toLocaleString():'—';
@@ -297,7 +298,16 @@ function NavidromeScanFeedback({scan}) {
     Number(status.folderCount).toLocaleString():null;
   const lastScan=status?.lastScan&&Number.isFinite(Date.parse(status.lastScan))?
     new Date(status.lastScan).toLocaleString():null;
-  const observedText=seconds==null?'—':scanClockDuration(seconds);
+  const nativeSeconds=status?.elapsedSeconds==null?null:Number(status.elapsedSeconds);
+  const nativeElapsed=Number.isFinite(nativeSeconds)&&nativeSeconds>=0;
+  const observedAtMs=Date.parse(checkedAt||'');
+  const interpolatedSeconds=nativeElapsed?
+    nativeSeconds+(active&&Number.isFinite(observedAtMs)?
+      Math.max(0,Math.floor((scan.clock-observedAtMs)/1000)):0):seconds;
+  const elapsedText=interpolatedSeconds==null?'—':scanClockDuration(interpolatedSeconds);
+  const scanType=status?.scanType==='quick'?'Quick scan':
+    status?.scanType==='full'?'Full scan':
+    status?.scanType==='selective'?'Selective scan':null;
   return <div className={'library-scan-feedback'+(active?' library-scan-running':'')}
               role="region" aria-label="Navidrome library scan status">
     <div className="library-scan-feedback-header">
@@ -313,12 +323,14 @@ function NavidromeScanFeedback({scan}) {
     </div>
     <div className="library-scan-feedback-metrics">
       <div><strong>{count}</strong><span>Items processed (Navidrome)</span></div>
-      <div><strong>{observedText}</strong><span>{phase.requestedAt?
-        'Observed scan time':'Time observed by Jobbi'}</span></div>
+      <div><strong>{elapsedText}</strong><span>{nativeElapsed?
+        'Elapsed time (Navidrome)':'Time observed by Jobbi'}</span></div>
       {folders!==null&&<div><strong>{folders}</strong><span>Folders processed</span></div>}
     </div>
     {requested&&<p>Navidrome accepted the scan request, but a running scan has not been observed yet. An idle response alone does not prove it finished.</p>}
-    {completed&&<p>Navidrome changed from scanning to idle. Scan completed in the observed session.</p>}
+    {completed&&<p>Navidrome changed from scanning to idle. The scan has finished; an indexed file is not necessarily a newly added Favorite.</p>}
+    {scanType&&<p>Scan type: {scanType}.</p>}
+    {status?.error&&<p className="library-scan-feedback-error">Navidrome scan error: {status.error}</p>}
     {active&&<p>Live counts from Navidrome. The total number of files to check is not provided, so progress is not shown as a percentage.</p>}
     {!active&&!completed&&!requested&&!error&&<p>No scan is running. Use Scan library above to request one.</p>}
     {error&&<p className="library-scan-feedback-error">{error}. The previous counts may be stale.</p>}
