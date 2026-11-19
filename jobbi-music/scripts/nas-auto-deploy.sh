@@ -115,11 +115,51 @@ if [ "$success" -ne 1 ];then
   rollback_release
   exit 1
 fi
-if [ "$WORKER_UPDATE" = 1 ] &&
-   ! docker exec jobbi-invidious-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health',timeout=5).read()" >/dev/null 2>&1;then
-  log "Invidious worker health check failed."
-  rollback_release
-  exit 1
+if [ "$WORKER_UPDATE" = 1 ];then
+  # A just-recreated Docker container may take a few seconds to become ready.
+  # Do not roll back a healthy worker because the first probe raced startup.
+  WORKER_READY=0
+  i=0
+  while [ "$i" -lt 20 ];do
+    if docker exec jobbi-invidious-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health',timeout=5).read()" >/dev/null 2>&1;then
+      WORKER_READY=1
+      break
+    fi
+    sleep 3
+    i=$((i+1))
+  done
+  if [ "$WORKER_READY" -ne 1 ];then
+    log "Invidious worker health check failed after 20 attempts. Capturing diagnostic logs before rollback."
+    docker inspect -f 'Worker status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}' jobbi-invidious-worker 2>&1 | tee -a "$LOG" || true
+    docker logs --tail 50 jobbi-invidious-worker 2>&1 | tee -a "$LOG" || true
+    log "Worker startup failed. Check WORKER_SECRET length (>=32), import-folder permissions, and worker logs above."
+    rollback_release
+    exit 1
+  fi
+  # Check the real application-to-worker route, not merely its localhost port.
+  # This also detects an outdated worker image (404) or a secret mismatch (403).
+  if ! docker exec jobbi-music node -e '
+const url=process.env.INVIDIOUS_WORKER_URL;
+const token=process.env.INVIDIOUS_WORKER_SECRET;
+if(url!=="http://jobbi-invidious-worker:8091"||!token||token.length<32){
+  console.error("Worker URL/token not configured in Jobbi Music");process.exit(1);
+}
+fetch(url+"/inspect",{
+  method:"POST",
+  headers:{"X-Worker-Token":token,"Content-Type":"application/json"},
+  body:JSON.stringify({owner:"user-healthcheck",videoIds:[]}),
+  signal:AbortSignal.timeout(15000)
+}).then(async response=>{
+  if(!response.ok)throw Error("Worker /inspect returned HTTP "+response.status);
+  const body=await response.json();
+  if(!Array.isArray(body.items))throw Error("Unexpected inspector response");
+  console.log("Invidious worker reachable and authenticated from Jobbi Music");
+}).catch(error=>{console.error(error.message);process.exit(1)});
+' 2>&1 | tee -a "$LOG";then
+    log "Website-to-worker inspection failed; check URL/token and Docker networking before retry."
+    rollback_release
+    exit 1
+  fi
 fi
 printf '%s\n' "$SHA" > "$STATE"
 log "Preview updated to $SHA. /api/status is healthy."
