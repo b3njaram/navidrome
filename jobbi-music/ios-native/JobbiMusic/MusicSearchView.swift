@@ -38,23 +38,6 @@ struct MusicSearchView: View {
             }
             if mode == 0 {
                 if term.isEmpty {
-                    Section("Browse Your Library") {
-                        NavigationLink {
-                            MusicAlbumDirectory()
-                        } label: {
-                            MusicLibraryCategoryRow(title: "Albums", symbol: "square.stack")
-                        }
-                        NavigationLink {
-                            MusicArtistDirectory()
-                        } label: {
-                            MusicLibraryCategoryRow(title: "Artists", symbol: "music.mic")
-                        }
-                        NavigationLink {
-                            MusicPlaylistDirectory()
-                        } label: {
-                            MusicLibraryCategoryRow(title: "Playlists", symbol: "music.note.list")
-                        }
-                    }
                     if !(library.home?.recent ?? []).isEmpty {
                         Section {
                             AlbumShelf(title: "Recently Added",
@@ -100,7 +83,7 @@ struct MusicSearchView: View {
                                 .foregroundStyle(.secondary)
                             Label("Lossless FLAC when available", systemImage: "waveform")
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(MusicAppearance.accent)
+                                .foregroundStyle(MusicAppearance.teal)
                         }
                         .padding(.vertical, 8)
                         .listRowSeparator(.hidden)
@@ -132,7 +115,7 @@ struct MusicSearchView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "waveform")
-                                    .foregroundStyle(.pink)
+                                    .foregroundStyle(MusicAppearance.teal)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(file.displayName).lineLimit(2)
                                         .foregroundStyle(.primary)
@@ -190,7 +173,7 @@ struct MusicSearchView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(MusicAppearance.canvas)
-        .navigationTitle(mode == 0 ? "Search" : "New")
+        .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $term, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: mode == 0 ? "Songs, artists, albums" : "Song and artist to discover")
