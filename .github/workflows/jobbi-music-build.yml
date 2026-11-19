@@ -46,6 +46,7 @@ jobs:
       - run: npm run check
       - run: sh -n scripts/nas-security-audit.sh
       - run: sh -n scripts/nas-auto-deploy.sh
+      - run: sh -n scripts/enable-invidious-import.sh
       - run: sh -n scripts/nas-go-live.sh
       - run: node --check scripts/cloudflare-cutover.mjs
       - run: sh -n scripts/enable-social.sh
