@@ -14,10 +14,52 @@ async function requestWorker(url,secret,method,path,body){
     body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(10000)
   });
   const raw=await response.text();
-  if(raw.length>50000)throw Error('Import worker sent too much data');
+  if(raw.length>120000)throw Error('Import worker sent too much data');
   let data;try{data=JSON.parse(raw)}catch{throw Error('Import worker sent invalid JSON')}
   return {status:response.status,ok:response.ok,data};
 }
+/**
+ * Worker-only inspection of known, authorized fallback recordings. Unlike
+ * /jobs this can see files whose history has rolled out of the status list.
+ * It returns only video IDs, statuses and file-present booleans, never paths.
+ */
+export async function inspectInvidiousRecordings({url,secret,owner,videoIds}){
+  if(!isAllowedWorker(url,secret))return {connected:false,items:[]};
+  const ids=[...new Set(videoIds.filter(videoIdValid))].slice(0,1600);
+  try{
+    const items=[];
+    for(let i=0;i<ids.length;i+=300){
+      const result=await requestWorker(url,secret,'POST','/inspect',{
+        owner:keyForUser(owner.toLowerCase()),videoIds:ids.slice(i,i+300)
+      });
+      if(!result.ok)return {connected:false,items:[]};
+      items.push(...(Array.isArray(result.data?.items)?result.data.items:[]));
+    }
+    return {connected:true,items};
+  }catch{
+    return {connected:false,items:[]};
+  }
+}
+
+/**
+ * Repair an existing MP3's ID3 metadata in place, without fetching content
+ * or changing the file's identity. Only the caller's database-owned video ID
+ * may be used. Unavailable workers are not treated as failed downloads.
+ */
+export async function repairInvidiousRecording({url,secret,owner,videoId,title,artist}){
+  if(!isAllowedWorker(url,secret)||!videoIdValid(videoId))
+    return {status:'worker_unavailable',found:false};
+  try{
+    const result=await requestWorker(url,secret,'POST','/repair',{
+      owner:keyForUser(owner.toLowerCase()),videoId,title,artist
+    });
+    if(!result.ok)return {status:'worker_unavailable',found:false};
+    return result.data;
+  }catch{
+    return {status:'worker_unavailable',found:false};
+  }
+}
+
 export function createInvidiousImportRouter({mustAuth,url,secret,statsFile}){
   const router=express.Router();
   const enabled=isAllowedWorker(url,secret);
