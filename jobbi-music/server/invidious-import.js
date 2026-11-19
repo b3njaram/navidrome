@@ -7,11 +7,11 @@ import {videoIdValid,configuredInvidious} from './invidious.js';
 const SOURCE_RESERVE=180*1024**2;
 const isAllowedWorker=(url,secret)=>url==='http://jobbi-invidious-worker:8091'&&secret?.length>=32;
 const keyForUser=x=>'user-'+crypto.createHash('sha256').update(x).digest('hex').slice(0,44);
-async function requestWorker(url,secret,method,path,body){
+async function requestWorker(url,secret,method,path,body,timeoutMs=10000){
   const response=await fetch(url+path,{
     method,redirect:'error',headers:{'X-Worker-Token':secret,Accept:'application/json',
       ...(body?{'Content-Type':'application/json'}:{})},
-    body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(10000)
+    body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(timeoutMs)
   });
   const raw=await response.text();
   if(raw.length>120000)throw Error('Import worker sent too much data');
@@ -32,7 +32,7 @@ export async function inspectInvidiousRecordings({url,secret,owner,videoIds}){
     for(let i=0;i<ids.length;i+=300){
       const result=await requestWorker(url,secret,'POST','/inspect',{
         owner:keyForUser(owner.toLowerCase()),videoIds:ids.slice(i,i+300)
-      });
+      },20000);
       if(!result.ok)return {connected:false,items:[],
         reason:result.status===404?
           'Invidious worker is running an older image without the /inspect endpoint. Rebuild the worker.':
