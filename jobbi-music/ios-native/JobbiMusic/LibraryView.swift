@@ -413,7 +413,10 @@ struct CollectionView: View {
                             onRemoveFromPlaylist: kind == .playlist ? {
                                 removePlaylistEntry(at: index)
                             } : nil,
-                            onServerRemoved: { Task { await reload() } })
+                            onServerRemoved: { Task {
+                                await reload()
+                                await library.refresh(api: api)
+                            } })
                     }
                 }
             } else {
@@ -495,11 +498,20 @@ struct CollectionView: View {
     }
 
     private func removePlaylistEntry(at index: Int) {
-        guard kind == .playlist else { return }
+        guard kind == .playlist, let tracks = detail?.tracks,
+              tracks.indices.contains(index) else { return }
+        let expectedID = tracks[index].id
         Task {
             do {
-                try await api.send("/api/playlists/" + JobbiAPI.encode(id),
-                    method: "PATCH", json: ["removeIndex": index])
+                let response: PlaylistMutation = try await api.send(
+                    "/api/playlists/" + JobbiAPI.encode(id),
+                    method: "PATCH",
+                    json: ["removeIndex": index, "expectedSongId": expectedID])
+                guard response.verified == true,
+                      response.removedEntry?.id == expectedID else {
+                    throw JobbiError.server("Navidrome did not verify removal of this playlist entry.")
+                }
+                detail = response.playlist ?? detail
                 await reload()
                 await library.refresh(api: api)
             } catch { self.error = error.localizedDescription }
