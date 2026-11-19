@@ -151,7 +151,7 @@ struct CommunityView: View {
         .navigationTitle("Community")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarLeading) {
                 Button("New shared playlist", systemImage: "person.2.badge.plus") {
                     showingSharedCreate = true
                 }
