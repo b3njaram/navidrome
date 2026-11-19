@@ -183,7 +183,7 @@ struct MusicSearchView: View {
             if !term.isEmpty { Task { await performSearch() } }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button("Search", systemImage: "arrow.right") {
                     Task { await performSearch() }
                 }
