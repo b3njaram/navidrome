@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summarizeCollectionJob,summarizeCollectionTransferHealth} from '../server/collection-import-jobs.js';
+import {summarizeCollectionJob,summarizeCollectionTransferHealth,summarizeFallbackRecordings} from '../server/collection-import-jobs.js';
 import {parseCollectionManifest} from '../src/playlist-export.js';
 
 test('saved collection import exposes safe cross-device progress',()=>{
@@ -92,4 +92,45 @@ test('unreachable downloader is not mistaken for failed or completed',()=>{
   assert.equal(result.counts.failed,0);
   assert.equal(result.counts.active,0);
   assert.equal(result.downloaderConnected,false);
+});
+
+
+test('fallback snapshot distinguishes completed MP3 files from active downloads',()=>{
+  const tracks=[
+    {title:'Little Dark Age',artist:'MGMT'},
+    {title:'Bloody Stream',artist:'Coda'},
+    {title:'Missing Track',artist:'Composer'},
+    {title:'Waiting Song',artist:'Artist'},
+    {title:'Unknown Song',artist:'Other'}
+  ];
+  const requests=[
+    {video_id:'rTL50MyBHPs',title:'Little Dark Age',artist:'MGMT'},
+    {video_id:'hmpJq3LsR48',title:'Bloody Stream',artist:'Coda'},
+    {video_id:'DuZhWMLLofg',title:'Missing Track',artist:'Composer'},
+    {video_id:'gurstRLm06E',title:'Waiting Song',artist:'Artist'}
+  ];
+  const status={connected:true,items:[
+    {videoId:'rTL50MyBHPs',status:'completed',present:true},
+    {videoId:'hmpJq3LsR48',status:'running',present:false},
+    {videoId:'DuZhWMLLofg',status:'completed',present:false},
+    {videoId:'gurstRLm06E',status:'queued',present:false}
+  ]};
+  const result=summarizeFallbackRecordings(tracks,requests,status);
+  assert.equal(result.counts.total,5);
+  assert.equal(result.counts.onNas,1);
+  assert.equal(result.counts.active,1);
+  assert.equal(result.counts.waiting,1);
+  assert.equal(result.counts.missing,1);
+  assert.equal(result.counts.unknown,1);
+  assert.equal(result.uniqueVideoIds,4);
+  assert.equal(result.examples[0].title,'Missing Track');
+});
+
+test('fallback worker offline does not imply completed recordings failed',()=>{
+  const tracks=[{title:'Little Dark Age',artist:'MGMT'}];
+  const requests=[{video_id:'rTL50MyBHPs',title:'Little Dark Age',artist:'MGMT'}];
+  const result=summarizeFallbackRecordings(tracks,requests,{connected:false,items:[]});
+  assert.equal(result.counts.unconfirmed,1);
+  assert.equal(result.counts.failed,0);
+  assert.equal(result.connected,false);
 });
