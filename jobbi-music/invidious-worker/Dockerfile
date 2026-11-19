@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certi
  && pip install --no-cache-dir yt-dlp mutagen
 WORKDIR /worker
 COPY app.py /worker/app.py
+COPY test_app.py /worker/test_app.py
 USER 1000:100
 EXPOSE 8091
 CMD ["python","-u","/worker/app.py"]
