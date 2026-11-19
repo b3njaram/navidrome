@@ -30,6 +30,14 @@ struct RemovalImpact: Decodable {
     let confirmation: String
 }
 
+struct QuarantineReceipt: Decodable {
+    let quarantined: Bool
+    let scanRequested: Bool
+    let indexingPending: Bool?
+    let playlistEntriesUnchanged: Bool?
+    let message: String?
+}
+
 /// Requires a server-issued, short-lived ticket so references are checked
 /// again before a recording is moved to recoverable NAS quarantine.
 struct ServerRemovalView: View {
@@ -44,6 +52,7 @@ struct ServerRemovalView: View {
     @State private var loading = true
     @State private var moving = false
     @State private var error: String?
+    @State private var completedMessage: String?
     private var route: String { "/api/songs/" + JobbiAPI.encode(song.id) }
 
     var body: some View {
@@ -57,7 +66,16 @@ struct ServerRemovalView: View {
                     Text("Removing from the server affects every listener, not just your playlist. The recording moves to recoverable NAS quarantine; it is not permanently deleted.")
                         .font(.footnote)
                 }
-                if loading {
+                if let completedMessage {
+                    Section("NAS file move confirmed") {
+                        Label("Recording moved to recoverable quarantine",
+                              systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text(completedMessage)
+                            .font(.footnote)
+                        Button("Done") { dismiss() }
+                    }
+                } else if loading {
                     ProgressView("Checking all accessible playlists…")
                 } else if let impact {
                     Section("Playlist references (\(impact.referenceCount ?? impact.references.count))") {
@@ -129,13 +147,20 @@ struct ServerRemovalView: View {
         moving = true
         defer { moving = false }
         do {
-            try await api.send(route + "/quarantine", json: [
+            let receipt: QuarantineReceipt = try await api.send(route + "/quarantine", json: [
                 "ticket": ticket, "confirm": "REMOVE_FROM_SHARED_LIBRARY"
             ])
-            library.message = "Recording moved to recoverable NAS quarantine. A library rescan was requested."
+            guard receipt.quarantined else {
+                throw JobbiError.server("The NAS did not confirm the audio file was moved. Inspect quarantine before retrying.")
+            }
+            let status = receipt.scanRequested
+                ? "Navidrome scan requested."
+                : "Navidrome scan could not be requested. Ask an administrator to scan."
+            let explanation = "The song may still appear in Search, playlists or Favorites until Navidrome refreshes its index. The playlist entries themselves were not automatically deleted."
+            completedMessage = status + " " + explanation
+            library.message = "NAS file moved to quarantine. " + status + " " + explanation
             onRemoved?()
             await library.refresh(api: api)
-            dismiss()
         } catch {
             self.error = error.localizedDescription
             // The server may reject a stale ticket when references change.
