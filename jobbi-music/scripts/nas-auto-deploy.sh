@@ -178,6 +178,19 @@ log "Preview updated to $SHA. /api/status is healthy."
     log "Inspect .env values without printing secrets, then enable the worker locally."
     exit 1
   fi
+  # Prevent an update from interrupting audio actively queued or downloading.
+  # Do not silently discard worker jobs; retry when the running queue drains.
+  BUSY_JOBS="$(docker exec jobbi-invidious-worker python -c '
+import json
+from pathlib import Path
+path=Path("/imports/.jobbi-state/jobs.json")
+rows=json.loads(path.read_text()) if path.is_file() else []
+print(sum(j.get("status") in ("running","queued") for j in rows))
+' 2>/dev/null || echo unknown)"
+  if [ "$BUSY_JOBS" != '0' ];then
+    log "Worker currently has $BUSY_JOBS active/queued jobs (or could not be inspected). Skipping update to avoid interrupting transfers."
+    exit 0
+  fi
   WORKER_PREVIOUS_IMAGE="$(docker inspect -f '{{.Image}}' jobbi-invidious-worker 2>/dev/null || true)"
   WORKER_IMAGE_NAME="$(docker inspect -f '{{.Config.Image}}' jobbi-invidious-worker 2>/dev/null || true)"
   if [ -n "$WORKER_PREVIOUS_IMAGE" ] && [ -n "$WORKER_IMAGE_NAME" ];then
