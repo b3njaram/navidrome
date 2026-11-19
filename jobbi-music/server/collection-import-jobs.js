@@ -130,6 +130,31 @@ function sendError(res,error){
 function eligibleTracks(collections){
   return collections.flatMap(c=>c.tracks.map(track=>({collection:c,track})));
 }
+
+/**
+ * Safe manual recovery of "review" rows: never launch another download for
+ * a recording with an outstanding request ID. Instead, reconcile that
+ * request against Navidrome and its tracked downloader state first.
+ * New searches are limited to rows with no earlier transfer identity.
+ */
+export function prepareSafeImportRetry(state,now=Date.now()){
+  const counts={recheck:0,research:0,untouched:0};
+  for(const {track} of eligibleTracks(state.collections||[])){
+    if(!['review','failed'].includes(track.status)){counts.untouched++;continue}
+    if(track.importId){
+      track.status='queued';
+      track.retryAt=now;
+      track.note='Rechecking existing NAS transfer; no duplicate download requested';
+      counts.recheck++;
+    }else{
+      track.status='unsearched';
+      track.retryAt=now;
+      track.note='Ready to search again (no previous transfer ID)';
+      counts.research++;
+    }
+  }
+  return counts;
+}
 function firstPending(state,now){
   const rows=eligibleTracks(state.collections||[]);
   const waiting=rows.filter(x=>x.track.status==='unsearched'&&
@@ -596,11 +621,11 @@ export function createCollectionJobsRouter({
       if(job.status==='finished'&&action!=='retry')
         return res.status(409).json({error:'Use Retry to check unfinished songs again'});
       const state=job.manifest;
+      let retryCounts=null;
       if(action==='retry'){
-        for(const {track} of eligibleTracks(state.collections))
-          if(['review','failed'].includes(track.status)){
-            track.status='unsearched';track.note='Ready to retry';delete track.retryAt;
-          }
+        retryCounts=prepareSafeImportRetry(state);
+        if(retryCounts.recheck+retryCounts.research===0)
+          return res.status(409).json({error:'No unmatched or failed songs to retry.'});
       }
       const status=action==='cancel'?'cancelled':action==='pause'?'paused':'running';
       const authorized=job.authorized||req.body?.authorized===true;
@@ -609,8 +634,11 @@ export function createCollectionJobsRouter({
       const updated=await socialQuery('UPDATE collection_import_jobs SET status=$3,authorized=$4,manifest=$5::jsonb,message=$6,updated_at=now(),lease_until=NULL WHERE id=$1 AND owner=$2 RETURNING '+META_FIELDS,
         [job.id,owner,status,authorized,JSON.stringify(state),
           action==='cancel'?'Import cancelled; saved source retained':
-          action==='pause'?'Paused by user':'Import resumed on NAS']);
-      res.json({job:responseJob(updated.rows[0])});
+          action==='pause'?'Paused by user':action==='retry'?
+            ('Recovery requested: '+retryCounts.recheck+' old transfers to recheck, '+
+              retryCounts.research+' songs to search again'):
+            'Import resumed on NAS']);
+      res.json({job:responseJob(updated.rows[0]),...(retryCounts?{retry:retryCounts}:{})});
     }catch(error){sendError(res,error)}
   });
   return {router,start,tick};
