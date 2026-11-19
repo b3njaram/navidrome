@@ -735,9 +735,30 @@ app.post('/api/soulseek/download',mustAuth,mustAdmin,mustBeLimited,route(async(r
   });
   res.status(202).json({queued:true,details:data});
 }));
+// Scan status comes from Navidrome itself, not a guessed progress animation.
+// Count is Navidrome's processed-item count, NOT total songs added to Favorites.
+app.get('/api/library/scan-status',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+  const response=await subsonic(req.user,'getScanStatus');
+  const raw=response.scanStatus;
+  if(!raw || typeof raw.scanning!=='boolean')
+    return res.status(502).json({error:'Navidrome did not return a valid scan status'});
+  const numeric=value=>value==null||!Number.isFinite(Number(value))?
+    null:Math.max(0,Math.trunc(Number(value)));
+  const lastScan=typeof raw.lastScan==='string'&&Number.isFinite(Date.parse(raw.lastScan))?
+    raw.lastScan:null;
+  res.setHeader('Cache-Control','private, no-store');
+  res.json({scanStatus:{
+    scanning:raw.scanning,
+    count:numeric(raw.count),
+    folderCount:numeric(raw.folderCount),
+    lastScan
+  },checkedAt:new Date().toISOString()});
+}));
 app.post('/api/library/scan',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
   const result=await subsonic(req.user,'startScan');
-  res.json({ok:true,scanStatus:result.scanStatus||null});
+  res.setHeader('Cache-Control','private, no-store');
+  res.json({ok:true,scanStatus:result.scanStatus||null,
+    requestedAt:new Date().toISOString()});
 }));
 
 const staticDir=path.join(path.dirname(fileURLToPath(import.meta.url)),'../dist');
