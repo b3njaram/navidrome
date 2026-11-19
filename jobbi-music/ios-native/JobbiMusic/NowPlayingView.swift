@@ -189,7 +189,7 @@ struct NowPlayingView: View {
                                     .buttonStyle(.plain)
                                     if index == player.currentIndex {
                                         Image(systemName: "waveform")
-                                            .foregroundStyle(.pink)
+                                            .foregroundStyle(MusicAppearance.teal)
                                             .accessibilityLabel("Now Playing")
                                     } else if index > player.currentIndex {
                                         Button {
@@ -342,7 +342,7 @@ struct NowPlayingView: View {
                     Image(systemName: "shuffle")
                         .font(.system(size: 20))
                         .foregroundStyle(player.shuffled
-                                         ? MusicAppearance.accent
+                                         ? MusicAppearance.sky
                                          : .white.opacity(0.77))
                 }
                 .accessibilityLabel("Shuffle")
@@ -373,7 +373,7 @@ struct NowPlayingView: View {
                     Image(systemName: player.repeatOne ? "repeat.1" : "repeat")
                         .font(.system(size: 20))
                         .foregroundStyle(player.repeatOne
-                                         ? MusicAppearance.accent
+                                         ? MusicAppearance.sky
                                          : .white.opacity(0.77))
                 }
                 .accessibilityLabel(player.repeatOne ? "Repeat one" : "Repeat")
