@@ -162,8 +162,13 @@ export default function PlaylistTransfer({api,onLibrary,user}){
   const controlSavedJob=async(id,action,authorize=false)=>{
     setSavedBusy(true);setError('');
     try{
-      await api('/api/collection-jobs/'+encodeURIComponent(id)+'/control',
+      const result=await api('/api/collection-jobs/'+encodeURIComponent(id)+'/control',
         jsonOptions('POST',{action,authorized:authorize||authorized}));
+      if(action==='retry'&&result.retry){
+        const {research=0,recheck=0}=result.retry;
+        setNotice('Recovery requested: '+recheck+' previous transfers will be rechecked without a new download; '+
+          research+' unmatched songs will be searched again. Monitor the results here.');
+      }
       await refreshSavedJobs(id);
     }catch(e){setError(e.message)}
     finally{setSavedBusy(false)}
@@ -629,9 +634,14 @@ export default function PlaylistTransfer({api,onLibrary,user}){
             <button className="playlist-tool-button" type="button"
               disabled={savedBusy||(!job.authorized&&!authorized)}
               onClick={()=>controlSavedJob(job.id,'resume',authorized)}><RefreshCw size={16}/> Start / Resume</button>}
-          {['finished','paused'].includes(job.status)&&job.review>0&&
-            <button className="playlist-tool-button" type="button" disabled={savedBusy}
-              onClick={()=>controlSavedJob(job.id,'retry',authorized)}><RefreshCw size={16}/> Retry unmatched</button>}
+          {['running','monitoring','finished','paused'].includes(job.status)&&job.review>0&&
+            <button className="playlist-tool-button" type="button" disabled={savedBusy||(!job.authorized&&!authorized)}
+              onClick={()=>{
+                if(window.confirm('Recheck '+job.review+' unmatched or failed songs? Existing transfers will be inspected without redownloading. Songs without a prior transfer may be searched and queued again. The '+job.queued+' already queued songs are not resubmitted.'))
+                  void controlSavedJob(job.id,'retry',authorized);
+              }}>
+              <RefreshCw size={16}/> Retry unmatched ({job.review})
+            </button>}
           {job.status!=='cancelled'&&job.status!=='finished'&&
             <button className="playlist-tool-button" type="button" disabled={savedBusy}
               onClick={()=>window.confirm('Cancel this NAS import? Your source JSON remains available.')&&
