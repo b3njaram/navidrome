@@ -313,9 +313,12 @@ test('admin library scan displays Navidrome counts, elapsed status and completio
   await expect(panel.getByText('Navidrome idle')).toBeVisible();
   await panel.getByRole('button',{name:'Scan library'}).click();
   await expect(panel.getByText('Navidrome scanning…')).toBeVisible();
-  state.scanStatus={scanning:true,count:72,folderCount:4,lastScan:'2026-11-19T17:00:00Z'};
+  state.scanStatus={scanning:true,count:72,folderCount:4,lastScan:'2026-11-19T17:00:00Z',
+    elapsedSeconds:9,scanType:'quick'};
   await panel.getByRole('button',{name:'Check status'}).click();
   await expect(panel.getByText('72',{exact:true})).toBeVisible();
+  await expect(panel.getByText('Elapsed time (Navidrome)')).toBeVisible();
+  await expect(panel.getByText('Scan type: Quick scan.')).toBeVisible();
   await expect(panel.getByText('4',{exact:true})).toBeVisible();
   state.scanStatus={scanning:false,count:184,folderCount:11,lastScan:'2026-11-19T17:04:00Z'};
   await panel.getByRole('button',{name:'Check status'}).click();
