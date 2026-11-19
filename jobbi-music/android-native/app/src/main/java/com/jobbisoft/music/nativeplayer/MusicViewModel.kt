@@ -529,9 +529,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         if(sourceId != null){
+            val sourceSongs=sourceIndices.zip(songs).associate { it.first to it.second.id }
             for(position in sourceIndices.distinct().sortedDescending()){
-                try{JobbiApi.editPlaylist(sourceId,JSONObject().put("removeIndex",position))}
-                catch(e:Exception){ throw JobbiException("Copied $added songs but could not finish removing the originals: ${e.message}") }
+                try{
+                    val expected=sourceSongs[position]
+                        ?: throw JobbiException("No matching source song for playlist position $position.")
+                    val updated=JobbiApi.editPlaylist(sourceId,
+                        JSONObject().put("removeIndex",position).put("expectedSongId",expected))
+                    if(!updated.optBoolean("verified")||
+                        updated.optJSONObject("removedEntry")?.optString("id")!=expected)
+                        throw JobbiException("Navidrome did not confirm which playlist entry was removed.")
+                }catch(e:Exception){ throw JobbiException("Copied $added songs but could not finish removing the originals: ${e.message}") }
             }
             if(detail?.id == sourceId)detail = JobbiApi.openPlaylist(sourceId)
         }
@@ -546,7 +554,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         require(ordered.isNotEmpty() && ordered.size <= 500) { "Select 1–500 songs." }
         var removed = 0
         for(index in ordered){
-            try { JobbiApi.editPlaylist(listing.id, JSONObject().put("removeIndex", index)); removed++ }
+            try {
+                val songId=listing.songs.getOrNull(index)?.id
+                    ?: throw JobbiException("Playlist order changed; reload before removing.")
+                val result=JobbiApi.editPlaylist(listing.id,
+                    JSONObject().put("removeIndex",index).put("expectedSongId",songId))
+                if(!result.optBoolean("verified")||
+                    result.optJSONObject("removedEntry")?.optString("id")!=songId)
+                    throw JobbiException("Navidrome did not confirm playlist removal.")
+                removed++
+            }
             catch(e:Exception) { throw JobbiException("Removed $removed songs. The next removal failed: ${e.message}. Reload playlist to reconcile.") }
         }
         detail = JobbiApi.openPlaylist(listing.id)
@@ -585,16 +602,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             removalBusy=true
             error=""
             var moved=0
+            var missingScans=0
             try{
                 for(impact in confirmed){
                     val songId=impact.getJSONObject("song").getString("id")
-                    JobbiApi.post("/api/songs/"+Uri.encode(songId)+"/quarantine",
+                    val result=JobbiApi.post("/api/songs/"+Uri.encode(songId)+"/quarantine",
                         JSONObject().put("ticket",impact.getString("ticket"))
                             .put("confirm","REMOVE_FROM_SHARED_LIBRARY"))
+                    if(!result.optBoolean("quarantined"))
+                        throw JobbiException("NAS did not confirm the file move. Inspect quarantine before retrying.")
                     moved++
+                    if(!result.optBoolean("scanRequested"))missingScans++
                 }
-                message="Moved $moved recording(s) to recoverable NAS quarantine. "+
-                    "Other listeners' playlists may be affected."
+                message="Confirmed: $moved audio file(s) moved to recoverable NAS quarantine. "+
+                    (if(missingScans>0)"Navidrome scan could not be requested for $missingScans file(s). "
+                     else "Navidrome library scan requested. ")+
+                    "The song may still APPEAR in playlists, Favorites or Search while Navidrome "+
+                    "refreshes its index. The original playlist entries were not automatically removed."
             }catch(e:Exception){
                 error="Moved $moved of ${confirmed.size} recordings. Remaining "+
                     "recordings were NOT removed: ${e.message}"
@@ -612,6 +636,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             else JobbiApi.openAlbum(detail!!.id)
                     }
                 }
+                if(searchQuery.isNotBlank() && lastSearchedTerm.isNotBlank())
+                    search(searchQuery)
             }
         }
     }
