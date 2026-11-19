@@ -173,7 +173,7 @@ struct CommunityView: View {
     private func personRow(_ person: SocialPerson) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "person.crop.circle.fill")
-                .font(.title2).foregroundStyle(.pink)
+                .font(.title2).foregroundStyle(MusicAppearance.violet)
             VStack(alignment: .leading, spacing: 2) {
                 Text(person.displayName)
                 Text("@\(person.username)")
@@ -297,6 +297,7 @@ struct SocialProfileView: View {
     @State private var bio = ""
     @State private var discoverable = true
     @State private var avatarRevision = 0
+    @AppStorage("jobbi.profileAvatarRevision") private var sharedAvatarRevision = 0
     @State private var message: String?
     private var mine: Bool { username.lowercased() == api.user?.username.lowercased() }
 
@@ -311,7 +312,7 @@ struct SocialProfileView: View {
                             image.resizable().scaledToFill()
                         } placeholder: {
                             Image(systemName: "person.crop.circle.fill")
-                                .resizable().scaledToFit().foregroundStyle(.pink)
+                                .resizable().scaledToFit().foregroundStyle(MusicAppearance.violet)
                         }
                         .frame(width: 78, height: 78).clipShape(Circle())
                         VStack(alignment: .leading, spacing: 4) {
@@ -331,6 +332,7 @@ struct SocialProfileView: View {
                         PhotoUploadButton(path: "/api/social/me/avatar",
                                           title: "Change profile picture") {
                             avatarRevision += 1
+                            sharedAvatarRevision += 1
                             await load()
                         }
                         Button("Save profile") {
