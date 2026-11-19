@@ -50,23 +50,58 @@ process.stdin.on("end",()=>{
   log "Commit $SHA has not passed both required GitHub tests. No deployment."
   exit 0
 fi
-log "CI approved $SHA. Starting preview-only upgrade."
+log "CI approved $SHA. Deploying Jobbi Music production update."
 PREVIOUS_IMAGE="$(docker inspect -f '{{.Image}}' jobbi-music 2>/dev/null || true)"
 IMAGE_NAME="$(docker inspect -f '{{.Config.Image}}' jobbi-music 2>/dev/null || true)"
 if [ -n "$PREVIOUS_IMAGE" ] && [ -n "$IMAGE_NAME" ];then
   docker image tag "$PREVIOUS_IMAGE" "jobbi-music:previous-tested"
 fi
-# Fast-forward only. The .env and PostgreSQL volumes are never touched.
-gitclient merge --ff-only "$SHA"
-cd "$APP"
-if ! docker compose -f compose.yaml config --quiet || ! docker compose -f compose.yaml up -d --build --no-deps jobbi-music;then
-  log "Build/deploy failed; rolling the preview source and container back."
+
+# Rebuild the optional worker ONLY when its sources changed AND the user had
+# already enabled it. Do not start an opt-in service or interrupt its queue on
+# unrelated website changes.
+WORKER_UPDATE=0
+WORKER_PREVIOUS_IMAGE=""
+WORKER_IMAGE_NAME=""
+if [ -n "$(docker ps -q --filter 'name=^/jobbi-invidious-worker$' 2>/dev/null)" ] &&
+   [ -n "$(gitclient diff --name-only "$HEAD" "$SHA" -- jobbi-music/invidious-worker)" ];then
+  WORKER_UPDATE=1
+  WORKER_PREVIOUS_IMAGE="$(docker inspect -f '{{.Image}}' jobbi-invidious-worker 2>/dev/null || true)"
+  WORKER_IMAGE_NAME="$(docker inspect -f '{{.Config.Image}}' jobbi-invidious-worker 2>/dev/null || true)"
+  if [ -n "$WORKER_PREVIOUS_IMAGE" ] && [ -n "$WORKER_IMAGE_NAME" ];then
+    docker image tag "$WORKER_PREVIOUS_IMAGE" "jobbi-invidious-worker:previous-tested"
+  fi
+fi
+rollback_release(){
+  log "Restoring the previously tested Jobbi Music release."
+  cd "$ROOT"
   gitclient reset --hard "$HEAD"
+  cd "$APP"
   if [ -n "$IMAGE_NAME" ] && docker image inspect jobbi-music:previous-tested >/dev/null 2>&1;then
     docker image tag jobbi-music:previous-tested "$IMAGE_NAME"
     docker compose -f compose.yaml up -d --no-build --no-deps --force-recreate jobbi-music || true
   fi
+  if [ "$WORKER_UPDATE" = 1 ] && [ -n "$WORKER_IMAGE_NAME" ] &&
+     docker image inspect jobbi-invidious-worker:previous-tested >/dev/null 2>&1;then
+    docker image tag jobbi-invidious-worker:previous-tested "$WORKER_IMAGE_NAME"
+    docker compose -f compose.yaml --profile invidious-import up -d --no-build --no-deps --force-recreate jobbi-invidious-worker || true
+  fi
+}
+gitclient merge --ff-only "$SHA"
+cd "$APP"
+if ! docker compose -f compose.yaml config --quiet ||
+   ! docker compose -f compose.yaml up -d --build --no-deps jobbi-music;then
+  log "Jobbi Music build/deploy failed."
+  rollback_release
   exit 1
+fi
+if [ "$WORKER_UPDATE" = 1 ];then
+  log "Invidious worker source changed. Updating already-enabled private worker."
+  if ! docker compose -f compose.yaml --profile invidious-import up -d --build --no-deps jobbi-invidious-worker;then
+    log "Invidious worker build/deploy failed."
+    rollback_release
+    exit 1
+  fi
 fi
 success=0
 i=0
@@ -76,14 +111,14 @@ while [ "$i" -lt 24 ];do
   i=$((i+1))
 done
 if [ "$success" -ne 1 ];then
-  log "Health check failed; rolling back preview to $HEAD."
-  cd "$ROOT"
-  gitclient reset --hard "$HEAD"
-  cd "$APP"
-  if [ -n "$IMAGE_NAME" ] && docker image inspect jobbi-music:previous-tested >/dev/null 2>&1;then
-    docker image tag jobbi-music:previous-tested "$IMAGE_NAME"
-    docker compose -f compose.yaml up -d --no-build --no-deps --force-recreate jobbi-music || true
-  fi
+  log "Jobbi Music health check failed."
+  rollback_release
+  exit 1
+fi
+if [ "$WORKER_UPDATE" = 1 ] &&
+   ! docker exec jobbi-invidious-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health',timeout=5).read()" >/dev/null 2>&1;then
+  log "Invidious worker health check failed."
+  rollback_release
   exit 1
 fi
 printf '%s\n' "$SHA" > "$STATE"
