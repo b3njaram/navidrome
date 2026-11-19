@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summarizeCollectionJob,summarizeCollectionTransferHealth,summarizeFallbackRecordings} from '../server/collection-import-jobs.js';
+import {summarizeCollectionJob,summarizeCollectionTransferHealth,summarizeFallbackRecordings,prepareSafeImportRetry} from '../server/collection-import-jobs.js';
 import {parseCollectionManifest} from '../src/playlist-export.js';
 
 test('saved collection import exposes safe cross-device progress',()=>{
@@ -25,6 +25,32 @@ test('saved collection import exposes safe cross-device progress',()=>{
   assert.equal(JSON.stringify(summary).includes('password'),false);
 });
 
+test('safe retry does not submit duplicate downloads for rows with prior transfer IDs',()=>{
+  const at=Date.now();
+  const state={collections:[{kind:'favorites',tracks:[
+    {title:'Already added',status:'hearted'},
+    {title:'Waiting peer',status:'queued',importId:'prior-1'},
+    {title:'Failed fallback',status:'review',source:'invidious',importId:'prior-2'},
+    {title:'Rejected match',status:'review'},
+    {title:'Search failed',status:'failed'},
+    {title:'Downloaded metadata review',status:'review',source:'soulseek',importId:'prior-3'}
+  ]}]};
+  const result=prepareSafeImportRetry(state,at);
+  assert.deepEqual(result,{recheck:2,research:2,untouched:2});
+  const tracks=state.collections[0].tracks;
+  assert.equal(tracks[0].status,'hearted');
+  assert.equal(tracks[1].status,'queued');
+  for(const index of [2,5]){
+    assert.equal(tracks[index].status,'queued');
+    assert.equal(tracks[index].retryAt,at);
+    assert.match(tracks[index].note,/no duplicate download/);
+    assert.ok(tracks[index].importId);
+  }
+  for(const index of [3,4]){
+    assert.equal(tracks[index].status,'unsearched');
+    assert.equal(tracks[index].retryAt,at);
+  }
+});
 test('saved source is normalised and repaired without altering explicit favorites',()=>{
   const raw=JSON.stringify({format:'jobbi-collection-export/v1',collections:[
     {id:'apple:favorites',name:'Favorite Songs',kind:'favorites',provider:'apple',
