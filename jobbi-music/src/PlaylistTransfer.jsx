@@ -576,6 +576,33 @@ export default function PlaylistTransfer({api,onLibrary,user}){
                   {' · '}<b>{transferChecks[job.id].counts.unknown}</b> unknown
                   {' · '}<b>{transferChecks[job.id].counts.otherSource}</b> alternative source
                 </p>
+                {transferChecks[job.id].fallback&&
+                  <div className="transfer-card">
+                    <strong>Invidious fallback recordings</strong>
+                    <p className="transfer-help">
+                      Worker: {transferChecks[job.id].fallback.connected?
+                        'connected':'not responding'} ·
+                      {' '}{transferChecks[job.id].fallback.uniqueVideoIds} distinct video IDs
+                    </p>
+                    <p className="transfer-help">
+                      <b>{transferChecks[job.id].fallback.counts.onNas}</b> MP3 files on NAS
+                      {' · '}<b>{transferChecks[job.id].fallback.counts.active}</b> transferring
+                      {' · '}<b>{transferChecks[job.id].fallback.counts.waiting}</b> waiting
+                      {' · '}<b>{transferChecks[job.id].fallback.counts.failed}</b> failed
+                      {' · '}<b>{transferChecks[job.id].fallback.counts.interrupted}</b> interrupted
+                      {' · '}<b>{transferChecks[job.id].fallback.counts.missing}</b> completed but file missing
+                      {' · '}<b>{transferChecks[job.id].fallback.counts.unconfirmed}</b> unconfirmed
+                      {' · '}<b>{transferChecks[job.id].fallback.counts.unknown}</b> no import record
+                    </p>
+                    <p className="transfer-help">
+                      MP3 files still need correct tags and Navidrome indexing.
+                      Jobbi repairs known metadata mismatches without downloading duplicates.
+                    </p>
+                    {transferChecks[job.id].fallback.examples?.slice(0,6).map((entry,i)=>
+                      <div className="transfer-status" key={i}>
+                        {entry.title} — {entry.artist}: {entry.stage}
+                      </div>)}
+                  </div>}
                 <p className="transfer-help">
                   Missing transfers are unconfirmed—not proof of failure. This
                   check never cancels, duplicates, or deletes an import.
