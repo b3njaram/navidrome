@@ -737,7 +737,7 @@ app.post('/api/soulseek/download',mustAuth,mustAdmin,mustBeLimited,route(async(r
 }));
 // Scan status comes from Navidrome itself, not a guessed progress animation.
 // Count is Navidrome's processed-item count, NOT total songs added to Favorites.
-app.get('/api/library/scan-status',mustAuth,mustAdmin,mustBeLimited,route(async(req,res)=>{
+app.get('/api/library/scan-status',mustAuth,mustAdmin,route(async(req,res)=>{
   const response=await subsonic(req.user,'getScanStatus');
   const raw=response.scanStatus;
   if(!raw || typeof raw.scanning!=='boolean')
