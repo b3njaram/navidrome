@@ -41,6 +41,10 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
         return reply({counts:{queued:2,active:0,waiting:1,indexing:0,
           failed:0,unconfirmed:1,unknown:0,otherSource:0},
           downloaderConnected:true,uniqueTransfers:2,
+          fallback:{connected:true,counts:{
+            total:2,onNas:1,active:0,waiting:0,failed:0,interrupted:0,
+            missing:1,unconfirmed:0,unknown:0},uniqueVideoIds:2,
+            examples:[{title:'Missing fallback',artist:'Test',stage:'missing'}]},
           examples:[{title:'Lost Song',artist:'Test',stage:'unconfirmed',
             reason:'Queue entry not found after 10 minutes'}],
           checkedAt:'2026-11-18T18:00:00.000Z',
@@ -940,6 +944,9 @@ test('saved import survives browser reload and preserves NAS ownership',async({p
   await expect(page.getByText(/1 waiting for peers/)).toBeVisible();
   await expect(page.getByText(/1 unconfirmed/)).toBeVisible();
   await expect(page.getByText(/Missing transfers are unconfirmed/)).toBeVisible();
+  await expect(page.getByText('Invidious fallback recordings')).toBeVisible();
+  await expect(page.getByText(/1 MP3 files on NAS/)).toBeVisible();
+  await expect(page.getByText(/1 completed but file missing/)).toBeVisible();
   expect(state.savedJobs[0].raw).toBe(JSON.stringify(manifest));
   expect(errors).toEqual([]);
 });

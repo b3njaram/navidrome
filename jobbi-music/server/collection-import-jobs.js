@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import {latestTransferSnapshot,findTransfer,transferStage} from './import-progress.js';
+import {inspectInvidiousRecordings,repairInvidiousRecording} from './invidious-import.js';
 import {ensureSocialProfile,normalUsername,socialQuery} from './social-db.js';
 import {
   parseCollectionManifest,findLocalSong,pickSoulseekCandidate,
@@ -79,6 +80,43 @@ export function summarizeCollectionTransferHealth(collections,importRows,snapsho
     explanation:'Queued tracks are not necessarily active downloads. A missing transfer is unconfirmed, not automatically failed. No recordings or playlists were changed.'};
 }
 
+/**
+ * Fallback downloads are separate from Soulseek transfers. The worker may
+ * report completed for a file not yet indexed under the correct ID3 metadata.
+ * 'File on NAS' is not the same thing as added to Favorites.
+ */
+export function summarizeFallbackRecordings(tracks,dbRows,snapshot){
+  const bySong=new Map();
+  for(const row of dbRows){
+    const k=key(row);
+    if(!bySong.has(k))bySong.set(k,row);
+  }
+  const byVideo=new Map((snapshot.items||[]).map(row=>[row.videoId,row]));
+  const counts={total:tracks.length,onNas:0,active:0,waiting:0,
+    failed:0,interrupted:0,missing:0,unconfirmed:0,unknown:0};
+  const examples=[];
+  const ids=new Set();
+  for(const track of tracks){
+    const record=bySong.get(key(track));
+    if(!record){counts.unknown++;continue}
+    ids.add(record.video_id);
+    const item=snapshot.connected?byVideo.get(record.video_id):null;
+    if(!item){counts.unconfirmed++;continue}
+    let stage='unconfirmed';
+    if(item.present){counts.onNas++;stage='onNas'}
+    else if(item.status==='running'){counts.active++;stage='active'}
+    else if(item.status==='queued'){counts.waiting++;stage='waiting'}
+    else if(['failed','needs_review'].includes(item.status)){counts.failed++;stage='failed'}
+    else if(item.status==='interrupted'){counts.interrupted++;stage='interrupted'}
+    else if(item.status==='completed'){counts.missing++;stage='missing'}
+    else{counts.unconfirmed++}
+    if(examples.length<12&&['failed','interrupted','missing'].includes(stage))
+      examples.push({title:track.title,artist:track.artist,stage});
+  }
+  return {connected:snapshot.connected,counts,uniqueVideoIds:ids.size,examples,
+    explanation:'An MP3 on NAS still needs correct tags and Navidrome indexing before it can be added to Favorites.'};
+}
+
 function checkJobID(id){
   if(!uuid.test(String(id||'')))throw Object.assign(Error('Invalid collection job ID'),{status:400});
   return id;
@@ -102,12 +140,15 @@ function firstPending(state,now){
   return null;
 }
 
-export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}){
+export function createCollectionJobsRouter({
+  mustAuth,getSession,port,downloader,invidiousWorkerUrl,invidiousWorkerSecret
+}){
   const router=express.Router();
   let running=false;
   let timer;
   let lastDiagnostic=0;
   let cachedTransfers={at:0,snapshot:null};
+  let lastMetadataScanAt=0;
   async function transferSnapshot(){
     if(!cachedTransfers.snapshot || Date.now()-cachedTransfers.at>25_000){
       cachedTransfers.snapshot=await latestTransferSnapshot(downloader);
@@ -274,6 +315,53 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
           return track.note;
         }
       }
+      if(track.source==='invidious' &&
+        Date.now()-(Number(track.lastTagCheckAt)||0)>15*60*1000){
+        // This imported video may have been downloaded successfully but
+        // indexed with YouTube's title/uploader rather than the saved song.
+        // Repair ID3 tags *in place* by the user's verified import record.
+        track.lastTagCheckAt=Date.now();
+        const request=await socialQuery(`SELECT video_id FROM invidious_imports
+          WHERE requester=$1 AND title=$2 AND artist=$3
+          ORDER BY created_at DESC LIMIT 1`,
+          [job.owner,track.title,track.artist]);
+        if(request.rowCount){
+          const repair=await repairInvidiousRecording({
+            url:invidiousWorkerUrl,secret:invidiousWorkerSecret,
+            owner:job.owner,videoId:request.rows[0].video_id,
+            title:track.title,artist:track.artist
+          });
+          if(repair.status==='tagged'){
+            track.note='Downloaded MP3 tags repaired; awaiting Navidrome indexing';
+            // Scans are intentionally coalesced. Do not trigger hundreds of
+            // overlapping scans for a large saved Favorites migration.
+            if(Date.now()-lastMetadataScanAt>15*60*1000){
+              lastMetadataScanAt=Date.now();
+              try{await localAPI(session,'/api/library/scan',{method:'POST'})}
+              catch{track.note+=' (Navidrome scan requires admin access)'}
+            }
+            return track.note;
+          }
+          if(repair.status==='already_tagged'){
+            track.note='Downloaded MP3 is tagged; waiting for Navidrome scan';
+            return track.note;
+          }
+          if(repair.status==='tagging_failed'){
+            track.status='review';
+            track.note='Downloaded MP3 needs metadata repair on NAS';
+            delete track.retryAt;
+            return track.note;
+          }
+          if(repair.status==='worker_unavailable'){
+            track.note='Fallback worker cannot confirm the recording; retry status later';
+            return track.note;
+          }
+          if(repair.status==='file_not_found'){
+            track.note='Fallback recording not yet located on NAS; verify its worker job';
+            return track.note;
+          }
+        }
+      }
       track.note='Queued or awaiting indexing; transfer not verified active';
       return track.note;
     }
@@ -426,10 +514,33 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
         records=data.rows;
       }
       const snapshot=await latestTransferSnapshot(downloader);
+      const collections=result.rows[0].manifest.collections||[];
       const diagnostic=summarizeCollectionTransferHealth(
-        result.rows[0].manifest.collections||[],records,snapshot);
+        collections,records,snapshot);
+      const alternatives=eligibleTracks(collections)
+        .map(x=>x.track).filter(x=>['queued','waiting'].includes(x.status) &&
+          x.source==='invidious');
+      let fallback=null;
+      if(alternatives.length){
+        const imported=await socialQuery(`SELECT video_id,title,artist,status
+          FROM invidious_imports WHERE requester=$1
+          ORDER BY created_at DESC LIMIT 5000`,[owner]);
+        const bySong=new Map();
+        for(const row of imported.rows){
+          const k=key(row);
+          if(!bySong.has(k))bySong.set(k,row);
+        }
+        const videoIds=[...new Set(alternatives.map(track=>
+          bySong.get(key(track))?.video_id).filter(Boolean))];
+        const state=await inspectInvidiousRecordings({
+          url:invidiousWorkerUrl,secret:invidiousWorkerSecret,
+          owner,videoIds
+        });
+        fallback=summarizeFallbackRecordings(alternatives,imported.rows,state);
+      }
       res.setHeader('Cache-Control','private, no-store');
-      res.json({...diagnostic,limited:new Set(rows.map(x=>String(x.importId))).size>ids.length});
+      res.json({...diagnostic,fallback,
+        limited:new Set(rows.map(x=>String(x.importId))).size>ids.length});
     }catch(error){sendError(res,error)}
   });
   router.get('/:id/source',mustAuth,async(req,res)=>{
