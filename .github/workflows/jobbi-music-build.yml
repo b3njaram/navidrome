@@ -54,6 +54,10 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run build
       - run: docker build -t jobbi-music:ci .
+      - name: Test metadata repair inside optional Invidious worker image
+        run: |
+          docker build -t jobbi-invidious-worker:ci ./invidious-worker
+          docker run --rm --entrypoint python jobbi-invidious-worker:ci -m unittest -v test_app
       - name: Verify production Docker serves actual userscript, never HTML
         run: |
           set -eu
