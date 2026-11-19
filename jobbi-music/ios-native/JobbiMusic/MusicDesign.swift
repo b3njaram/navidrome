@@ -6,7 +6,15 @@ import AVKit
 /// All icons are SF Symbols, all cover art comes from the user's own NAS.
 /// Jobbi Music keeps its own identity, features, and server integration.
 enum MusicAppearance {
-    static let accent = Color(red: 0.98, green: 0.20, blue: 0.34)
+    // iPhone-only palette: indigo navigation, turquoise discovery,
+    // violet playlists, coral favorites, sky-blue weather and warm amber mixes.
+    // Preserve system light/dark materials, legible typography, and album art.
+    static let accent = Color(red: 0.38, green: 0.33, blue: 0.92)
+    static let violet = Color(red: 0.55, green: 0.36, blue: 0.88)
+    static let teal = Color(red: 0.04, green: 0.67, blue: 0.64)
+    static let sky = Color(red: 0.16, green: 0.57, blue: 0.92)
+    static let coral = Color(red: 0.96, green: 0.34, blue: 0.45)
+    static let amber = Color(red: 0.90, green: 0.58, blue: 0.17)
     static let canvas = Color(uiColor: .systemBackground)
     static let secondaryCanvas = Color(uiColor: .secondarySystemGroupedBackground)
     static let separator = Color(uiColor: .separator).opacity(0.55)
@@ -17,22 +25,40 @@ enum MusicAppearance {
 /// The complete original SettingsView (including admin tools) remains intact.
 struct MusicAccountButton: View {
     @EnvironmentObject private var api: JobbiAPI
+    @AppStorage("jobbi.profileAvatarRevision") private var avatarRevision = 0
     @State private var showingAccount = false
 
-    var body: some View {
-        Button { showingAccount = true } label: {
-            ZStack {
-                Circle()
-                    .fill(MusicAppearance.accent.gradient)
-                    .frame(width: 32, height: 32)
+    private var avatarURL: URL? {
+        guard let username = api.user?.username, !username.isEmpty else { return nil }
+        return api.url("/api/social/profiles/" + JobbiAPI.encode(username)
+            + "/avatar?v=" + String(avatarRevision))
+    }
+
+    private var fallback: some View {
+        Circle()
+            .fill(LinearGradient(colors: [MusicAppearance.violet, MusicAppearance.teal],
+                startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay {
                 Text(String((api.user?.username ?? "J").prefix(1)).uppercased())
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
             }
+    }
+
+    var body: some View {
+        Button { showingAccount = true } label: {
+            AsyncImage(url: avatarURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                fallback
+            }
+            .frame(width: 34, height: 34)
+            .clipShape(Circle())
+            .overlay { Circle().strokeBorder(Color.primary.opacity(0.14), lineWidth: 1) }
             .accessibilityHidden(true)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Account and Settings")
+        .accessibilityLabel("Your profile and account settings")
         .sheet(isPresented: $showingAccount) {
             NavigationStack {
                 SettingsView()
@@ -91,11 +117,22 @@ struct MusicLibraryCategoryRow: View {
     let title: String
     let symbol: String
 
+    private var color: Color {
+        switch title {
+        case "Favorite Songs": MusicAppearance.coral
+        case "Downloaded", "Songs": MusicAppearance.teal
+        case "Artists": MusicAppearance.amber
+        case "Playlists", "Saved Music Imports": MusicAppearance.violet
+        case "Albums": MusicAppearance.sky
+        default: MusicAppearance.accent
+        }
+    }
+
     var body: some View {
         HStack(spacing: 15) {
             Image(systemName: symbol)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(MusicAppearance.accent)
+                .foregroundStyle(color)
                 .frame(width: 29)
             Text(title)
                 .font(.body.weight(.medium))
@@ -150,7 +187,7 @@ struct MusicPlaybackActions: View {
                     .frame(maxWidth: .infinity, minHeight: 37)
             }
             .buttonStyle(.bordered)
-            .tint(MusicAppearance.accent)
+            .tint(MusicAppearance.teal)
         }
         .font(.subheadline.weight(.semibold))
         .disabled(disabled)
