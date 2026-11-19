@@ -58,6 +58,13 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
         selected.job.status=body.action==='pause'?'paused':
           body.action==='cancel'?'cancelled':'running';
         selected.job.authorized=selected.job.authorized||body.authorized===true;
+        if(body.action==='retry'){
+          const retry={recheck:1,research:Math.max(0,selected.job.review-1)};
+          selected.job.pending=retry.research;
+          selected.job.queued+=retry.recheck;
+          selected.job.review=0;
+          return reply({job:selected.job,retry});
+        }
         return reply({job:selected.job});
       }
       if(method==='GET')return reply({job:selected.job,manifest:selected.manifest});
@@ -976,6 +983,31 @@ test('collection migration persists authorized job on NAS for cross-device proce
   expect(errors).toEqual([]);
 });
 
+
+test('monitoring import can retry only review rows without resubmitting active transfers',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const state=await setupMocks(page);
+  const id='10000000-0000-4000-8000-000000000009';
+  state.savedJobs.push({job:{
+    id,filename:'saved-collection.json',status:'monitoring',
+    authorized:true,message:'Waiting for queued NAS recordings to appear in the library',
+    total:9,completed:3,queued:2,review:4,pending:0
+  },manifest:{collections:[{id:'apple:favorites',kind:'favorites',name:'Favorite Songs',
+    tracks:[{title:'Track',artist:'Artist',status:'review'}]}]},raw:'{}'});
+  await login(page,'listener');
+  if(await page.locator('.mobile-nav').isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:/Import Spotify/}).click();
+  }else await page.locator('.sidebar').getByRole('button',{name:'Import music'}).click();
+  const button=page.getByRole('button',{name:'Retry unmatched (4)'});
+  await expect(button).toBeVisible();
+  page.once('dialog',dialog=>dialog.accept());
+  await button.click();
+  await expect(page.getByText(/Recovery requested: 1 previous transfers will be rechecked/)).toBeVisible();
+  expect(state.savedJobs[0].job.queued).toBe(3);
+  expect(state.savedJobs[0].job.review).toBe(0);
+  expect(errors).toEqual([]);
+});
 
 test('saved import survives browser reload and preserves NAS ownership',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
