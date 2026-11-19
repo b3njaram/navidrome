@@ -189,6 +189,26 @@ final class JobbiMusicTests: XCTestCase {
                        "Another user's private playlist (name hidden)")
     }
 
+    func testPlaylistAndQuarantineReceiptsDecodeSeparately() throws {
+        let removal = try JSONDecoder().decode(PlaylistMutation.self, from: Data(
+            """
+            {"verified":true,"removedEntry":{"id":"track-1","title":"Song"},
+             "playlist":{"id":"p1","name":"Mix","entry":[]}}
+            """.utf8))
+        XCTAssertEqual(removal.verified, true)
+        XCTAssertEqual(removal.removedEntry?.id, "track-1")
+        XCTAssertEqual(removal.playlist?.tracks.count, 0)
+        let quarantine = try JSONDecoder().decode(QuarantineReceipt.self, from: Data(
+            """
+            {"quarantined":true,"scanRequested":false,"indexingPending":true,
+             "playlistEntriesUnchanged":true,"message":"Moved; scan unavailable"}
+            """.utf8))
+        XCTAssertTrue(quarantine.quarantined)
+        XCTAssertFalse(quarantine.scanRequested)
+        XCTAssertTrue(quarantine.indexingPending == true)
+        XCTAssertTrue(quarantine.playlistEntriesUnchanged == true)
+    }
+
     func testInvidiousFallbackAndAdminResponsesDecode() throws {
         let result = try JSONDecoder().decode(InvidiousSearchResponse.self, from: Data(
             """
