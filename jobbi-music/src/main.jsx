@@ -372,6 +372,7 @@ function App() {
   const [songRemoval,setSongRemoval]=useState(null),[removalConfirm,setRemovalConfirm]=useState(''),[removalBusy,setRemovalBusy]=useState(false);
   const [newPlaylist,setNewPlaylist]=useState(''),[playlistBusy,setPlaylistBusy]=useState(false),[pickerSong,setPickerSong]=useState(null),[downloads,setDownloads]=useState(null),[downloadBusy,setDownloadBusy]=useState(false),[importSong,setImportSong]=useState(null),[importArtist,setImportArtist]=useState(''),[importTitle,setImportTitle]=useState(''),[importBusy,setImportBusy]=useState(false),[importNotice,setImportNotice]=useState('');
   const [musicImports,setMusicImports]=useState([]);
+  const [quarantineNotice,setQuarantineNotice]=useState('');
   const [libraryAlbums,setLibraryAlbums]=useState([]),[libraryArtists,setLibraryArtists]=useState([]),[libraryOffset,setLibraryOffset]=useState(0),[libraryMore,setLibraryMore]=useState(true),[libraryLoading,setLibraryLoading]=useState(false);
   const [adminOverview,setAdminOverview]=useState(null),[adminUsers,setAdminUsers]=useState(null),[adminLoading,setAdminLoading]=useState(false),[adminBusy,setAdminBusy]=useState(false);
   const [accountForm,setAccountForm]=useState({username:'',name:'',email:'',password:''}),[adminNotice,setAdminNotice]=useState('');
@@ -784,7 +785,7 @@ function App() {
       try{
         for(const row of [...items].sort((a,b)=>(b._playlistIndex??0)-(a._playlistIndex??0))){
           await api('/api/playlists/'+encodeURIComponent(page.idValue),{
-            method:'PATCH',body:JSON.stringify({removeIndex:row._playlistIndex})
+            method:'PATCH',body:JSON.stringify({removeIndex:row._playlistIndex,expectedSongId:row.id})
           });done++;
         }
         setDetail(await api('/api/playlists/'+encodeURIComponent(page.idValue)));
@@ -794,7 +795,7 @@ function App() {
     }
     if(action==='quarantine'){
       if(unique.length>20){setError('Select 1–20 recordings per operation.');return;}
-      setRemovalBusy(true);setError('');setSongRemoval(null);setRemovalConfirm('');
+      setRemovalBusy(true);setError('');setQuarantineNotice('');setSongRemoval(null);setRemovalConfirm('');
       const reviews=[];
       try{
         for(const item of unique){
@@ -816,14 +817,16 @@ function App() {
   };
   const confirmSongRemoval=async()=>{
     if(!songRemoval?.length||removalConfirm!=='REMOVE'||removalBusy)return;
-    setRemovalBusy(true);setError('');
-    let moved=0;
+    setRemovalBusy(true);setError('');setQuarantineNotice('');
+    let moved=0,scansNotRequested=0;
     try{
       for(const review of songRemoval){
-        await post('/api/songs/'+encodeURIComponent(review.song.id)+'/quarantine',{
+        const receipt=await post('/api/songs/'+encodeURIComponent(review.song.id)+'/quarantine',{
           ticket:review.ticket,confirm:'REMOVE_FROM_SHARED_LIBRARY'
         });
+        if(receipt.quarantined!==true)throw Error('NAS did not confirm the audio file moved. Inspect before retrying.');
         moved++;
+        if(receipt.scanRequested!==true)scansNotRequested++;
       }
       setSongRemoval(null);setRemovalConfirm('');
       const [h,starredData]=await Promise.allSettled([api('/api/home'),api('/api/starred')]);
@@ -836,7 +839,11 @@ function App() {
           '/'+encodeURIComponent(page.idValue));
         setDetail(result);
       }
-      setError('Moved '+moved+' recording(s) to recoverable NAS quarantine. The library may need a scan to update.');
+      setQuarantineNotice(moved+' audio file(s) confirmed moved to recoverable NAS quarantine. '+
+        (scansNotRequested?'Automatic Navidrome scan did not start for '+scansNotRequested+' file(s); ask an admin to scan. ':
+         'Navidrome rescan requested. ')+
+        'A song may still appear in playlists, Favorites or Search until Navidrome updates its index. '+
+        'Playlist entries were not automatically deleted.');
     }catch(e){
       setError('Moved '+moved+' recording(s), then stopped: '+e.message+
         '. Reload and review usage before retrying.');
@@ -857,7 +864,7 @@ function App() {
       if(task.action==='move'&&task.source){
         for(const item of [...task.items].sort((a,b)=>(b._playlistIndex??0)-(a._playlistIndex??0))){
           await api('/api/playlists/'+encodeURIComponent(task.source),{
-            method:'PATCH',body:JSON.stringify({removeIndex:item._playlistIndex})
+            method:'PATCH',body:JSON.stringify({removeIndex:item._playlistIndex,expectedSongId:item.id})
           });
         }
         setDetail(await api('/api/playlists/'+encodeURIComponent(task.source)));
@@ -867,7 +874,17 @@ function App() {
       '. Review the destination before retrying.');}
     finally{setPlaylistBusy(false)}
   };
-  const removeFromPlaylist=async(id,index)=>{setError('');try{const result=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({removeIndex:index})});setDetail(result.playlist);await refreshPlaylists();}catch(e){setError(e.message)}};
+  const removeFromPlaylist=async(id,index,songId)=>{
+    setError('');
+    try{
+      const result=await api(`/api/playlists/${encodeURIComponent(id)}`,
+        {method:'PATCH',body:JSON.stringify({removeIndex:index,expectedSongId:songId})});
+      if(result.verified!==true||result.removedEntry?.id!==songId)
+        throw Error('Server did not confirm the specific playlist entry was removed.');
+      setDetail(result.playlist);
+      await refreshPlaylists();
+    }catch(e){setError(e.message)}
+  };
   const renamePlaylist=async id=>{const name=window.prompt('New playlist name:',detail?.name||'');if(name===null)return;setError('');try{const r=await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({name})});setDetail(r.playlist);await refreshPlaylists();}catch(e){setError(e.message)}};
   const deletePlaylist=async id=>{if(!window.confirm('Delete this playlist? Songs in your music library will not be deleted.'))return;setError('');try{await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'DELETE'});await refreshPlaylists();setPage({id:'library'});}catch(e){setError(e.message)}};
   const refreshDownloads=async()=>{setDownloadBusy(true);setError('');try{setDownloads(await api('/api/soulseek/downloads'));}catch(e){setError(e.message)}finally{setDownloadBusy(false)}};
@@ -1150,9 +1167,11 @@ function App() {
   if(['album','artist','playlist'].includes(page.id))main=detail?<><button className="back-link" onClick={()=>setPage({id:'library'})}><ArrowLeft size={18}/> Back to library</button><div className="detail-hero"><div className="detail-artwork"><Art item={detail} size="big" round={page.id==='artist'}/>{['album','playlist'].includes(page.id)&&<img key={page.idValue+'-'+coverVersion} className="custom-cover-art" src={'/api/artwork/'+page.id+'/'+encodeURIComponent(page.idValue)+'?v='+coverVersion} alt="Your uploaded cover" onError={e=>{e.currentTarget.style.display='none'}} onLoad={e=>{e.currentTarget.style.display='block'}}/>}</div><div className="detail-info"><span className="eyebrow">{page.id.toUpperCase()}</span><h1>{detail.name||detail.title||'Untitled'}</h1><p>{page.id==='artist'?`${detail.albumCount||0} albums`:(detail.artist||'Your collection')} · {detail.songCount||detail.song?.length||detail.entry?.length||0} tracks</p><button className="primary" onClick={()=>{const tracks=detail.song||detail.entry||[];if(tracks.length)playTracks(tracks);else if(detail.album?.length)openAlbum(detail.album[0])}}><Play size={18} fill="currentColor"/> Play {page.id==='artist'?'music':'album'}</button>{page.id==='playlist'&&<div className="playlist-edit">
   <button type="button" className="ghost-button" onClick={()=>downloadCollection('playlist',page.idValue,detail.name||'playlist')}>
     <ArrowDownToLine size={16}/> Download playlist
-  </button><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{['album','playlist'].includes(page.id)&&<PlaylistTools detail={detail} playlistId={page.idValue} isPlaylist={page.id==='playlist'} api={api} onUpdate={updated=>setDetail(old=>({...old,...updated,entry:updated?.entry??old?.entry}))} onSocial={id=>setPage({id:'social',idValue:id})} onFavoriteAll={favoriteAllPlaylist} onArtwork={uploadCover} onError={setError} search={playlistQuery} onSearch={setPlaylistQuery} viewer={user?.username}/>}{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{detailSongs.length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={filteredDetailSongs} onPlay={playTracks} onQueueNext={playNext} onQueueLast={addToQueue} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?(_i,song)=>removeFromPlaylist(page.idValue,song._playlistIndex):undefined}
+  </button><button className="ghost-button" onClick={()=>renamePlaylist(page.idValue)}>Rename</button><button className="ghost-button" onClick={()=>deletePlaylist(page.idValue)}>Delete playlist</button></div>}</div></div>{['album','playlist'].includes(page.id)&&<PlaylistTools detail={detail} playlistId={page.idValue} isPlaylist={page.id==='playlist'} api={api} onUpdate={updated=>setDetail(old=>({...old,...updated,entry:updated?.entry??old?.entry}))} onSocial={id=>setPage({id:'social',idValue:id})} onFavoriteAll={favoriteAllPlaylist} onArtwork={uploadCover} onError={setError} search={playlistQuery} onSearch={setPlaylistQuery} viewer={user?.username}/>}{detail.album?.length?<AlbumRow items={detail.album} title="Albums" onClick={openAlbum}/>:null}{detailSongs.length>0?<section className="shelf"><div className="shelf-title"><h2>Tracks</h2></div><SongList songs={filteredDetailSongs} onPlay={playTracks} onQueueNext={playNext} onQueueLast={addToQueue} currentTrack={currentTrack} starred={starred} onFavorite={favorite} onAdd={openPlaylistPicker} onSave={androidApp?saveOffline:undefined} onArtist={openArtistSong} onAlbum={openAlbumSong} onRemove={page.id==='playlist'?(_i,song)=>removeFromPlaylist(page.idValue,song._playlistIndex,song.id):undefined}
   selectionKey={page.id+':'+page.idValue} onBulkAction={bulkAction} onDeleteRecording={song=>bulkAction('quarantine',[song])}/></section>:null}</>:<div className="loading-block"><LoaderCircle className="spin"/> Loading music…</div>;
-  return <div className={'app-shell '+(playing?'music-is-playing':'music-is-paused')}><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span>{androidApp&&<button className="native-offline-link" title="Open downloaded music" onClick={()=>nativeCommand("openOffline")}><ArrowDownToLine size={15}/> Offline</button>}<label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Open community profile" onClick={()=>setPage({id:'social'})}>{socialSelf?.has_avatar?<img className="header-profile-photo" src={`/api/social/profiles/${encodeURIComponent(user.username.toLowerCase())}/avatar?v=${socialAvatarVersion}`} alt="My profile"/>:user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
+  return <div className={'app-shell '+(playing?'music-is-playing':'music-is-paused')}><Sidebar page={page} setPage={setPage} user={user} logout={logout} playlists={home?.playlists}/><div className="main-column"><header className="topbar"><div className="topbar-left"><button className="icon-button" onClick={()=>setPage({id:'home'})} title="Home"><Home size={18}/></button><button className="topbar-search" onClick={()=>setPage({id:'search'})}><Search size={17}/><span>Search your music</span><kbd>⌘ K</kbd></button></div><div className="topbar-right"><span className="server-dot"/> <span className="connected">Your private library</span>{androidApp&&<button className="native-offline-link" title="Open downloaded music" onClick={()=>nativeCommand("openOffline")}><ArrowDownToLine size={15}/> Offline</button>}<label className="quality-control" title="Playback quality"><SlidersHorizontal size={14}/><select aria-label="Playback quality" value={quality} onChange={e=>changeQuality(e.target.value)}><option value="original">Original · Lossless</option><option value="balanced">High · 320 kbps</option><option value="saver">Data Saver · 128 kbps</option></select></label><button className="header-avatar" title="Open community profile" onClick={()=>setPage({id:'social'})}>{socialSelf?.has_avatar?<img className="header-profile-photo" src={`/api/social/profiles/${encodeURIComponent(user.username.toLowerCase())}/avatar?v=${socialAvatarVersion}`} alt="My profile"/>:user.username.slice(0,1).toUpperCase()}</button></div></header><main className="content">{error&&<div className="inline-error"><span>{error}</span><button onClick={()=>setError('')}><X size={17}/></button></div>}
+    {quarantineNotice&&<div className="import-notice" role="status"><Check size={17}/><span>{quarantineNotice}</span>
+      <button type="button" className="icon-button" onClick={()=>setQuarantineNotice('')} aria-label="Dismiss NAS removal notice"><X size={16}/></button></div>}{main}<footer className="page-footer">JOBBI MUSIC <span>·</span> YOUR LIBRARY, REIMAGINED.</footer></main></div>
     <audio ref={audio}
       onTimeUpdate={e=>{setPosition(Number.isFinite(e.currentTarget.currentTime)?e.currentTarget.currentTime:0);trackListen(e.currentTarget)}}
       onPlay={e=>trackListen(e.currentTarget)} onPause={e=>trackListen(e.currentTarget)}
