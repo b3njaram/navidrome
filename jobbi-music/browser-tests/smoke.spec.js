@@ -6,7 +6,11 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[],savedJobs:[],weatherRequests:[],scrobbles:[],
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:2}],
+    playlistEntries:[
+      {id:'s1',title:'Kino',artist:'Test Artist',duration:180,album:'Test Album'},
+      {id:'s2',title:'Another Song',artist:'Other Artist',duration:210,album:'Different Album'}],
+    stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[],savedJobs:[],weatherRequests:[],scrobbles:[],
     scanStatus:{scanning:false,count:0,folderCount:0,lastScan:'2026-11-19T17:00:00Z'}};
   await page.route('**/api/**',async route=>{
     const req=route.request();
@@ -97,7 +101,8 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
       if(body.ticket!=='test-signed-removal-ticket'||body.confirm!=='REMOVE_FROM_SHARED_LIBRARY')
         return reply({error:'Confirmation missing'},400);
       state.quarantined.push({username:state.session?.username,id:'s1'});
-      return reply({quarantined:true,id:'s1',message:'Moved to quarantine'});
+      return reply({quarantined:true,id:'s1',scanRequested:true,indexingPending:true,
+        playlistEntriesUnchanged:true,message:'NAS file moved; Navidrome index pending'});
     }
     if(pathname==='/api/download/collection'){
       return route.fulfill({status:200,contentType:'application/zip',
@@ -112,10 +117,22 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
     if(pathname.startsWith('/api/playlists/')&&method==='PATCH'){
       const id=pathname.split('/')[3],p=state.playlists.find(x=>x.id===id);
       if(!p)return reply({error:'Playlist not found'},404);
-      if(body.addSongId){state.addedTracks.push({playlistId:id,songId:body.addSongId});p.songCount++;}
-      if(Number.isInteger(body.removeIndex))state.removedIndices.push({playlistId:id,index:body.removeIndex});
+      if(body.addSongId){
+        state.addedTracks.push({playlistId:id,songId:body.addSongId});
+        state.playlistEntries.push({id:body.addSongId,title:'Added track',artist:'Test Artist'});
+      }
+      let removedEntry=null;
+      if(Number.isInteger(body.removeIndex)){
+        const current=state.playlistEntries[body.removeIndex];
+        if(!current||body.expectedSongId&&current.id!==body.expectedSongId)
+          return reply({error:'Playlist changed; refresh before removing'},409);
+        removedEntry=state.playlistEntries.splice(body.removeIndex,1)[0];
+        state.removedIndices.push({playlistId:id,index:body.removeIndex});
+      }
+      p.songCount=state.playlistEntries.length;
       if(typeof body.public==='boolean')p.public=body.public;
-      return reply({playlist:{...p}});
+      return reply({playlist:{...p,entry:[...state.playlistEntries]},
+        ...(removedEntry?{removedEntry:{id:removedEntry.id,title:removedEntry.title},verified:true}:{})});
     }
     if(pathname==='/api/lyrics/s1')return reply({available:true,synced:true,source:'Navidrome',lines:[{at:0,text:'First line of the song'},{at:4500,text:'Second line of the song'}]});
     if(pathname==='/api/search')return reply({artist:[{id:'artist1',name:'Test Artist'}],album:[{id:'a1',name:'Test Album',artist:'Test Artist'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
@@ -123,9 +140,9 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
     if(pathname==='/api/library/artists')return reply({artists:[{id:'artist1',name:'Test Artist'}],count:1});
     if(pathname==='/api/albums/a1')return reply({id:'a1',name:'Test Album',artist:'Test Artist',song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
     if(pathname==='/api/artists/artist1')return reply({id:'artist1',name:'Test Artist',album:[{id:'a1',name:'Test Album'}],song:[{id:'s1',title:'Kino',artist:'Test Artist',artistId:'artist1',albumId:'a1',album:'Test Album',duration:180}]});
-    if(pathname==='/api/playlists/p1'&&method==='GET')return reply({id:'p1',name:'Favorites Mix',public:state.playlists[0].public||false,entry:[
-      {id:'s1',title:'Kino',artist:'Test Artist',duration:180,album:'Test Album'},
-      {id:'s2',title:'Another Song',artist:'Other Artist',duration:210,album:'Different Album'}]});
+    if(pathname==='/api/playlists/p1'&&method==='GET')return reply({
+      id:'p1',name:'Favorites Mix',public:state.playlists[0].public||false,
+      entry:[...state.playlistEntries]});
     if(pathname==='/api/playlists/p1/favorite-all'&&method==='POST'){
       state.stars.add('s1');state.stars.add('s2');
       return reply({added:2,skipped:0,failed:0,ids:['s1','s2']});
@@ -223,6 +240,20 @@ test('home recommendations show weekly/monthly, personal and daily mixes and opt
   expect(state.weatherRequests).toContain('El Paso');
   await page.getByRole('button',{name:'Turn off weather'}).click();
   await expect(page.getByRole('heading',{name:'Rainy Day Mix'})).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('playlist removal shows verified result without deleting NAS music',async({page})=>{
+  const state=await setupMocks(page);
+  const errors=[];page.on('pageerror',err=>errors.push(err.message));
+  await login(page,'listener');
+  await navigate(page,'Your Library');
+  await page.locator('.playlist-grid').getByRole('button',{name:/Favorites Mix/}).first().click();
+  await expect(page.locator('.track-row')).toHaveCount(2);
+  await page.locator('.track-row').first().getByTitle('Remove from playlist').click();
+  await expect(page.locator('.track-row')).toHaveCount(1);
+  expect(state.removedIndices).toEqual([{playlistId:'p1',index:0}]);
+  expect(state.quarantined).toEqual([]);
   expect(errors).toEqual([]);
 });
 
