@@ -308,7 +308,12 @@ test('admin library scan displays Navidrome counts, elapsed status and completio
   const state=await setupMocks(page);
   const errors=[];page.on('pageerror',err=>errors.push(err.message));
   await login(page,'testadmin');
-  await navigate(page,'Admin console');
+  if(await page.locator('.mobile-nav').first().isVisible()){
+    await page.getByRole('button',{name:'More options'}).click();
+    await page.locator('.mobile-more-sheet').getByRole('button',{name:'Admin console'}).click();
+  }else{
+    await navigate(page,'Admin console');
+  }
   const panel=page.locator('.admin-scan-card');
   await expect(panel.getByText('Navidrome idle')).toBeVisible();
   await panel.getByRole('button',{name:'Scan library'}).click();
