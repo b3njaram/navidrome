@@ -13,11 +13,11 @@ struct CoverArt: View {
             image.resizable().scaledToFill()
         } placeholder: {
             Rectangle()
-                .fill(.pink.gradient.opacity(0.18))
+                .fill(MusicAppearance.sky.gradient.opacity(0.18))
                 .overlay {
                     Image(systemName: "music.note")
                         .font(.system(size: size / 3, weight: .medium))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(MusicAppearance.sky)
                 }
         }
         .frame(width: size, height: size)
