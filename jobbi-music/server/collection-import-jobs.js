@@ -113,7 +113,8 @@ export function summarizeFallbackRecordings(tracks,dbRows,snapshot){
     if(examples.length<12&&['failed','interrupted','missing'].includes(stage))
       examples.push({title:track.title,artist:track.artist,stage});
   }
-  return {connected:snapshot.connected,counts,uniqueVideoIds:ids.size,examples,
+  return {connected:snapshot.connected,reason:snapshot.reason||null,
+    counts,uniqueVideoIds:ids.size,examples,
     explanation:'An MP3 on NAS still needs correct tags and Navidrome indexing before it can be added to Favorites.'};
 }
 
