@@ -24,7 +24,8 @@ async function requestWorker(url,secret,method,path,body){
  * It returns only video IDs, statuses and file-present booleans, never paths.
  */
 export async function inspectInvidiousRecordings({url,secret,owner,videoIds}){
-  if(!isAllowedWorker(url,secret))return {connected:false,items:[]};
+  if(!isAllowedWorker(url,secret))return {connected:false,items:[],
+    reason:'Invidious worker is not configured in the Jobbi Music server.'};
   const ids=[...new Set(videoIds.filter(videoIdValid))].slice(0,1600);
   try{
     const items=[];
@@ -32,12 +33,18 @@ export async function inspectInvidiousRecordings({url,secret,owner,videoIds}){
       const result=await requestWorker(url,secret,'POST','/inspect',{
         owner:keyForUser(owner.toLowerCase()),videoIds:ids.slice(i,i+300)
       });
-      if(!result.ok)return {connected:false,items:[]};
+      if(!result.ok)return {connected:false,items:[],
+        reason:result.status===404?
+          'Invidious worker is running an older image without the /inspect endpoint. Rebuild the worker.':
+          result.status===403?
+          'Invidious worker rejected Jobbi Music authentication. Recheck worker secrets and restart both services.':
+          'Invidious worker returned HTTP '+result.status+'. Check its NAS logs.'};
       items.push(...(Array.isArray(result.data?.items)?result.data.items:[]));
     }
     return {connected:true,items};
   }catch{
-    return {connected:false,items:[]};
+    return {connected:false,items:[],
+      reason:'Invidious worker cannot be reached or returned an invalid response. Check the worker container and Docker network.'};
   }
 }
 
