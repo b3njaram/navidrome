@@ -138,7 +138,7 @@ if [ "$WORKER_UPDATE" = 1 ];then
   fi
   # Check the real application-to-worker route, not merely its localhost port.
   # This also detects an outdated worker image (404) or a secret mismatch (403).
-  if ! docker exec jobbi-music node -e '
+  if WORKER_PROBE="$(docker exec jobbi-music node -e '
 const url=process.env.INVIDIOUS_WORKER_URL;
 const token=process.env.INVIDIOUS_WORKER_SECRET;
 if(url!=="http://jobbi-invidious-worker:8091"||!token||token.length<32){
@@ -155,8 +155,11 @@ fetch(url+"/inspect",{
   if(!Array.isArray(body.items))throw Error("Unexpected inspector response");
   console.log("Invidious worker reachable and authenticated from Jobbi Music");
 }).catch(error=>{console.error(error.message);process.exit(1)});
-' 2>&1 | tee -a "$LOG";then
-    log "Website-to-worker inspection failed; check URL/token and Docker networking before retry."
+' 2>&1)";then
+    log "$WORKER_PROBE"
+  else
+    log "Website-to-worker inspection failed: $WORKER_PROBE"
+    log "Check the app/worker URL, worker token and Docker networking before retry."
     rollback_release
     exit 1
   fi
