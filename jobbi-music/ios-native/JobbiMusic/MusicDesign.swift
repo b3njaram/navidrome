@@ -119,12 +119,12 @@ struct MusicLibraryCategoryRow: View {
 
     private var color: Color {
         switch title {
-        case "Favorite Songs": MusicAppearance.coral
-        case "Downloaded", "Songs": MusicAppearance.teal
-        case "Artists": MusicAppearance.amber
-        case "Playlists", "Saved Music Imports": MusicAppearance.violet
-        case "Albums": MusicAppearance.sky
-        default: MusicAppearance.accent
+        case "Favorite Songs": return MusicAppearance.coral
+        case "Downloaded", "Songs": return MusicAppearance.teal
+        case "Artists": return MusicAppearance.amber
+        case "Playlists", "Saved Music Imports": return MusicAppearance.violet
+        case "Albums": return MusicAppearance.sky
+        default: return MusicAppearance.accent
         }
     }
 
