@@ -45,7 +45,14 @@ before(async()=>{
     if(name==='getUser')return json(res,ok({user:{username:u.searchParams.get('username'),adminRole:u.searchParams.get('username')==='testadmin'}}));
     if(name==='getUsers')return json(res,ok({users:{user:[{username:'testadmin',adminRole:true},{username:'listener',adminRole:false}]}}));
     if(name==='getPlaylists')return json(res,ok({playlists:{playlist:[{id:'pl-1',name:'Road trip',songCount:0}]}}));
-    if(name==='getPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')||'Road trip',entry:[]}}));
+    if(name==='getPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')||'Road trip',
+      entry:received.mockPlaylistEntries||[]}}));
+    if(name==='updatePlaylist'){
+      const index=u.searchParams.get('songIndexToRemove');
+      if(index!==null&&Array.isArray(received.mockPlaylistEntries)&&!received.ignorePlaylistRemoval)
+        received.mockPlaylistEntries.splice(Number(index),1);
+      return json(res,ok());
+    }
     if(name==='createPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')}}));
     if(name==='getAlbumList2')return json(res,ok({albumList2:{album:[{id:'album-1',name:'Album'}]}}));
     if(name==='getAlbum')return json(res,ok({album:{id:u.searchParams.get('id')||'album-1',name:'Album',song:[]}}));
@@ -188,6 +195,32 @@ test('playlist create, edit and delete',async()=>{
   const gone=await fetch(base+'/api/playlists/pl-1',{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
   assert.equal(gone.status,200);
   assert.deepEqual(await gone.json(),{ok:true});
+});
+test('playlist entry deletion verifies exact song and refuses stale indices',async()=>{
+  try{
+    received.mockPlaylistEntries=[
+      {id:'a',title:'First'},{id:'b',title:'Second'},
+      {id:'a',title:'First duplicate'},{id:'c',title:'Last'}];
+    const incorrect=await patch('/api/playlists/pl-1',
+      {removeIndex:1,expectedSongId:'wrong'});
+    assert.equal(incorrect.status,409);
+    assert.equal(received.mockPlaylistEntries.length,4);
+    const removed=await patch('/api/playlists/pl-1',
+      {removeIndex:2,expectedSongId:'a'});
+    assert.equal(removed.status,200);
+    const receipt=await removed.json();
+    assert.equal(receipt.verified,true);
+    assert.equal(receipt.removedEntry.id,'a');
+    assert.deepEqual(received.mockPlaylistEntries.map(x=>x.id),['a','b','c']);
+    assert.equal((await patch('/api/playlists/pl-1',
+      {removeIndex:20,expectedSongId:'a'})).status,409);
+    received.ignorePlaylistRemoval=true;
+    const ignored=await patch('/api/playlists/pl-1',
+      {removeIndex:1,expectedSongId:'b'});
+    assert.equal(ignored.status,409);
+    assert.match((await ignored.json()).error,/did not confirm/);
+    assert.deepEqual(received.mockPlaylistEntries.map(x=>x.id),['a','b','c']);
+  }finally{delete received.mockPlaylistEntries;delete received.ignorePlaylistRemoval}
 });
 test('Soulseek search, transfer status and safe import',async()=>{
   const search=await post('/api/soulseek/search',{query:'test'});
