@@ -149,11 +149,16 @@ struct SongShelf: View {
     let subtitle: String?
     let songs: [Song]
     var showPlays = false
+    var accent: Color = MusicAppearance.accent
 
     var body: some View {
         if !songs.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 10) {
+                    Capsule()
+                        .fill(accent.gradient)
+                        .frame(width: 4, height: 29)
+                        .accessibilityHidden(true)
                     MusicSectionHeading(title: title, subtitle: subtitle)
                     NavigationLink {
                         MusicSongShelfDetail(title: title, songs: songs)
