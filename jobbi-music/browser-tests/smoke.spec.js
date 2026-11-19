@@ -6,7 +6,8 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
   const old=staleImports?[{id:'old-1',title:'Группа крови',artist:'Кино',filename:'013. Kino - Gruppa Krovi.mp3',
     stage:'unconfirmed',label:'No active transfer found · this attempt was not confirmed',
     attemptCount:3,archiveIds:['old-1','old-2','old-3'],progress:null}]:[];
-  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[],savedJobs:[],weatherRequests:[],scrobbles:[]};
+  const state={session:null,playlists:[{id:'p1',name:'Favorites Mix',songCount:0}],stars:new Set(favoriteSongIds),addedTracks:[],quarantined:[],removedIndices:[],artworkUploads:[],musicRequests:[],imports:old,fallbackJobs:[],savedJobs:[],weatherRequests:[],scrobbles:[],
+    scanStatus:{scanning:false,count:0,folderCount:0,lastScan:'2026-11-19T17:00:00Z'}};
   await page.route('**/api/**',async route=>{
     const req=route.request();
     const url=new URL(req.url());
@@ -181,7 +182,12 @@ async function setupMocks(page,{staleImports=false,favoriteSongIds=[]}={}){
     if(pathname==='/api/admin/accounts'&&method==='GET')return reply({users:[{id:'u1',username:'testadmin',name:'Admin',isAdmin:true},{id:'u2',username:'listener',name:'Listener',isAdmin:false}],readOnly:false});
     if(pathname==='/api/admin/accounts'&&method==='POST')return reply({created:true,username:body.username,role:'listener'},201);
     if(pathname.startsWith('/api/admin/accounts/')&&method==='DELETE')return reply({deleted:true});
-    if(pathname==='/api/library/scan')return reply({ok:true,scanStatus:{scanning:true}});
+    if(pathname==='/api/library/scan-status'&&method==='GET')
+      return reply({scanStatus:state.scanStatus,checkedAt:new Date().toISOString()});
+    if(pathname==='/api/library/scan'&&method==='POST'){
+      state.scanStatus={...state.scanStatus,scanning:true,count:0,folderCount:0};
+      return reply({ok:true,scanStatus:state.scanStatus,requestedAt:new Date().toISOString()});
+    }
     if(pathname==='/api/status')return reply({ok:true});
     return reply({ok:true});
   });
@@ -296,6 +302,26 @@ test('administrator sees volume stats and restricted user management',async({pag
   await expect(page.getByText('Listener',{exact:true}).first()).toBeVisible();
   await page.getByRole('button',{name:'Create listener'}).click();
   await expect(page.getByText('Username must')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+test('admin library scan displays Navidrome counts, elapsed status and completion',async({page})=>{
+  const state=await setupMocks(page);
+  const errors=[];page.on('pageerror',err=>errors.push(err.message));
+  await login(page,'testadmin');
+  await navigate(page,'Admin console');
+  const panel=page.locator('.admin-scan-card');
+  await expect(panel.getByText('Navidrome idle')).toBeVisible();
+  await panel.getByRole('button',{name:'Scan library'}).click();
+  await expect(panel.getByText('Navidrome scanning…')).toBeVisible();
+  state.scanStatus={scanning:true,count:72,folderCount:4,lastScan:'2026-11-19T17:00:00Z'};
+  await panel.getByRole('button',{name:'Check status'}).click();
+  await expect(panel.getByText('72',{exact:true})).toBeVisible();
+  await expect(panel.getByText('4',{exact:true})).toBeVisible();
+  state.scanStatus={scanning:false,count:184,folderCount:11,lastScan:'2026-11-19T17:04:00Z'};
+  await panel.getByRole('button',{name:'Check status'}).click();
+  await expect(panel.getByText('Scan finished')).toBeVisible();
+  await expect(panel.getByText('184',{exact:true})).toBeVisible();
+  await expect(panel.getByText(/Finished observed at/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 test('Soulseek search presents peer results instead of raw JSON',async({page})=>{
