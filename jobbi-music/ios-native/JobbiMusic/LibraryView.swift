@@ -106,7 +106,8 @@ struct LibraryView: View {
                         CollectionView(kind: .playlist, id: playlist.id)
                     } label: {
                         HStack(spacing: 13) {
-                            MusicListArtwork(symbol: "music.note.list", size: 56)
+                            MusicListArtwork(symbol: "music.note.list",
+                                             tint: MusicAppearance.violet, size: 56)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(playlist.name)
                                     .font(.body.weight(.medium))
@@ -157,7 +158,7 @@ struct LibraryView: View {
                     } label: {
                         HStack(spacing: 13) {
                             MusicListArtwork(symbol: "person.2.fill",
-                                             tint: .indigo, size: 56)
+                                             tint: MusicAppearance.teal, size: 56)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(playlist.title)
                                     .font(.body.weight(.medium))
@@ -522,8 +523,8 @@ struct FavoritesView: View {
             Section {
                 VStack(spacing: 16) {
                     MusicListArtwork(symbol: "heart.fill",
-                        tint: MusicAppearance.accent, size: 170)
-                        .shadow(color: MusicAppearance.accent.opacity(0.16),
+                        tint: MusicAppearance.coral, size: 170)
+                        .shadow(color: MusicAppearance.coral.opacity(0.16),
                                 radius: 17, y: 9)
                         .padding(.top, 10)
                     Text("Favorite Songs")
