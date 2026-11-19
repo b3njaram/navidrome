@@ -299,12 +299,12 @@ function NavidromeScanFeedback({scan}) {
     new Date(status.lastScan).toLocaleString():null;
   const observedText=seconds==null?'—':scanClockDuration(seconds);
   return <div className={'library-scan-feedback'+(active?' library-scan-running':'')}
-              role="status" aria-live="polite">
+              role="region" aria-label="Navidrome library scan status">
     <div className="library-scan-feedback-header">
       <span className="library-scan-feedback-title">
         {active?<LoaderCircle size={16} className="spin"/>:
           completed?<Check size={16}/>:<Clock3 size={16}/>}
-        <strong>{label}</strong>
+        <strong aria-live="polite">{label}</strong>
       </span>
       <button type="button" className="ghost-button"
         onClick={()=>void scan.refresh()} disabled={checking}>
