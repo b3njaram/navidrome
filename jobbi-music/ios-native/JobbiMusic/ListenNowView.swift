@@ -20,19 +20,21 @@ struct ListenNowView: View {
                 if let recommendations = library.recommendations {
                     SongShelf(title: "New in Your Library",
                         subtitle: "Just added to your collection",
-                        songs: recommendations.recentTracks ?? [])
+                        songs: recommendations.recentTracks ?? [], accent: MusicAppearance.teal)
                     SongShelf(title: "Heavy Rotation",
                         subtitle: "Your most played songs this week",
-                        songs: recommendations.topWeek ?? [], showPlays: true)
+                        songs: recommendations.topWeek ?? [], showPlays: true,
+                        accent: MusicAppearance.coral)
                     SongShelf(title: "Top Songs This Month",
                         subtitle: "Your last 30 days",
-                        songs: recommendations.topMonth ?? [], showPlays: true)
+                        songs: recommendations.topMonth ?? [], showPlays: true,
+                        accent: MusicAppearance.violet)
                     SongShelf(title: "Made for You",
                         subtitle: "A mix of your favorites and discoveries",
-                        songs: recommendations.madeForYou ?? [])
+                        songs: recommendations.madeForYou ?? [], accent: MusicAppearance.sky)
                     SongShelf(title: recommendations.timeLabel ?? "Daily Mix",
                         subtitle: "Music for this time of day",
-                        songs: recommendations.timeMix ?? [])
+                        songs: recommendations.timeMix ?? [], accent: MusicAppearance.amber)
                     if recommendations.topMonth?.isEmpty ?? true {
                         Text("Your listening charts will appear as you play more music.")
                             .font(.footnote)
@@ -43,7 +45,7 @@ struct ListenNowView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 Image(systemName: "cloud.sun.fill")
-                                    .foregroundStyle(MusicAppearance.accent)
+                                    .foregroundStyle(MusicAppearance.amber)
                                 Text(weather.city).font(.headline)
                                 if let temp = weather.temperature {
                                     Text("\(Int(temp.rounded()))°C")
@@ -53,7 +55,7 @@ struct ListenNowView: View {
                             .padding(.horizontal, 16)
                             SongShelf(title: recommendations.weatherLabel ?? "Weather Mix",
                                 subtitle: "Selected for your weather",
-                                songs: recommendations.weatherMix ?? [])
+                                songs: recommendations.weatherMix ?? [], accent: MusicAppearance.sky)
                         }
                     }
                     if let error = recommendations.weatherError, !error.isEmpty {
@@ -71,7 +73,7 @@ struct ListenNowView: View {
                 if !(library.home?.songs ?? []).isEmpty {
                     SongShelf(title: "Play Something Good",
                         subtitle: "Rediscover songs from your collection",
-                        songs: library.home?.songs ?? [])
+                        songs: library.home?.songs ?? [], accent: MusicAppearance.teal)
                 }
                 weatherSettings
                     .padding(.horizontal, 16)
@@ -134,8 +136,8 @@ struct ListenNowView: View {
                 .fill(
                     LinearGradient(colors: [
                         MusicAppearance.accent,
-                        Color(red: 0.47, green: 0.08, blue: 0.27),
-                        Color(red: 0.16, green: 0.10, blue: 0.24)
+                        MusicAppearance.violet.opacity(0.92),
+                        Color(red: 0.07, green: 0.37, blue: 0.47)
                     ], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
             HStack {
