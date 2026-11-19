@@ -99,21 +99,42 @@ def tag_recording(video_id, title, artist):
         return {'found': True, 'status': 'tagging_failed', 'changed': False}
 
 def snapshot_owner(owner, video_ids):
+    """Inspect a batch with ONE directory scan, not a glob for each video ID.
+
+    A large saved collection can contain hundreds of distinct source IDs.
+    Repeated glob/stat calls on a spinning-disk NAS risk exhausting the
+    authenticated server's worker-inspection timeout.
+    """
+    requested = set(video_ids)
     with LOCK:
         known = {
             j['videoId']: j.copy()
-            for j in jobs if j.get('owner') == owner and j.get('videoId') in video_ids
+            for j in jobs if j.get('owner') == owner and j.get('videoId') in requested
         }
-    items = []
-    for video_id in video_ids:
-        record = known.get(video_id)
-        present = matching_recording(video_id) is not None
-        items.append({
+    matches = {video_id: 0 for video_id in requested}
+    try:
+        root = FOLDER.resolve(strict=True)
+        for item in FOLDER.iterdir():
+            if item.suffix != '.mp3' or item.is_symlink() or not item.is_file():
+                continue
+            if item.resolve().parent != root:
+                continue
+            # Keep matching_recording's exact semantics: if more than one
+            # candidate has this source ID, its presence is ambiguous.
+            stem = item.stem
+            for video_id in requested:
+                if video_id in stem:
+                    matches[video_id] += 1
+    except OSError:
+        pass
+    return [
+        {
             'videoId': video_id,
-            'status': record.get('status') if record else 'unconfirmed',
-            'present': present
-        })
-    return items
+            'status': known[video_id].get('status') if video_id in known else 'unconfirmed',
+            'present': matches[video_id] == 1
+        }
+        for video_id in video_ids
+    ]
 
 def repair_completed_history():
     """One-time, non-destructive recovery for older imports after a worker restart."""
