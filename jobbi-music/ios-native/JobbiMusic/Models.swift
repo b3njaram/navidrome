@@ -97,8 +97,15 @@ struct UserSession: Codable {
     let csrfToken: String
 }
 
+struct PlaylistRemovedEntry: Decodable {
+    let id: String
+    let title: String?
+}
+
 struct PlaylistMutation: Decodable {
     let playlist: CollectionDetail?
+    let removedEntry: PlaylistRemovedEntry?
+    let verified: Bool?
 }
 
 struct CreatePlaylistResponse: Decodable {
