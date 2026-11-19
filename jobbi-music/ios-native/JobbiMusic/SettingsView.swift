@@ -18,6 +18,13 @@ struct SettingsView: View {
                     .textSelection(.enabled)
                 LabeledContent("Role", value: api.user?.admin == true
                     ? "Administrator" : "Listener")
+                if let username = api.user?.username {
+                    NavigationLink {
+                        SocialProfileView(username: username)
+                    } label: {
+                        Label("View or edit profile picture", systemImage: "person.crop.circle")
+                    }
+                }
             }
             if api.user?.admin == true {
                 Section("Server administration") {
