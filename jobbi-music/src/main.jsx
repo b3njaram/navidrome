@@ -182,6 +182,154 @@ const extractRemote = data => {
   };
   walk(data);return found;
 };
+function scanClockDuration(seconds) {
+  const total=Math.max(0,Math.floor(Number(seconds)||0));
+  const hours=Math.floor(total/3600);
+  const minutes=Math.floor((total%3600)/60);
+  const secs=total%60;
+  return hours>0
+    ? hours+':'+String(minutes).padStart(2,'0')+':'+String(secs).padStart(2,'0')
+    : minutes+':'+String(secs).padStart(2,'0');
+}
+
+function useNavidromeScanProgress(enabled) {
+  const [status,setStatus]=useState(null);
+  const [checkedAt,setCheckedAt]=useState(null);
+  const [phase,setPhase]=useState({kind:'idle',requestedAt:null,
+    observedAt:null,completedAt:null});
+  const [starting,setStarting]=useState(false);
+  const [checking,setChecking]=useState(false);
+  const [error,setError]=useState('');
+  const [clock,setClock]=useState(Date.now());
+  const pending=useRef(false);
+
+  const observe=(report)=>{
+    if(typeof report?.scanStatus?.scanning!=='boolean')
+      throw Error('Navidrome did not return a valid scan status');
+    const next=report.scanStatus,at=Date.now();
+    setStatus(next);
+    setCheckedAt(report.checkedAt||new Date(at).toISOString());
+    setPhase(previous=>{
+      if(next.scanning){
+        // A new scan can start after the last one finished. The clock starts
+        // when Jobbi first observes it, not at a fabricated Navidrome time.
+        if(previous.kind==='scanning')return previous;
+        return {kind:'scanning',requestedAt:previous.kind==='requested'?
+          previous.requestedAt:null,observedAt:at,completedAt:null};
+      }
+      if(previous.kind==='scanning')
+        return {...previous,kind:'completed',completedAt:at};
+      // "Start Scan" may complete before the first poll. Keep it as requested
+      // unless Navidrome actually confirms the running-to-idle transition.
+      if(previous.kind==='requested')return previous;
+      return previous;
+    });
+  };
+  const refresh=async()=>{
+    if(pending.current)return;
+    pending.current=true;
+    setChecking(true);
+    try {
+      const report=await api('/api/library/scan-status');
+      observe(report);
+      setError('');
+    } catch(e) {
+      // A failed status request is not confirmation that a scan completed.
+      setError(e.message||'Cannot reach Navidrome scan status');
+    } finally {
+      pending.current=false;
+      setChecking(false);
+    }
+  };
+  const start=async()=>{
+    if(starting||status?.scanning)return false;
+    setStarting(true);
+    setError('');
+    try {
+      const result=await post('/api/library/scan',{});
+      const at=Date.now();
+      // "Requested" and "finished" are different states.
+      setPhase({kind:'requested',requestedAt:at,observedAt:null,completedAt:null});
+      if(result.scanStatus?.scanning){
+        observe({scanStatus:result.scanStatus,checkedAt:result.requestedAt});
+      }
+      // Poll again from the real Navidrome endpoint once the request succeeds.
+      await refresh();
+      return true;
+    } catch(e) {
+      setError(e.message||'Could not request Navidrome scan');
+      return false;
+    } finally { setStarting(false); }
+  };
+
+  useEffect(()=>{
+    if(!enabled)return;
+    let active=true;
+    const poll=async()=>{
+      if(!active) return;
+      await refresh();
+    };
+    void poll();
+    const timer=setInterval(()=>{void poll()},4000);
+    return()=>{active=false;clearInterval(timer)};
+  },[enabled]);
+  useEffect(()=>{
+    if(!enabled||phase.kind!=='scanning')return;
+    const timer=setInterval(()=>setClock(Date.now()),1000);
+    return()=>clearInterval(timer);
+  },[enabled,phase.kind]);
+  const seconds=phase.observedAt?
+    Math.max(0,Math.floor(((phase.completedAt||clock)-phase.observedAt)/1000)):null;
+  return {status,phase,error,starting,checking,clock,seconds,checkedAt,refresh,start};
+}
+
+function NavidromeScanFeedback({scan}) {
+  const {status,phase,error,checking,seconds,checkedAt}=scan;
+  const active=status?.scanning===true;
+  const completed=phase.kind==='completed'&&!active;
+  const requested=phase.kind==='requested'&&!active;
+  const label=error?'Scan status unavailable':active?'Navidrome scanning…':
+    completed?'Scan finished':requested?'Scan requested — awaiting confirmation':
+    status?'Navidrome idle':'Checking Navidrome…';
+  const count=Number.isFinite(Number(status?.count))&&status?.count!=null?
+    Number(status.count).toLocaleString():'—';
+  const folders=Number.isFinite(Number(status?.folderCount))&&status?.folderCount!=null?
+    Number(status.folderCount).toLocaleString():null;
+  const lastScan=status?.lastScan&&Number.isFinite(Date.parse(status.lastScan))?
+    new Date(status.lastScan).toLocaleString():null;
+  const observedText=seconds==null?'—':scanClockDuration(seconds);
+  return <div className={'library-scan-feedback'+(active?' library-scan-running':'')}
+              role="status" aria-live="polite">
+    <div className="library-scan-feedback-header">
+      <span className="library-scan-feedback-title">
+        {active?<LoaderCircle size={16} className="spin"/>:
+          completed?<Check size={16}/>:<Clock3 size={16}/>}
+        <strong>{label}</strong>
+      </span>
+      <button type="button" className="ghost-button"
+        onClick={()=>void scan.refresh()} disabled={checking}>
+        <RefreshCw size={14}/> {checking?'Checking…':'Check status'}
+      </button>
+    </div>
+    <div className="library-scan-feedback-metrics">
+      <div><strong>{count}</strong><span>Items processed (Navidrome)</span></div>
+      <div><strong>{observedText}</strong><span>{phase.requestedAt?
+        'Observed scan time':'Time observed by Jobbi'}</span></div>
+      {folders!==null&&<div><strong>{folders}</strong><span>Folders processed</span></div>}
+    </div>
+    {requested&&<p>Navidrome accepted the scan request, but a running scan has not been observed yet. An idle response alone does not prove it finished.</p>}
+    {completed&&<p>Navidrome changed from scanning to idle. Scan completed in the observed session.</p>}
+    {active&&<p>Live counts from Navidrome. The total number of files to check is not provided, so progress is not shown as a percentage.</p>}
+    {!active&&!completed&&!requested&&!error&&<p>No scan is running. Use Scan library above to request one.</p>}
+    {error&&<p className="library-scan-feedback-error">{error}. The previous counts may be stale.</p>}
+    <p className="library-scan-feedback-fine">
+      {lastScan?'Navidrome last scan: '+lastScan+' · ':''}
+      {checkedAt?'Status checked: '+new Date(checkedAt).toLocaleTimeString():'Waiting for first status update'}
+      {completed&&phase.completedAt?' · Finished observed at '+new Date(phase.completedAt).toLocaleTimeString():''}
+    </p>
+  </div>;
+}
+
 function App() {
   const [mobileMore,setMobileMore]=useState(false);
   const [nowPlayingOpen,setNowPlayingOpen]=useState(false),[nowPlayingMode,setNowPlayingMode]=useState('artwork'),[lyricsLoading,setLyricsLoading]=useState(false);
@@ -216,6 +364,8 @@ function App() {
   const [adminOverview,setAdminOverview]=useState(null),[adminUsers,setAdminUsers]=useState(null),[adminLoading,setAdminLoading]=useState(false),[adminBusy,setAdminBusy]=useState(false);
   const [accountForm,setAccountForm]=useState({username:'',name:'',email:'',password:''}),[adminNotice,setAdminNotice]=useState('');
   const [socialSelf,setSocialSelf]=useState(null),[socialAvatarVersion,setSocialAvatarVersion]=useState(0);
+  const scanProgress=useNavidromeScanProgress(Boolean(user?.admin&&
+    (page.id==='admin'||(page.id==='search'&&searchTab==='soulseek'))));
   const currentTrack=queue[currentIndex]||null;
   const albums = useMemo(()=>[...(home?.recent||[]),...(home?.featured||[])],[home]);
   const remoteItems = useMemo(()=>{
@@ -768,8 +918,9 @@ function App() {
   };
   const scanLibrary=async()=>{
     setError('');
-    try{await post('/api/library/scan',{});setImportNotice('Library scan requested. New songs may take a moment to appear.');}
-    catch(e){setError(e.message)}
+    const accepted=await scanProgress.start();
+    if(accepted)setImportNotice('Navidrome scan requested. Live progress and completion are shown below.');
+    else if(scanProgress.error)setError(scanProgress.error);
   };
   useEffect(()=>{
     if(!user?.username||page.id!=='search'||searchTab!=='soulseek')return;
@@ -895,13 +1046,14 @@ function App() {
               {['existing','unconfirmed'].includes(item.stage)&&<button className="music-import-play music-import-search" onClick={()=>{
                 setQ(item.title);setSearchTab('library');setPage({id:'search'});
               }}><Search size={14}/> Search library</button>}
-              {user.admin&&['existing','unconfirmed'].includes(item.stage)&&<button className="music-import-aux" onClick={scanLibrary}><RefreshCw size={14}/> Scan library</button>}
+              {user.admin&&['existing','unconfirmed'].includes(item.stage)&&<button className="music-import-aux" onClick={scanLibrary} disabled={scanProgress.starting||scanProgress.status?.scanning}><RefreshCw size={14}/> {scanProgress.starting?'Requesting…':'Scan library'}</button>}
               {item.archiveIds?.length>0&&<button className="music-import-aux" onClick={()=>hideImportAttempts(item.archiveIds)} title="Hide previous attempts only; no transfer or song is removed"><X size={14}/> Hide attempts</button>}
             </div>
           </div>
         }):<p className="request-empty">No imported tracks yet. Choose a Soulseek recording and tap Import song.</p>}</div>
       </section>
-      {user.admin&&<section className="transfer-section"><div className="shelf-title"><div><h2>Soulseek transfers</h2><p>Active and completed transfers handled by your NAS downloader.</p></div><button className="ghost-button" onClick={refreshDownloads} disabled={downloadBusy}><RefreshCw size={15}/> Refresh</button><button className="ghost-button" onClick={scanLibrary}><RefreshCw size={15}/> Scan library</button></div>
+      {user.admin&&<section className="transfer-section"><div className="shelf-title"><div><h2>Soulseek transfers</h2><p>Active and completed transfers handled by your NAS downloader.</p></div><button className="ghost-button" onClick={refreshDownloads} disabled={downloadBusy}><RefreshCw size={15}/> Refresh</button><button className="ghost-button" onClick={scanLibrary} disabled={scanProgress.starting||scanProgress.status?.scanning}><RefreshCw size={15}/> {scanProgress.starting?'Requesting…':'Scan library'}</button></div>
+        <NavidromeScanFeedback scan={scanProgress}/>
         {downloads&&<div className="remote-results">{extractRemote(downloads).length?extractRemote(downloads).map((item,i)=><div className="remote-item" key={i}><Music2 size={17}/><div><strong>{(item.filename||item.fileName||'Unknown').split(/[\\/]/).pop()}</strong><small>{item.state||item.status||'Transferring'} · {item.percentage||0}%</small></div></div>):<p className="request-empty">No active Soulseek transfers.</p>}</div>}
       </section>}
       {invidiousJobs.length>0&&<section className="request-section"><div className="shelf-title"><div><h2>Alternate-source imports</h2><p>Local audio jobs from your optional Invidious import worker.</p></div><button className="ghost-button" onClick={refreshInvidiousJobs}><RefreshCw size={15}/> Refresh</button></div>
@@ -941,6 +1093,17 @@ function App() {
   </select><p className="settings-help">Pauses music automatically. The browser tab must stay open.</p></div><button className="ghost-button" onClick={logout}>Sign out</button></div></section>;
   if(page.id==='admin'&&user.admin)main=<section className="admin-page"><div className="page-title"><div className="eyebrow">PRIVATE SERVER OPERATIONS</div><h1>Admin console<span className="spark-dot">.</span></h1><p>Manage your music service, storage and access.</p></div>
     <div className="admin-head"><span className="admin-verified"><Check size={16}/> Verified Navidrome administrator</span><button className="ghost-button" onClick={loadAdmin} disabled={adminLoading}><RefreshCw size={16}/> Refresh dashboard</button></div>
+    <div className="admin-card admin-scan-card">
+      <div className="admin-card-head"><RefreshCw size={21}/><div>
+        <h2>Navidrome library scan</h2>
+        <p>Request a scan and watch real results from Navidrome without leaving this page.</p>
+      </div></div>
+      <button type="button" className="ghost-button" onClick={scanLibrary}
+        disabled={scanProgress.starting||scanProgress.status?.scanning}>
+        <RefreshCw size={15}/> {scanProgress.starting?'Requesting…':'Scan library'}
+      </button>
+      <NavidromeScanFeedback scan={scanProgress}/>
+    </div>
     {adminLoading&&!adminOverview&&<div className="loading-block"><LoaderCircle className="spin"/> Loading server overview…</div>}
     {adminOverview&&<div className="admin-grid">
       <div className="admin-card"><div className="admin-card-head"><HardDrive size={22}/><h2>NAS storage</h2></div>
