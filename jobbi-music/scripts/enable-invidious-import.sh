@@ -44,7 +44,23 @@ if [ "$(docker inspect -f '{{.State.Running}}' jobbi-invidious-worker 2>/dev/nul
 fi
 docker compose -f compose.yaml --profile invidious-import up -d --build jobbi-invidious-worker jobbi-music
 docker compose -f compose.yaml --profile invidious-import ps
-docker exec jobbi-invidious-worker python -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://127.0.0.1:8091/health',timeout=5)))"
+WORKER_READY=0
+attempt=0
+while [ "$attempt" -lt 20 ];do
+  if docker exec jobbi-invidious-worker python -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://127.0.0.1:8091/health',timeout=5)))" >/dev/null 2>&1;then
+    WORKER_READY=1
+    break
+  fi
+  attempt=$((attempt+1))
+  sleep 3
+done
+if [ "$WORKER_READY" -ne 1 ];then
+  echo "Worker did not become healthy. Its recent logs:"
+  docker inspect -f 'Worker status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}}' jobbi-invidious-worker || true
+  docker logs --tail=60 jobbi-invidious-worker || true
+  exit 1
+fi
+echo "Invidious worker /health: OK."
 # Verify the authenticated /inspect route FROM the app container. A healthy
 # local worker alone does not prove the actual saved-import inspector works.
 docker exec jobbi-music node -e '
