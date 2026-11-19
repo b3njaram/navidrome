@@ -746,11 +746,23 @@ app.get('/api/library/scan-status',mustAuth,mustAdmin,route(async(req,res)=>{
     null:Math.max(0,Math.trunc(Number(value)));
   const lastScan=typeof raw.lastScan==='string'&&Number.isFinite(Date.parse(raw.lastScan))?
     raw.lastScan:null;
+  // Current Navidrome provides time.Duration as integer nanoseconds.
+  // Convert to seconds here so clients never have to guess its unit.
+  const durationNs=raw.elapsedTime==null?null:Number(raw.elapsedTime);
+  const elapsedSeconds=durationNs!==null&&Number.isFinite(durationNs)&&durationNs>=0?
+    Math.floor(durationNs/1_000_000_000):null;
+  const scanType=['quick','full','selective'].includes(raw.scanType)?
+    raw.scanType:null;
+  const scanError=typeof raw.error==='string'&&raw.error.trim()?
+    raw.error.trim().slice(0,240):null;
   res.setHeader('Cache-Control','private, no-store');
   res.json({scanStatus:{
     scanning:raw.scanning,
     count:numeric(raw.count),
     folderCount:numeric(raw.folderCount),
+    elapsedSeconds,
+    scanType,
+    error:scanError,
     lastScan
   },checkedAt:new Date().toISOString()});
 }));
