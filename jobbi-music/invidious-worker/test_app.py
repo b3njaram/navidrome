@@ -57,6 +57,26 @@ class InvidiousRepairTests(unittest.TestCase):
         self.assertFalse(app.tag_recording('12345678901', 'Wrong', 'Wrong')['found'])
         self.assertEqual(str(ID3(str(existing)).getall('TIT2')[0].text[0]), 'Original')
 
+    def test_bulk_inspection_finds_471_ids_without_repeated_directory_glob(self):
+        videos = [format(i, '011d') for i in range(471)]
+        for i in (0, 250, 470):
+            self.make_recording(videos[i], 'Example', 'Example')
+        # A duplicated source ID must not be treated as a uniquely identified file.
+        (app.FOLDER / ('Another_name_['+videos[250]+'].mp3')).write_bytes(b'')
+        original_matcher = app.matching_recording
+        def unexpected_per_video_glob(_):
+            raise AssertionError('Batch inspection must not glob once per video')
+        app.matching_recording = unexpected_per_video_glob
+        try:
+            rows = app.snapshot_owner('user-test', videos)
+        finally:
+            app.matching_recording = original_matcher
+        self.assertEqual(len(rows), 471)
+        self.assertTrue(rows[0]['present'])
+        self.assertFalse(rows[250]['present'])
+        self.assertTrue(rows[470]['present'])
+        self.assertFalse(rows[400]['present'])
+
     def test_inspector_scopes_job_status_to_owner(self):
         video = 'rTL50MyBHPs'
         app.jobs = [{'id':'job-1', 'owner':'user-a', 'videoId':video,
