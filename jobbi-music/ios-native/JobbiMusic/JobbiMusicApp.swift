@@ -143,17 +143,7 @@ struct RootView: View {
                                 }
                         }
                     }
-                    Tab("New", systemImage: "square.grid.2x2.fill", value: 1) {
-                        NavigationStack {
-                            MusicSearchView(initialMode: 1)
-                                .toolbar {
-                                    ToolbarItem(placement: .topBarTrailing) {
-                                        MusicAccountButton()
-                                    }
-                                }
-                        }
-                    }
-                    Tab("Community", systemImage: "person.2.fill", value: 2) {
+                    Tab("Community", systemImage: "person.2.fill", value: 1) {
                         NavigationStack {
                             CommunityView()
                                 .toolbar {
@@ -163,7 +153,7 @@ struct RootView: View {
                                 }
                         }
                     }
-                    Tab("Library", systemImage: "square.stack.fill", value: 3) {
+                    Tab("Library", systemImage: "square.stack.fill", value: 2) {
                         NavigationStack {
                             LibraryView()
                                 .toolbar {
@@ -173,7 +163,7 @@ struct RootView: View {
                                 }
                         }
                     }
-                    Tab("Search", systemImage: "magnifyingglass", value: 4) {
+                    Tab("Search", systemImage: "magnifyingglass", value: 3) {
                         NavigationStack {
                             MusicSearchView()
                                 .toolbar {
@@ -235,7 +225,7 @@ struct LoginView: View {
                     Spacer(minLength: 56)
                     Image(systemName: "music.note.house.fill")
                         .font(.system(size: 56, weight: .medium))
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(MusicAppearance.teal)
                         .frame(maxWidth: .infinity)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 8) {
