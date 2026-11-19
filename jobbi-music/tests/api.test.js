@@ -433,6 +433,11 @@ test('Navidrome scan progress: admin-only, live counts, last scan and completion
   assert.equal(progress.scanStatus.folderCount,12);
   assert.equal(progress.scanStatus.lastScan,'2026-11-19T17:00:00Z');
   assert.ok(Number.isFinite(Date.parse(progress.checkedAt)));
+  // Read-only polling must not consume the 30-action/10-minute import limit.
+  for(let poll=0;poll<32;poll++){
+    const snapshot=await get('/api/library/scan-status');
+    assert.equal(snapshot.status,200,'poll '+poll+' should remain available');
+  }
   received.mockScanStatus={
     scanning:false,count:277,folderCount:20,lastScan:'2026-11-19T17:04:00Z'
   };
