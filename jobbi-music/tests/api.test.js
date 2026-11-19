@@ -59,7 +59,10 @@ before(async()=>{
         return json(res,ok({searchResult3:{song:[{id:'kino-song',title:'Gruppa Krovi',artist:'Kino'}],album:[],artist:[]}}));
       return json(res,ok({searchResult3:{song:[],album:[],artist:[]}}));
     }
-    if(name==='startScan')return json(res,ok({scanStatus:{scanning:true}}));
+    if(name==='getScanStatus')return json(res,ok({scanStatus:received.mockScanStatus||{
+      scanning:false,count:0,folderCount:0,lastScan:'2026-11-19T17:00:00Z'
+    }}));
+    if(name==='startScan')return json(res,ok({scanStatus:{scanning:true,count:0}}));
     return json(res,ok());
   });
   downloadServer=createServer(async(req,res)=>{
@@ -411,10 +414,38 @@ test('social routes use real Navidrome sessions, forbid unauthenticated access, 
   const deleted=await fetch(base+'/api/social/playlists/'+id,{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
   assert.equal(deleted.status,200);
 });
-test('admin-initiated library scan',async()=>{
+test('Navidrome scan progress: admin-only, live counts, last scan and completion',async()=>{
+  const nonAdmin=await fetch(base+'/api/library/scan-status',{
+    headers:{cookie:listenerCookie}
+  });
+  assert.equal(nonAdmin.status,403);
+  const anonymous=await fetch(base+'/api/library/scan-status');
+  assert.equal(anonymous.status,401);
+  received.mockScanStatus={
+    scanning:true,count:154,folderCount:12,lastScan:'2026-11-19T17:00:00Z'
+  };
+  const first=await get('/api/library/scan-status');
+  assert.equal(first.status,200);
+  assert.match(first.headers.get('cache-control')||'',/no-store/);
+  const progress=await first.json();
+  assert.equal(progress.scanStatus.scanning,true);
+  assert.equal(progress.scanStatus.count,154);
+  assert.equal(progress.scanStatus.folderCount,12);
+  assert.equal(progress.scanStatus.lastScan,'2026-11-19T17:00:00Z');
+  assert.ok(Number.isFinite(Date.parse(progress.checkedAt)));
+  received.mockScanStatus={
+    scanning:false,count:277,folderCount:20,lastScan:'2026-11-19T17:04:00Z'
+  };
+  const completed=await(await get('/api/library/scan-status')).json();
+  assert.equal(completed.scanStatus.scanning,false);
+  assert.equal(completed.scanStatus.count,277);
+  assert.equal(completed.scanStatus.lastScan,'2026-11-19T17:04:00Z');
   const res=await post('/api/library/scan',{});
   assert.equal(res.status,200);
-  assert.equal((await res.json()).scanStatus.scanning,true);
+  const started=await res.json();
+  assert.equal(started.scanStatus.scanning,true);
+  assert.ok(Number.isFinite(Date.parse(started.requestedAt)));
+  delete received.mockScanStatus;
 });
 
 test('real authenticated cover upload: JPEG bytes round-trip, invalid image and CSRF are blocked', {skip:!process.env.SOCIAL_TEST_DATABASE_URL},async()=>{
