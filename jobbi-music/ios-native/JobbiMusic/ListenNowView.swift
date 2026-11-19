@@ -85,7 +85,7 @@ struct ListenNowView: View {
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button {
                     Task { await library.refresh(api: api) }
                 } label: { Image(systemName: "arrow.clockwise") }
