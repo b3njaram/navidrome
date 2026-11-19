@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import {latestTransferSnapshot,findTransfer,transferStage} from './import-progress.js';
+import {inspectInvidiousRecordings,repairInvidiousRecording} from './invidious-import.js';
 import {ensureSocialProfile,normalUsername,socialQuery} from './social-db.js';
 import {
   parseCollectionManifest,findLocalSong,pickSoulseekCandidate,
@@ -102,12 +103,15 @@ function firstPending(state,now){
   return null;
 }
 
-export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}){
+export function createCollectionJobsRouter({
+  mustAuth,getSession,port,downloader,invidiousWorkerUrl,invidiousWorkerSecret
+}){
   const router=express.Router();
   let running=false;
   let timer;
   let lastDiagnostic=0;
   let cachedTransfers={at:0,snapshot:null};
+  let lastMetadataScanAt=0;
   async function transferSnapshot(){
     if(!cachedTransfers.snapshot || Date.now()-cachedTransfers.at>25_000){
       cachedTransfers.snapshot=await latestTransferSnapshot(downloader);
@@ -272,6 +276,53 @@ export function createCollectionJobsRouter({mustAuth,getSession,port,downloader}
           }
           track.note='Downloader status unavailable; waiting for NAS indexing';
           return track.note;
+        }
+      }
+      if(track.source==='invidious' &&
+        Date.now()-(Number(track.lastTagCheckAt)||0)>15*60*1000){
+        // This imported video may have been downloaded successfully but
+        // indexed with YouTube's title/uploader rather than the saved song.
+        // Repair ID3 tags *in place* by the user's verified import record.
+        track.lastTagCheckAt=Date.now();
+        const request=await socialQuery(`SELECT video_id FROM invidious_imports
+          WHERE requester=$1 AND title=$2 AND artist=$3
+          ORDER BY created_at DESC LIMIT 1`,
+          [job.owner,track.title,track.artist]);
+        if(request.rowCount){
+          const repair=await repairInvidiousRecording({
+            url:invidiousWorkerUrl,secret:invidiousWorkerSecret,
+            owner:job.owner,videoId:request.rows[0].video_id,
+            title:track.title,artist:track.artist
+          });
+          if(repair.status==='tagged'){
+            track.note='Downloaded MP3 tags repaired; awaiting Navidrome indexing';
+            // Scans are intentionally coalesced. Do not trigger hundreds of
+            // overlapping scans for a large saved Favorites migration.
+            if(Date.now()-lastMetadataScanAt>15*60*1000){
+              lastMetadataScanAt=Date.now();
+              try{await localAPI(session,'/api/library/scan',{method:'POST'})}
+              catch{track.note+=' (Navidrome scan requires admin access)'}
+            }
+            return track.note;
+          }
+          if(repair.status==='already_tagged'){
+            track.note='Downloaded MP3 is tagged; waiting for Navidrome scan';
+            return track.note;
+          }
+          if(repair.status==='tagging_failed'){
+            track.status='review';
+            track.note='Downloaded MP3 needs metadata repair on NAS';
+            delete track.retryAt;
+            return track.note;
+          }
+          if(repair.status==='worker_unavailable'){
+            track.note='Fallback worker cannot confirm the recording; retry status later';
+            return track.note;
+          }
+          if(repair.status==='file_not_found'){
+            track.note='Fallback recording not yet located on NAS; verify its worker job';
+            return track.note;
+          }
         }
       }
       track.note='Queued or awaiting indexing; transfer not verified active';
