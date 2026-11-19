@@ -422,7 +422,8 @@ test('Navidrome scan progress: admin-only, live counts, last scan and completion
   const anonymous=await fetch(base+'/api/library/scan-status');
   assert.equal(anonymous.status,401);
   received.mockScanStatus={
-    scanning:true,count:154,folderCount:12,lastScan:'2026-11-19T17:00:00Z'
+    scanning:true,count:154,folderCount:12,lastScan:'2026-11-19T17:00:00Z',
+    elapsedTime:12_500_000_000,scanType:'quick'
   };
   const first=await get('/api/library/scan-status');
   assert.equal(first.status,200);
@@ -431,6 +432,8 @@ test('Navidrome scan progress: admin-only, live counts, last scan and completion
   assert.equal(progress.scanStatus.scanning,true);
   assert.equal(progress.scanStatus.count,154);
   assert.equal(progress.scanStatus.folderCount,12);
+  assert.equal(progress.scanStatus.elapsedSeconds,12);
+  assert.equal(progress.scanStatus.scanType,'quick');
   assert.equal(progress.scanStatus.lastScan,'2026-11-19T17:00:00Z');
   assert.ok(Number.isFinite(Date.parse(progress.checkedAt)));
   // Read-only polling must not consume the 30-action/10-minute import limit.
@@ -439,11 +442,14 @@ test('Navidrome scan progress: admin-only, live counts, last scan and completion
     assert.equal(snapshot.status,200,'poll '+poll+' should remain available');
   }
   received.mockScanStatus={
-    scanning:false,count:277,folderCount:20,lastScan:'2026-11-19T17:04:00Z'
+    scanning:false,count:277,folderCount:20,lastScan:'2026-11-19T17:04:00Z',
+    elapsedTime:57_100_000_000,scanType:'quick',error:'One unreadable folder'
   };
   const completed=await(await get('/api/library/scan-status')).json();
   assert.equal(completed.scanStatus.scanning,false);
   assert.equal(completed.scanStatus.count,277);
+  assert.equal(completed.scanStatus.elapsedSeconds,57);
+  assert.equal(completed.scanStatus.error,'One unreadable folder');
   assert.equal(completed.scanStatus.lastScan,'2026-11-19T17:04:00Z');
   const res=await post('/api/library/scan',{});
   assert.equal(res.status,200);
