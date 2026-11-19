@@ -22,6 +22,7 @@ import {createInvidiousImportRouter} from './invidious-import.js';
 import {countIndexedSongs,countAccountRows} from './admin-stats.js';
 import {socialQuery} from './social-db.js';
 import {collectRemovalImpact,makeRemovalTicket,verifyRemovalTicket,impactForClient} from './removal-impact.js';
+import {preparePlaylistRemoval,verifyPlaylistRemoval} from './playlist-removal.js';
 import {makeRecommendations,fetchListeningHistory,getCityWeather,recordListen,localHour} from './recommendations.js';
 import { promises as fs } from 'node:fs';
 
@@ -240,11 +241,19 @@ app.post('/api/songs/:id/quarantine',mustAuth,route(async(req,res)=>{
     if(!upstream)return res.status(503).json({error:'NAS quarantine worker is unreachable. No recording was moved.'});
     const outcome=await upstream.json().catch(()=>({}));
     if(!upstream.ok)return res.status(409).json({error:'NAS quarantine refused the recording: '+String(outcome.error||'Unknown error').slice(0,140)});
+    if(outcome.ok!==true||outcome.original!==impact.path||
+       typeof outcome.stored!=='string'||!outcome.stored){
+      return res.status(502).json({error:'NAS quarantine returned an unverified result. Inspect the NAS quarantine journal before retrying; do not submit the removal again.'});
+    }
     rate.count++;removalRates.set(key,rate);
     let scanRequested=false;
     try{await subsonic(req.user,'startScan');scanRequested=true}catch{}
-    res.json({quarantined:true,id,scanRequested,
-      message:'Recording moved to recoverable NAS quarantine. '+(scanRequested?'Navidrome scan requested.':'Ask an administrator to rescan the library.')});
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({quarantined:true,id,scanRequested,indexingPending:true,
+      playlistEntriesUnchanged:true,
+      message:'NAS audio file moved to recoverable quarantine. '+(scanRequested?
+        'Navidrome rescan requested.':'Automatic Navidrome scan unavailable; ask an administrator to rescan.')+
+        ' Playlist and Favorites entries may still display until Navidrome refreshes its index. The app did not delete playlist entries.'});
   }finally{removalLocks.delete(id)}
 }));
 // NAS removal means reversible quarantine, NEVER deleting a file immediately.
@@ -273,6 +282,8 @@ app.post('/api/admin/songs/:id/quarantine',mustAuth,mustAdmin,route(async(req,re
   }
   const outcome=await response.json().catch(()=>({}));
   if(!response.ok)return res.status(409).json({error:'NAS quarantine failed: '+String(outcome.error||'Check NAS folder permissions').slice(0,180)});
+  if(outcome.ok!==true||outcome.original!==song.path||!outcome.stored)
+    return res.status(502).json({error:'Unverified quarantine response; inspect the NAS journal before retrying.'});
   // The hidden quarantine directory is outside the active music index on most
   // installations. Indexing is separate so a move is not misreported as indexed.
   let scanRequested=false;
@@ -528,13 +539,23 @@ app.post('/api/playlists',mustAuth,route(async(req,res)=>{
 }));
 app.patch('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
-  const {name,addSongId,removeIndex,public:publicVisibility}=req.body||{};
+  const {name,addSongId,removeIndex,expectedSongId,public:publicVisibility}=req.body||{};
   const changes={playlistId:req.params.id};
   if(name!==undefined){if(!validName(name))return res.status(400).json({error:'Invalid playlist name'});changes.name=name.trim();}
   if(publicVisibility!==undefined){if(typeof publicVisibility!=='boolean')return res.status(400).json({error:'Visibility must be public or private'});changes.public=publicVisibility;}
   if(addSongId!==undefined){if(!validId(addSongId))return res.status(400).json({error:'Invalid song'});changes.songIdToAdd=addSongId;}
   if(removeIndex!==undefined){if(!Number.isInteger(removeIndex)||removeIndex<0)return res.status(400).json({error:'Invalid song position'});changes.songIndexToRemove=removeIndex;}
+  if(expectedSongId!==undefined&&(!validId(expectedSongId)||removeIndex===undefined))
+    return res.status(400).json({error:'Expected song ID is only valid for playlist entry removal'});
   if(Object.keys(changes).length===1)return res.status(400).json({error:'No playlist changes supplied'});
+  // Verify the real playlist occurrence BEFORE applying a removal, never trust
+  // stale client indices (or a server that silently ignores a request).
+  let removal=null;
+  if(removeIndex!==undefined){
+    const current=await subsonic(req.user,'getPlaylist',{id:req.params.id});
+    try{removal=preparePlaylistRemoval(current.playlist,removeIndex,expectedSongId)}
+    catch(error){return res.status(error.status||409).json({error:error.message})}
+  }
   // Navidrome lets listeners read public playlists but only their owners may
   // edit them through the Subsonic API. Make this failure actionable in clients.
   if(publicVisibility!==undefined){
@@ -560,7 +581,13 @@ app.patch('/api/playlists/:id',mustAuth,route(async(req,res)=>{
     updated.playlist.public!==publicVisibility)){
     return res.status(502).json({error:'The music server did not confirm the visibility change. Please retry.'});
   }
-  res.json({playlist:updated.playlist||null});
+  if(removal&&!verifyPlaylistRemoval(removal,updated.playlist)){
+    return res.status(409).json({error:
+      'Navidrome did not confirm removal of the requested playlist entry. Refresh the playlist before trying again; the request may have changed the playlist.'});
+  }
+  res.setHeader('Cache-Control','private, no-store');
+  res.json({playlist:updated.playlist||null,
+    ...(removal?{removedEntry:{id:removal.id,title:removal.title},verified:true}: {})});
 }));
 app.post('/api/playlists/:id/favorite-all',mustAuth,mustBeLimited,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
