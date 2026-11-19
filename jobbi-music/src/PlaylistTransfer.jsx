@@ -584,7 +584,13 @@ export default function PlaylistTransfer({api,onLibrary,user}){
                         'connected':'not responding'} ·
                       {' '}{transferChecks[job.id].fallback.uniqueVideoIds} distinct video IDs
                     </p>
-                    <p className="transfer-help">
+                    {!transferChecks[job.id].fallback.connected&&
+                      <p className="transfer-help" role="alert">
+                        {transferChecks[job.id].fallback.reason||
+                          'The worker is unavailable; recording statuses are unconfirmed, not failed.'}
+                        {' '}No MP3 totals can be verified while the worker is offline.
+                      </p>}
+                    {transferChecks[job.id].fallback.connected&&<p className="transfer-help">
                       <b>{transferChecks[job.id].fallback.counts.onNas}</b> MP3 files on NAS
                       {' · '}<b>{transferChecks[job.id].fallback.counts.active}</b> transferring
                       {' · '}<b>{transferChecks[job.id].fallback.counts.waiting}</b> waiting
@@ -593,7 +599,7 @@ export default function PlaylistTransfer({api,onLibrary,user}){
                       {' · '}<b>{transferChecks[job.id].fallback.counts.missing}</b> completed but file missing
                       {' · '}<b>{transferChecks[job.id].fallback.counts.unconfirmed}</b> unconfirmed
                       {' · '}<b>{transferChecks[job.id].fallback.counts.unknown}</b> no import record
-                    </p>
+                    </p>}
                     <p className="transfer-help">
                       MP3 files still need correct tags and Navidrome indexing.
                       Jobbi repairs known metadata mismatches without downloading duplicates.
