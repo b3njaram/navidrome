@@ -1,11 +1,26 @@
 import SwiftUI
 
+/** Both iPhone and the CarPlay scene must address one authenticated playback
+ queue. CarPlay may launch the app without presenting any phone UI first. */
+@MainActor
+final class JobbiSharedMusicServices {
+    static let shared = JobbiSharedMusicServices()
+    let api = JobbiAPI()
+    let library = MusicLibrary()
+    let player = MusicPlayer()
+    let offline = OfflineLibrary()
+
+    private init() {
+        player.configure(api: api, offline: offline)
+    }
+}
+
 @main
 struct JobbiMusicApp: App {
-    @StateObject private var api = JobbiAPI()
-    @StateObject private var library = MusicLibrary()
-    @StateObject private var player = MusicPlayer()
-    @StateObject private var offline = OfflineLibrary()
+    @StateObject private var api = JobbiSharedMusicServices.shared.api
+    @StateObject private var library = JobbiSharedMusicServices.shared.library
+    @StateObject private var player = JobbiSharedMusicServices.shared.player
+    @StateObject private var offline = JobbiSharedMusicServices.shared.offline
 
     var body: some Scene {
         WindowGroup {
@@ -196,7 +211,7 @@ struct RootView: View {
             // music library and AVPlayer queue, not two unrelated players.
             CarPlayMusicCoordinator.shared.install(
                 api: api, library: library, player: player, offline: offline)
-            await api.restore()
+            if api.user == nil { await api.restore() }
             if api.user != nil { await initializeSession() }
             restoring = false
         }
