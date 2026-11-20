@@ -673,6 +673,39 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
         message = "Added ${song.title} to playlist."
     }
+    fun renameOpenedPlaylist(name:String) = execute {
+        val current=detail ?: throw IllegalStateException("Open a playlist first.")
+        require(current.isPlaylist){"This action only renames playlists."}
+        val trimmed=name.trim()
+        require(trimmed.isNotBlank()&&trimmed.length<=100){"Enter a playlist name of 1–100 characters."}
+        val updated=JobbiApi.editPlaylist(current.id,JSONObject().put("name",trimmed))
+        val result=updated.optJSONObject("playlist")
+            ?:throw JobbiException("Navidrome did not confirm the playlist rename.")
+        if(result.optStr("name")!=trimmed)
+            throw JobbiException("Navidrome did not save the new playlist name.")
+        detail=JobbiApi.openPlaylist(current.id)
+        playlists=JobbiApi.playlists()
+        message="Playlist renamed."
+    }
+    fun deleteOpenedPlaylist() = execute {
+        val current=detail ?: throw IllegalStateException("Open a playlist first.")
+        require(current.isPlaylist){"Only playlists can be deleted."}
+        JobbiApi.deletePlaylist(current.id)
+        playlists=JobbiApi.playlists()
+        detail=null
+        selected="Library"
+        message="Playlist deleted. Recordings on your NAS are unchanged."
+    }
+    fun downloadOpenedAlbum(wifiOnly:Boolean=true) = execute {
+        val current=detail ?: throw IllegalStateException("Open an album first.")
+        require(!current.isPlaylist){"Use Download playlist for playlists."}
+        enqueueOffline(current.songs,current.title,wifiOnly)
+        withContext(Dispatchers.IO){
+            JobbiDownloads.rememberCollection(getApplication(),account,server,
+                "album:"+current.id,current.title,current.songs)
+        }
+        refreshDownloadedSongs()
+    }
     fun createPlaylist(name: String) = execute {
         if (name.isBlank()) throw IllegalArgumentException("Enter a playlist name")
         JobbiApi.createPlaylist(name.trim())
