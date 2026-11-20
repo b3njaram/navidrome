@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -121,6 +122,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -148,6 +150,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -303,6 +306,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             "More"->"Account"
                             "Profile"->"Profile"
                             "Admin"->"Admin"
+                            "ArtistDetail"->vm.artistName.ifBlank{"Artist"}
                             "Server"->"Search"
                             "Favorites"->"Favorite Songs"
                             "Downloads"->"Downloaded"
@@ -315,7 +319,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     navigationIcon = {
                         if(vm.selected !in tabs.map{it.name}) IconButton(onClick={
                             when(vm.selected) {
-                                "Detail"->vm.back()
+                                "Detail","ArtistDetail"->vm.back()
                                 "Server"->vm.select("Search")
                                 "More"->vm.select(accountReturnTab)
                                 "Admin","Profile","Import"->vm.select("More")
@@ -349,7 +353,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             NavigationBarItem(
                                 selected=vm.selected==destination.name ||
                                      (destination.name=="Search"&&vm.selected=="Server") ||
-                                     (destination.name=="Library"&&vm.selected in listOf("Detail","Favorites","Downloads")),
+                                     (destination.name=="Library"&&vm.selected in listOf("Detail","Favorites","Downloads","Artists","ArtistDetail")),
                                 onClick={vm.select(destination.name)},
                                 icon={Icon(destination.icon,contentDescription=null)},
                                 label={Text(destination.name)},
@@ -370,6 +374,8 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
                         "Profile" -> ProfileScreen(vm)
                         "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
+                        "Artists" -> ArtistDirectoryScreen(vm)
+                        "ArtistDetail" -> ArtistDetailScreen(vm,player,onSongAdd={addSong=it})
                         "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true},
                             onDownloadPlaylist={p->downloadChoice=DownloadChoice("playlist",p.name,p.id)},
                             onRemovePlaylist={p->offlineRemovalChoice=DownloadChoice("playlist",p.name,p.id)},
@@ -1180,8 +1186,39 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                           onDownloadPlaylist:(MusicPlaylist)->Unit,
                           onRemovePlaylist:(MusicPlaylist)->Unit,
                           onDownloadAll:()->Unit,onDownloadFavorites:()->Unit) {
-    LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
+    val listState=rememberLazyListState()
+    val scope=rememberCoroutineScope()
+    LazyColumn(state=listState,
+        contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item {
+            Column {
+                Text("Browse Your Library",fontSize=22.sp,fontWeight=FontWeight.Bold,
+                    modifier=Modifier.padding(start=4.dp,bottom=8.dp))
+                LibraryCategoryRow("Playlists",Icons.Rounded.QueueMusic,JobbiViolet){
+                    scope.launch { listState.animateScrollToItem(4+vm.collectionJobs.size) }
+                }
+                LibraryCategoryRow("Artists",Icons.Rounded.Mic,JobbiAmber){
+                    vm.select("Artists")
+                }
+                LibraryCategoryRow("Albums",Icons.Rounded.Album,JobbiSky){
+                    scope.launch { listState.animateScrollToItem(
+                        5+vm.collectionJobs.size+vm.playlists.size) }
+                }
+                LibraryCategoryRow("Songs",Icons.Rounded.MusicNote,JobbiTeal){
+                    vm.select("Search")
+                }
+                LibraryCategoryRow("Favorite Songs",Icons.Rounded.Favorite,JobbiCoral){
+                    vm.select("Favorites")
+                }
+                LibraryCategoryRow("Downloaded",Icons.Rounded.Download,JobbiTeal){
+                    vm.select("Downloads")
+                }
+                LibraryCategoryRow("Saved Music Imports",Icons.Rounded.FileDownload,JobbiViolet){
+                    scope.launch { listState.animateScrollToItem(3) }
+                }
+            }
+        }
         item {
             FilledTonalButton(onClick={vm.select("Favorites")},
                 modifier=Modifier.fillMaxWidth()){
@@ -1235,7 +1272,7 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                         progress={ (job.completed+job.review).toFloat() /
                             job.total.coerceAtLeast(1).toFloat() },
                         modifier=Modifier.fillMaxWidth())
-                    Text(job.queued.toString()+" downloading · "+
+                    Text(job.queued.toString()+" queued / indexing · "+
                         job.pending+" pending · "+job.review+" review",
                         style=MaterialTheme.typography.bodySmall)
                     if(job.message.isNotBlank())
@@ -1250,7 +1287,7 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                             TextButton(onClick={vm.controlCollectionJob(job.id,"resume")}) {
                                 Text("Resume")
                             }
-                        if(job.status in listOf("paused","finished") && job.review>0)
+                        if(job.status in listOf("running","monitoring","paused","finished") && job.review>0)
                             TextButton(onClick={vm.controlCollectionJob(job.id,"retry")}) {
                                 Text("Retry unmatched")
                             }
@@ -1269,9 +1306,9 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
             Card(Modifier.fillMaxWidth().clickable{vm.openPlaylist(playlist.id)},
                 shape=RoundedCornerShape(18.dp)) {
                 Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Surface(color=MaterialTheme.colorScheme.secondaryContainer,shape=RoundedCornerShape(16.dp)){
+                    Surface(color=JobbiViolet.copy(alpha=.16f),shape=RoundedCornerShape(16.dp)){
                         Icon(Icons.Rounded.LibraryMusic,null,Modifier.padding(13.dp),
-                            tint=MaterialTheme.colorScheme.onSecondaryContainer)
+                            tint=JobbiViolet)
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
@@ -1306,6 +1343,104 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                         color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LibraryCategoryRow(title:String,icon:ImageVector,tint:Color,
+                               onClick:()->Unit) {
+    Row(Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(13.dp))
+        .clickable(onClick=onClick)
+        .padding(horizontal=12.dp,vertical=11.dp),
+        verticalAlignment=Alignment.CenterVertically) {
+        Surface(shape=RoundedCornerShape(12.dp),color=tint.copy(alpha=.14f)){
+            Icon(icon,contentDescription=null,tint=tint,
+                modifier=Modifier.padding(11.dp).size(22.dp))
+        }
+        Spacer(Modifier.width(15.dp))
+        Text(title,modifier=Modifier.weight(1f),
+            fontWeight=FontWeight.Medium,fontSize=16.sp)
+        Icon(Icons.Rounded.ChevronRight,contentDescription=null,
+            tint=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ArtistDirectoryScreen(vm:MusicViewModel) {
+    LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=15.dp),
+        verticalArrangement=Arrangement.spacedBy(8.dp)){
+        item {
+            Text("Artists",fontSize=25.sp,fontWeight=FontWeight.Bold)
+            Text("Artists from your private Navidrome library",
+                style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if(vm.artists.isEmpty())item {
+            Text("No artists found yet. Try refreshing the library.",
+                modifier=Modifier.padding(vertical=18.dp),
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick=vm::loadArtists){Text("Refresh artists")}
+        }
+        items(vm.artists,key={it.id}){artist->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .clickable{vm.openArtist(artist.id)}
+                .padding(vertical=10.dp,horizontal=7.dp),
+                verticalAlignment=Alignment.CenterVertically) {
+                Surface(color=JobbiAmber.copy(alpha=.16f),
+                    shape=RoundedCornerShape(14.dp)){
+                    Icon(Icons.Rounded.Mic,null,
+                        Modifier.size(54.dp).padding(14.dp),tint=JobbiAmber)
+                }
+                Spacer(Modifier.width(14.dp))
+                Text(artist.name,modifier=Modifier.weight(1f),
+                    fontWeight=FontWeight.SemiBold)
+                Icon(Icons.Rounded.ChevronRight,null,
+                    tint=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistDetailScreen(vm:MusicViewModel,player:NativePlayer,
+                               onSongAdd:(Song)->Unit) {
+    LazyColumn(contentPadding=PaddingValues(bottom=30.dp),
+        verticalArrangement=Arrangement.spacedBy(14.dp)) {
+        item {
+            Column(Modifier.padding(horizontal=21.dp,vertical=13.dp)){
+                Text(vm.artistName,fontSize=29.sp,fontWeight=FontWeight.Bold)
+                Text("${vm.artistSongs.size} recordings",
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                    Button(enabled=vm.artistSongs.isNotEmpty(),
+                        onClick={player.play(vm.artistSongs)}){
+                        Icon(Icons.Rounded.PlayArrow,null)
+                        Text("Play")
+                    }
+                    OutlinedButton(enabled=vm.artistSongs.isNotEmpty(),
+                        onClick={player.shuffle(vm.artistSongs)}){
+                        Icon(Icons.Rounded.Shuffle,null)
+                        Text("Shuffle")
+                    }
+                }
+            }
+        }
+        if(vm.artistAlbums.isNotEmpty())
+            item{AlbumShelf("Albums",vm.artistAlbums,vm::openAlbum)}
+        item {
+            Text("Songs",modifier=Modifier.padding(horizontal=21.dp),
+                style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+        }
+        itemsIndexed(vm.artistSongs,key={index,song->"${song.id}:$index"}){index,song->
+            SongRow(song,index,song.id in vm.favoriteIds,
+                play={player.play(vm.artistSongs,index)},
+                favorite={vm.toggleFavorite(song)},
+                playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
+                downloadOffline={vm.downloadSong(song)},
+                add={onSongAdd(song)},
+                removeFromNas={vm.prepareSongRemoval(listOf(song))})
         }
     }
 }
