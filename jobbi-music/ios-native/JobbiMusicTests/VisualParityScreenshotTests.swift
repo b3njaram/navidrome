@@ -7,6 +7,7 @@ import UIKit
 // No production server session is established and the test API rejects all
 // network paths while the fixture flag is enabled.
 private struct NativeParityTabHost: View {
+    @EnvironmentObject private var player: MusicPlayer
     let selected: Int
     var body: some View {
         TabView(selection: .constant(selected)) {
@@ -37,6 +38,9 @@ private struct NativeParityTabHost: View {
                         }
                 }
             }
+        }
+        .tabViewBottomAccessory(isEnabled: player.hasMusic) {
+            MiniPlayerView(onOpen: {})
         }
     }
 }
