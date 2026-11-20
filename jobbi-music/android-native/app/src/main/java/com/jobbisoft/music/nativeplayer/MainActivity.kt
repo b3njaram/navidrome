@@ -211,7 +211,7 @@ private fun JobbiTheme(content: @Composable () -> Unit) {
         primary=Color(0xFF4F46E5),onPrimary=Color.White,
         secondary=Color(0xFF087C77),onSecondary=Color.White,
         tertiary=Color(0xFF7A38BC),
-        background=Color(0xFFF9FAFD),surface=Color.White,
+        background=Color.White,surface=Color.White,
         surfaceVariant=Color(0xFFEEEFF7),
         surfaceContainer=Color(0xFFF0F1F8),
         surfaceContainerHigh=Color(0xFFE8E9F4),
@@ -322,6 +322,33 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
             LoginScreen(vm)
             return@JobbiTheme
         }
+        // iPhone opens Account from the avatar as a separate NavigationStack
+        // sheet. Do not leave Android's tab bar and mini player underneath it.
+        if(vm.selected=="More") {
+            val accountBackground=if(isSystemInDarkTheme())Color(0xFF1C1C1E)
+                else Color(0xFFF2F2F7)
+            Scaffold(
+                containerColor=accountBackground,
+                topBar={
+                    MediumTopAppBar(
+                        title={Text("Account",fontSize=32.sp,fontWeight=FontWeight.Bold)},
+                        actions={
+                            TextButton(onClick={vm.select(accountReturnTab)}){Text("Done")}
+                        },
+                        colors=TopAppBarDefaults.mediumTopAppBarColors(
+                            containerColor=accountBackground,
+                            scrolledContainerColor=accountBackground)
+                    )
+                },
+                snackbarHost={SnackbarHost(snack)}
+            ){ accountPadding ->
+                Box(Modifier.fillMaxSize().padding(accountPadding)
+                    .background(accountBackground)) {
+                    MoreScreen(vm,player)
+                }
+            }
+            return@JobbiTheme
+        }
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
@@ -414,19 +441,51 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         exit=slideOutVertically{it}+fadeOut()) {
                         MiniPlayer(player,onOpen={showNowPlaying=true})
                     }
-                    NavigationBar {
-                        tabs.forEach { destination ->
-                            NavigationBarItem(
-                                selected=vm.selected==destination.name ||
-                                     (destination.name=="Search"&&vm.selected=="Server") ||
-                                     (destination.name=="Library"&&vm.selected in listOf(
-                                         "Detail","Favorites","Downloads","Artists","ArtistDetail",
-                                         "PlaylistDirectory","AlbumDirectory","SavedImports")),
-                                onClick={vm.select(destination.name)},
-                                icon={Icon(destination.icon,contentDescription=null)},
-                                label={Text(destination.name)},
-                                alwaysShowLabel=true
-                            )
+                    val darkTabs=isSystemInDarkTheme()
+                    Surface(
+                        modifier=Modifier.fillMaxWidth()
+                            .padding(horizontal=13.dp,vertical=4.dp)
+                            .height(61.dp),
+                        shape=RoundedCornerShape(32.dp),
+                        color=if(darkTabs)Color(0xE633333B)else Color(0xF9FCFCFD),
+                        shadowElevation=3.dp
+                    ){
+                        Row(Modifier.fillMaxSize().padding(horizontal=5.dp),
+                            verticalAlignment=Alignment.CenterVertically){
+                            tabs.forEach { destination ->
+                                val active=vm.selected==destination.name ||
+                                    (destination.name=="Search"&&vm.selected=="Server") ||
+                                    (destination.name=="Library"&&vm.selected in listOf(
+                                        "Detail","Favorites","Downloads","Artists","ArtistDetail",
+                                        "PlaylistDirectory","AlbumDirectory","SavedImports"))
+                                val activeColor=if(darkTabs)Color(0xFF8FB4FF)
+                                    else Color(0xFF2384E9)
+                                val iconTint=if(active)activeColor
+                                    else MaterialTheme.colorScheme.onSurface
+                                Column(
+                                    modifier=Modifier.weight(1f).fillMaxHeight()
+                                        .clip(RoundedCornerShape(28.dp))
+                                        .clickable{vm.select(destination.name)}
+                                        .semantics{contentDescription=destination.name+" tab"},
+                                    horizontalAlignment=Alignment.CenterHorizontally,
+                                    verticalArrangement=Arrangement.Center
+                                ){
+                                    Box(
+                                        modifier=Modifier.width(49.dp).height(28.dp)
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .background(if(active)activeColor.copy(alpha=.13f)
+                                                else Color.Transparent),
+                                        contentAlignment=Alignment.Center
+                                    ){
+                                        Icon(destination.icon,contentDescription=null,
+                                            tint=iconTint,modifier=Modifier.size(21.dp))
+                                    }
+                                    Text(destination.name,fontSize=10.sp,
+                                        fontWeight=if(active)FontWeight.SemiBold
+                                            else FontWeight.Normal,
+                                        color=iconTint,maxLines=1)
+                                }
+                            }
                         }
                     }
                 }
@@ -1169,17 +1228,31 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             onValueChange={selecting=false;selected=emptySet();vm.search(it)},
             modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=9.dp),
             placeholder="Songs, artists, albums")
-        SingleChoiceSegmentedButtonRow(
-            modifier=Modifier.fillMaxWidth()
-                .padding(horizontal=18.dp,vertical=8.dp)){
-            SegmentedButton(
-                selected=source==0,onClick={source=0},
-                shape=SegmentedButtonDefaults.itemShape(index=0,count=2),
-                label={Text("My Library")},icon={})
-            SegmentedButton(
-                selected=source==1,onClick={source=1},
-                shape=SegmentedButtonDefaults.itemShape(index=1,count=2),
-                label={Text("Find New Music")},icon={})
+        Row(Modifier.fillMaxWidth()
+            .padding(horizontal=18.dp,vertical=8.dp)
+            .height(35.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(3.dp),
+            verticalAlignment=Alignment.CenterVertically){
+            listOf("My Library","Find New Music").forEachIndexed{index,label->
+                val active=source==index
+                Surface(
+                    modifier=Modifier.weight(1f).fillMaxHeight()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable{source=index},
+                    shape=RoundedCornerShape(16.dp),
+                    color=if(active)MaterialTheme.colorScheme.surface
+                        else Color.Transparent,
+                    shadowElevation=if(active)1.dp else 0.dp
+                ){
+                    Box(contentAlignment=Alignment.Center){
+                        Text(label,fontSize=12.sp,maxLines=1,
+                            fontWeight=if(active)FontWeight.SemiBold
+                                else FontWeight.Medium)
+                    }
+                }
+            }
         }
         if(source==1){
             // Same source choices as the native iPhone Search tab. All existing
