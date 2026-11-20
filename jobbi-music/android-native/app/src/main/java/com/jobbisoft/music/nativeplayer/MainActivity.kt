@@ -310,6 +310,9 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             "Profile"->"Profile"
                             "Admin"->"Admin"
                             "ArtistDetail"->vm.artistName.ifBlank{"Artist"}
+                            "PlaylistDirectory"->"Playlists"
+                            "AlbumDirectory"->"Albums"
+                            "SavedImports"->"Saved imports"
                             "Server"->"Search"
                             "Favorites"->"Favorite Songs"
                             "Downloads"->"Downloaded"
@@ -356,7 +359,9 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             NavigationBarItem(
                                 selected=vm.selected==destination.name ||
                                      (destination.name=="Search"&&vm.selected=="Server") ||
-                                     (destination.name=="Library"&&vm.selected in listOf("Detail","Favorites","Downloads","Artists","ArtistDetail")),
+                                     (destination.name=="Library"&&vm.selected in listOf(
+                                         "Detail","Favorites","Downloads","Artists","ArtistDetail",
+                                         "PlaylistDirectory","AlbumDirectory","SavedImports")),
                                 onClick={vm.select(destination.name)},
                                 icon={Icon(destination.icon,contentDescription=null)},
                                 label={Text(destination.name)},
@@ -377,6 +382,9 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
                         "Profile" -> ProfileScreen(vm)
                         "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
+                        "PlaylistDirectory" -> PlaylistDirectoryScreen(vm,onCreate={createPlaylist=true})
+                        "AlbumDirectory" -> AlbumDirectoryScreen(vm)
+                        "SavedImports" -> SavedImportsDirectoryScreen(vm)
                         "Artists" -> ArtistDirectoryScreen(vm)
                         "ArtistDetail" -> ArtistDetailScreen(vm,player,onSongAdd={addSong=it})
                         "Library" -> LibraryScreen(vm,onCreate={createPlaylist=true},
@@ -1225,14 +1233,13 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                 Text("Browse Your Library",fontSize=22.sp,fontWeight=FontWeight.Bold,
                     modifier=Modifier.padding(start=4.dp,bottom=8.dp))
                 LibraryCategoryRow("Playlists",Icons.Rounded.QueueMusic,JobbiViolet){
-                    scope.launch { listState.animateScrollToItem(4+vm.collectionJobs.size) }
+                    vm.select("PlaylistDirectory")
                 }
                 LibraryCategoryRow("Artists",Icons.Rounded.Mic,JobbiAmber){
                     vm.select("Artists")
                 }
                 LibraryCategoryRow("Albums",Icons.Rounded.Album,JobbiSky){
-                    scope.launch { listState.animateScrollToItem(
-                        5+vm.collectionJobs.size+vm.playlists.size) }
+                    vm.select("AlbumDirectory")
                 }
                 LibraryCategoryRow("Songs",Icons.Rounded.MusicNote,JobbiTeal){
                     vm.select("Search")
@@ -1244,7 +1251,7 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                     vm.select("Downloads")
                 }
                 LibraryCategoryRow("Saved Music Imports",Icons.Rounded.FileDownload,JobbiViolet){
-                    scope.launch { listState.animateScrollToItem(3) }
+                    vm.select("SavedImports")
                 }
             }
         }
@@ -1393,6 +1400,160 @@ private fun LibraryCategoryRow(title:String,icon:ImageVector,tint:Color,
             fontWeight=FontWeight.Medium,fontSize=16.sp)
         Icon(Icons.Rounded.ChevronRight,contentDescription=null,
             tint=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun PlaylistDirectoryScreen(vm:MusicViewModel,onCreate:()->Unit){
+    var query by remember{mutableStateOf("")}
+    val filtered=vm.playlists.filter{
+        it.name.contains(query,ignoreCase=true)
+    }
+    LazyColumn(contentPadding=PaddingValues(horizontal=17.dp,vertical=16.dp),
+        verticalArrangement=Arrangement.spacedBy(9.dp)){
+        item{
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                Text("Playlists",fontSize=24.sp,fontWeight=FontWeight.Bold,
+                    modifier=Modifier.weight(1f))
+                TextButton(onClick=onCreate){
+                    Icon(Icons.Rounded.Add,null)
+                    Text("New")
+                }
+            }
+            OutlinedTextField(value=query,onValueChange={query=it},
+                singleLine=true,modifier=Modifier.fillMaxWidth(),
+                placeholder={Text("Search playlists")},
+                leadingIcon={Icon(Icons.Rounded.Search,null)})
+        }
+        if(filtered.isEmpty())item{
+            Text(if(query.isBlank())"No playlists yet." else "No matching playlists.",
+                color=MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier=Modifier.padding(vertical=15.dp))
+        }
+        items(filtered,key={it.id}){playlist->
+            Row(Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(13.dp))
+                .clickable{vm.openPlaylist(playlist.id)}
+                .padding(vertical=9.dp,horizontal=6.dp),
+                verticalAlignment=Alignment.CenterVertically){
+                Surface(color=JobbiViolet.copy(alpha=.15f),
+                    shape=RoundedCornerShape(13.dp)){
+                    Icon(Icons.Rounded.LibraryMusic,null,tint=JobbiViolet,
+                        modifier=Modifier.size(54.dp).padding(14.dp))
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)){
+                    Text(playlist.name,maxLines=1,overflow=TextOverflow.Ellipsis,
+                        fontWeight=FontWeight.SemiBold)
+                    Text(playlist.count.toString()+" songs",
+                        color=MaterialTheme.colorScheme.onSurfaceVariant,
+                        style=MaterialTheme.typography.bodySmall)
+                }
+                Icon(Icons.Rounded.ChevronRight,null,
+                    tint=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumDirectoryScreen(vm:MusicViewModel){
+    var query by remember{mutableStateOf("")}
+    val filtered=vm.albums.filter{
+        it.name.contains(query,ignoreCase=true)||
+        it.artist.contains(query,ignoreCase=true)
+    }
+    LazyColumn(contentPadding=PaddingValues(horizontal=16.dp,vertical=14.dp),
+        verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{
+            Text("Albums",fontSize=24.sp,fontWeight=FontWeight.Bold,
+                modifier=Modifier.padding(bottom=8.dp))
+            OutlinedTextField(value=query,onValueChange={query=it},
+                modifier=Modifier.fillMaxWidth(),singleLine=true,
+                placeholder={Text("Search albums and artists")},
+                leadingIcon={Icon(Icons.Rounded.Search,null)})
+        }
+        if(filtered.isEmpty())item{
+            Text("No matching albums.",modifier=Modifier.padding(15.dp))
+        }
+        items(filtered,key={it.id}){album->
+            Row(Modifier.fillMaxWidth().clickable{vm.openAlbum(album.id)}
+                .padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically){
+                Cover(album.cover,66.dp)
+                Spacer(Modifier.width(13.dp))
+                Column(Modifier.weight(1f)){
+                    Text(album.name,fontWeight=FontWeight.SemiBold,maxLines=1,
+                        overflow=TextOverflow.Ellipsis)
+                    Text(album.artist,style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.Rounded.ChevronRight,null,
+                    tint=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedImportsDirectoryScreen(vm:MusicViewModel){
+    LazyColumn(contentPadding=PaddingValues(horizontal=17.dp,vertical=16.dp),
+        verticalArrangement=Arrangement.spacedBy(12.dp)){
+        item{
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                Text("Saved imports",fontSize=24.sp,fontWeight=FontWeight.Bold,
+                    modifier=Modifier.weight(1f))
+                TextButton(onClick=vm::refreshCollectionJobs){
+                    Icon(Icons.Rounded.Refresh,null)
+                    Text("Refresh")
+                }
+            }
+            Text("Your imported collection JSON and song-by-song progress are saved on the NAS. Imports continue when this Android phone is offline.",
+                style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(vm.collectionJobsError.isNotBlank())
+                Text(vm.collectionJobsError,color=MaterialTheme.colorScheme.error)
+        }
+        if(vm.collectionJobs.isEmpty())item{
+            Text("No saved imports yet. Use Import Music to start one.",
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        items(vm.collectionJobs,key={it.id}){job->
+            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp)){
+                Column(Modifier.padding(16.dp),
+                    verticalArrangement=Arrangement.spacedBy(10.dp)){
+                    Text(job.filename,fontWeight=FontWeight.SemiBold)
+                    Text(job.status.replaceFirstChar{it.uppercase()},
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(job.completed.toString()+" / "+job.total+" added",
+                        fontWeight=FontWeight.Bold)
+                    LinearProgressIndicator(
+                        progress={job.completed.toFloat()/job.total.coerceAtLeast(1)},
+                        modifier=Modifier.fillMaxWidth())
+                    Text(job.queued.toString()+" queued / indexing · "+
+                         job.pending+" pending · "+job.review+" review",
+                        style=MaterialTheme.typography.bodySmall)
+                    if(job.message.isNotBlank())Text(job.message,
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        if(job.status in setOf("running","monitoring","reauth"))
+                            TextButton(onClick={vm.controlCollectionJob(job.id,"pause")}){
+                                Text("Pause")
+                            }
+                        if(job.status in setOf("paused","reauth")&&job.authorized)
+                            TextButton(onClick={vm.controlCollectionJob(job.id,"resume")}){
+                                Text("Resume")
+                            }
+                        if(job.review>0 && job.status in
+                            setOf("running","monitoring","paused","finished"))
+                            TextButton(onClick={vm.controlCollectionJob(job.id,"retry")}){
+                                Text("Retry unmatched")
+                            }
+                    }
+                }
+            }
+        }
     }
 }
 
