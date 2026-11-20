@@ -51,6 +51,15 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
             install(api:shared.api,library:shared.library,
                     player:shared.player,offline:shared.offline)
             Task { [weak self] in
+                // Show Keychain-owned downloads immediately when the vehicle
+                // is offline; do not wait for a failing NAS/DNS login.
+                if let remembered = CredentialVault.load() {
+                    shared.offline.configure(server: remembered.server,
+                                             username: remembered.username)
+                }
+                await self?.refresh()
+                // Reconnect in the background if available; CarPlay already
+                // shows playable local files during the request.
                 await shared.api.restore()
                 await self?.refresh()
             }
