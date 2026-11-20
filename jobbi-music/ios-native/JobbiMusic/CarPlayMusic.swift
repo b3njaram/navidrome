@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import UIKit
 import CarPlay
 
@@ -24,6 +25,7 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
     private var playlistTab: CPListTemplate?
     private var libraryTab: CPListTemplate?
     private var queueTab: CPListTemplate?
+    private var observers = Set<AnyCancellable>()
 
     func install(api: JobbiAPI, library: MusicLibrary,
                  player: MusicPlayer, offline: OfflineLibrary) {
@@ -31,10 +33,28 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
         self.library = library
         self.player = player
         self.offline = offline
+        observers.removeAll()
+        player.$queue.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updateQueue() }
+        }.store(in: &observers)
+        player.$currentIndex.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updateQueue() }
+        }.store(in: &observers)
         Task { await refresh() }
     }
 
     func connect(_ interfaceController: CPInterfaceController) {
+        if api == nil {
+            // CarPlay can start with no iPhone window. Bootstrap the same
+            // shared player and restore the Keychain-backed account.
+            let shared=JobbiSharedMusicServices.shared
+            install(api:shared.api,library:shared.library,
+                    player:shared.player,offline:shared.offline)
+            Task { [weak self] in
+                await shared.api.restore()
+                await self?.refresh()
+            }
+        }
         car = interfaceController
         let home = CPListTemplate(title: "Home", sections: [section([
             status("Loading your music…")])])
@@ -286,12 +306,26 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
                     .map { songItem($0.element,in:tracks,at:$0.offset) },
                     title:"Jump Back In"))
             }
+            if let tracks = library.recommendations?.topWeek, !tracks.isEmpty {
+                home.append(section([action("Play Most Played This Week",
+                    details:"\(tracks.count) songs") { [weak self] in
+                    self?.player?.play(tracks)
+                    self?.updateQueue()
+                }],title:"Most Played This Week"))
+            }
             if let tracks = library.recommendations?.madeForYou, !tracks.isEmpty {
                 home.append(section([action("Play Made for You",
                     details:"\(tracks.count) songs") { [weak self] in
                     self?.player?.play(tracks)
                     self?.updateQueue()
                 }],title:"Made for You"))
+            }
+            if let tracks = library.recommendations?.timeMix, !tracks.isEmpty {
+                home.append(section([action("Play Daily Mix",
+                    details:"\(tracks.count) songs") { [weak self] in
+                    self?.player?.play(tracks)
+                    self?.updateQueue()
+                }],title:"Daily Mix"))
             }
             if let albums = library.home?.recent, !albums.isEmpty {
                 home.append(section(Array(albums.prefix(10)).map(albumItem),
