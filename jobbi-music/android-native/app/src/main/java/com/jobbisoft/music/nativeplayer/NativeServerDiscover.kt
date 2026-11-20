@@ -77,7 +77,7 @@ fun parseServerCandidates(data:JSONObject):List<ServerCandidate>{
         .thenByDescending{it.freeSlot}.thenByDescending{it.bitrate?:0})
 }
 @Composable
-fun ServerDiscoverScreen(onBack:()->Unit,initialQuery:String=""){
+fun ServerDiscoverScreen(onBack:()->Unit,initialQuery:String="",showBack:Boolean=true){
     val scope=rememberCoroutineScope()
     var query by remember(initialQuery){mutableStateOf(initialQuery)}
     var results by remember{mutableStateOf<List<ServerCandidate>>(emptyList())}
@@ -111,9 +111,11 @@ fun ServerDiscoverScreen(onBack:()->Unit,initialQuery:String=""){
     Column(Modifier.fillMaxSize()){
         Row(Modifier.fillMaxWidth().padding(horizontal=15.dp,vertical=6.dp),
             verticalAlignment=Alignment.CenterVertically){
-            IconButton(onClick=onBack){Icon(Icons.Rounded.ArrowBack,"Back")}
+            if(showBack)IconButton(onClick=onBack){
+                Icon(Icons.Rounded.ArrowBack,"Back")
+            }
             Column(Modifier.weight(1f)){
-                Text("Find new music",style=MaterialTheme.typography.headlineSmall,
+                Text("Find Something New",style=MaterialTheme.typography.headlineSmall,
                     fontWeight=FontWeight.Bold)
                 Text("Search Soulseek + Invidious · import to your NAS",
                     style=MaterialTheme.typography.bodySmall)
