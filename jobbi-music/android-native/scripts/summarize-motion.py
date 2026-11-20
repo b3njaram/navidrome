@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Summarize real emulator UI frame timings; never equate emulation to device FPS.
 
-Android's gfxinfo framestats column 1 is IntendedVsync and column 13 is
-FrameCompleted. Their difference is the end-to-end frame latency including
+Android's older and newer gfxinfo formats place the IntendedVsync and
+FrameCompleted columns at different indices. We resolve them from headers. Their difference is the end-to-end frame latency including
 the emulator's scheduler. No fabricated result is emitted if the system
 doesn't export data; recorded values are diagnostics, not pass/fail gates.
 """
@@ -17,24 +17,33 @@ destination = pathlib.Path(sys.argv[2])
 raw = source.read_text(errors="replace") if source.exists() else ""
 frames = []
 capturing = False
+header = []
+seen = set()
 for line in raw.splitlines():
     line = line.strip()
     if line == "---PROFILEDATA---":
         capturing = not capturing
+        header = []
         continue
-    if not capturing or not re.match(r"^\d+,", line):
+    if not capturing:
+        continue
+    if line.startswith("Flags,"):
+        header = line.rstrip(",").split(",")
+        continue
+    if not header or not re.match(r"^\d+,", line):
         continue
     try:
-        columns = [int(x) for x in line.split(",")]
-        if len(columns) < 14:
-            continue
-        intended_vsync, completed = columns[1], columns[13]
+        columns = [int(x) for x in line.rstrip(",").split(",")]
+        intended_vsync = columns[header.index("IntendedVsync")]
+        completed = columns[header.index("FrameCompleted")]
         if intended_vsync <= 0 or completed <= intended_vsync:
             continue
         latency_ms = (completed - intended_vsync) / 1_000_000.0
-        if latency_ms < 3000.0:
+        key = (intended_vsync, completed)
+        if 0 < latency_ms < 3000.0 and key not in seen:
+            seen.add(key)
             frames.append(latency_ms)
-    except ValueError:
+    except (ValueError, IndexError):
         continue
 
 def percentile(items, pct):
@@ -54,6 +63,17 @@ output = {
     "status": "sampled" if frames else "unavailable",
     "frames": len(frames),
 }
+# SurfaceFlinger counters are diagnostics for this emulator only; they should
+# never be represented as frame rates on a real Samsung or iPhone.
+reported = re.search(
+    r"Total frames rendered:\s*(\d+)[\s\S]{0,80}?Janky frames:\s*(\d+)\s*\(([^)]+)\)",
+    raw,
+)
+if reported:
+    output["gfxinfo_reported_total_frames"] = int(reported.group(1))
+    output["gfxinfo_reported_janky_frames"] = int(reported.group(2))
+    output["gfxinfo_reported_janky_percent"] = reported.group(3)
+
 if frames:
     output.update({
         "median_latency_ms": round(statistics.median(frames), 2),
