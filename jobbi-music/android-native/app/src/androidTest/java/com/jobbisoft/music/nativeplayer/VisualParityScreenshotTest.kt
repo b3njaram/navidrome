@@ -13,6 +13,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import android.view.accessibility.AccessibilityNodeInfo
+import java.util.ArrayDeque
 
 /**
  * Screenshots of real production Compose screens using deterministic test-only
@@ -23,6 +25,24 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class VisualParityScreenshotTest {
     @get:Rule val rule=createAndroidComposeRule<MainActivity>()
+
+    /** Screenshots with system ANR overlays are invalid visual evidence even
+     * when the app's Compose semantics remain available behind that dialog.
+     */
+    private fun assertNoSystemErrorOverlay() {
+        val root=InstrumentationRegistry.getInstrumentation().uiAutomation
+            .rootInActiveWindow ?: return
+        val nodes=ArrayDeque<AccessibilityNodeInfo>()
+        nodes.add(root)
+        while(nodes.isNotEmpty()) {
+            val node=nodes.removeFirst()
+            val shown=node.text?.toString().orEmpty()
+            assertTrue("System error overlay obscures parity screenshot: "+shown,
+                !shown.contains("isn't responding",ignoreCase=true) &&
+                !shown.contains("keeps stopping",ignoreCase=true))
+            for(i in 0 until node.childCount)node.getChild(i)?.let(nodes::add)
+        }
+    }
 
     @Test fun captureHomeLibrarySearchAndAccount() {
         val vm=ViewModelProvider(rule.activity)[MusicViewModel::class.java]
@@ -52,6 +72,7 @@ class VisualParityScreenshotTest {
             // the frame. Wait for the actual window buffer after navigation.
             Thread.sleep(900)
             rule.waitForIdle()
+            assertNoSystemErrorOverlay()
             val screenshot=requireNotNull(
                 InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
             ) { "Android emulator could not capture the full UI display" }
@@ -78,6 +99,7 @@ class VisualParityScreenshotTest {
         // become available; otherwise UiAutomation captures the Home frame.
         Thread.sleep(1100)
         rule.waitForIdle()
+        assertNoSystemErrorOverlay()
         val playerImage=requireNotNull(
             InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         ) { "Android emulator could not capture the Now Playing display" }
