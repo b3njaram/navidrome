@@ -77,6 +77,7 @@ data class RecommendationsResult(
     val weatherMix: List<Song> = emptyList(),
     val weatherLabel: String = "",
     val weatherCity: String = "",
+    val weatherTemperature: Double? = null,
     val weatherError: String = "",
     val trackingAvailable: Boolean = true,
     val trackingNote: String = ""
@@ -308,6 +309,11 @@ object JobbiApi {
             weatherMix=data.optJSONArray("weatherMix").songs(),
             weatherLabel=data.optStr("weatherLabel"),
             weatherCity=data.optJSONObject("weather")?.optStr("city") ?: "",
+            weatherTemperature=data.optJSONObject("weather")?.let{weather->
+                if(weather.has("temperature")&&!weather.isNull("temperature"))
+                    weather.optDouble("temperature",Double.NaN).takeIf(Double::isFinite)
+                else null
+            },
             weatherError=data.optStr("weatherError"),
             trackingAvailable=data.optBoolean("trackingAvailable",true),
             trackingNote=data.optStr("trackingNote")
