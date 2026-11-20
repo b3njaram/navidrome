@@ -250,13 +250,24 @@ class AndroidAutoSessionTest {
                 val savedPlaylist=main{browser.getChildren(offlineFolder,0,20,null)}
                     .get(15,TimeUnit.SECONDS)
                 assertEquals(id,savedPlaylist.value?.singleOrNull()?.mediaId)
-                assertEquals("file",savedPlaylist.value?.singleOrNull()
-                    ?.localConfiguration?.uri?.scheme)
+                // Media3's browser intentionally strips private stream
+                // URIs from browse metadata. Selecting the item must still
+                // resolve it to the completed local audio file for playback.
+                assertTrue(savedPlaylist.value?.singleOrNull()
+                    ?.mediaMetadata?.isPlayable==true)
+                main {
+                    browser.setMediaItem(requireNotNull(savedPlaylist.value?.singleOrNull()))
+                    browser.prepare()
+                }
+                until("Selecting an offline car playlist failed to play local audio") {
+                    main {browser.playbackState==Player.STATE_READY &&
+                        browser.currentMediaItem?.mediaId==id}
+                }
                 val downloads=main{browser.getChildren(AndroidAutoLibrary.DOWNLOADED,0,20,null)}
                     .get(15,TimeUnit.SECONDS)
                 assertEquals(id,downloads.value?.singleOrNull()?.mediaId)
-                assertEquals("file",downloads.value?.singleOrNull()
-                    ?.localConfiguration?.uri?.scheme)
+                assertTrue(downloads.value?.singleOrNull()
+                    ?.mediaMetadata?.isPlayable==true)
                 val queueTracks=listOf("current-fixture","next-fixture").mapIndexed{index,mediaId->
                     MediaItem.Builder().setMediaId(mediaId).setUri(Uri.fromFile(audio))
                         .setMediaMetadata(MediaMetadata.Builder()
