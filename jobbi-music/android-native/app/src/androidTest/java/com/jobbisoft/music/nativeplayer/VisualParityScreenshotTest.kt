@@ -88,5 +88,18 @@ class VisualParityScreenshotTest {
         }
         assertTrue(playerFile.length()>1000)
         playerImage.recycle()
+
+        // Sample gfxinfo while the real Compose activity still exists.
+        // Pulling this only after instrumentation exits reports zero frames
+        // because Android tears down the test activity first.
+        val shell=InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("dumpsys gfxinfo "+target.packageName+" framestats")
+        shell.use {fd->
+            java.io.FileInputStream(fd.fileDescriptor).use {input->
+                File(folder,"android-gfxinfo.txt").writeBytes(input.readBytes())
+            }
+        }
+        println("PARITY_MOTION_FRAMESTATS_CAPTURED="+
+            File(folder,"android-gfxinfo.txt").length())
     }
 }
