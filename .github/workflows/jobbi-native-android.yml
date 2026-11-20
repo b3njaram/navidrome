@@ -106,10 +106,12 @@ jobs:
               | tee "$GITHUB_WORKSPACE/jobbi-emulator-instrumentation.log"
             grep -Fq 'OK (5 tests)' "$GITHUB_WORKSPACE/jobbi-emulator-instrumentation.log"
             mkdir -p "$GITHUB_WORKSPACE/jobbi-parity-android"
-            adb shell ls -lh /sdcard/Android/data/com.jobbisoft.music.nativeplayer.debug/files/jobbi-parity/
-            adb pull /sdcard/Android/data/com.jobbisoft.music.nativeplayer.debug/files/jobbi-parity/. \
-              "$GITHUB_WORKSPACE/jobbi-parity-android/"
-            test "$(find "$GITHUB_WORKSPACE/jobbi-parity-android" -name 'parity-android-*.png' | wc -l)" -eq 5
+            for screen in home library search more nowplaying; do
+              adb exec-out run-as com.jobbisoft.music.nativeplayer.debug \
+                cat "files/jobbi-parity/parity-android-$screen.png" \
+                > "$GITHUB_WORKSPACE/jobbi-parity-android/parity-android-$screen.png"
+              test -s "$GITHUB_WORKSPACE/jobbi-parity-android/parity-android-$screen.png"
+            done
       - name: Upload native Android signed-in screen captures
         if: always()
         uses: actions/upload-artifact@v4
