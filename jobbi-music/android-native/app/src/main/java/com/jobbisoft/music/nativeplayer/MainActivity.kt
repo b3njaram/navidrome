@@ -1,6 +1,8 @@
 package com.jobbisoft.music.nativeplayer
 
 import android.net.Uri
+import android.content.Context
+import android.media.AudioManager
 
 import android.os.Build
 import android.os.Bundle
@@ -102,6 +104,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -1502,30 +1505,58 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQue
         return
     }
     val song=player.active ?:return
+    var showingLyrics by remember(song.id) { mutableStateOf(false) }
+    val context=LocalContext.current
+    val audioManager=remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    val maxVolume=remember(audioManager) {
+        audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    }
+    var volume by remember(audioManager) { mutableFloatStateOf(
+        audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat())
+    }
+    LaunchedEffect(audioManager){
+        while(isActive){
+            volume=audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
+            delay(1400)
+        }
+    }
     var drag by remember(song.id) { mutableFloatStateOf(-1f) }
     val max=player.duration.coerceAtLeast(1L).toFloat()
-    Column(Modifier.fillMaxWidth().fillMaxHeight(.83f)
-        .verticalScroll(rememberScrollState()).padding(horizontal=27.dp),
+    Column(Modifier.fillMaxWidth().fillMaxHeight(.92f)
+        .clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp))
+        .background(Brush.verticalGradient(listOf(
+            Color(0xFF443D81),Color(0xFF2A2D56),Color(0xFF161725))))
+        .verticalScroll(rememberScrollState()).padding(horizontal=24.dp),
         horizontalAlignment=Alignment.CenterHorizontally,
         verticalArrangement=Arrangement.spacedBy(18.dp)) {
         Spacer(Modifier.height(10.dp))
-        Cover(song.cover,258.dp)
+        if(showingLyrics){
+            NativeLyricsPanel(songId=song.id,positionMs=player.position,
+                onSeek={player.seek(it)})
+        }else{
+            Cover(song.cover,258.dp)
+        }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment=Alignment.CenterVertically){
             Column(Modifier.weight(1f)){
                 Text(song.title,style=MaterialTheme.typography.headlineSmall,
-                    fontWeight=FontWeight.Bold,maxLines=2)
+                    fontWeight=FontWeight.Bold,maxLines=2,color=Color.White)
                 Text(song.artist,style=MaterialTheme.typography.titleMedium,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    color=Color.White.copy(alpha=.7f))
             }
             IconButton(onClick={vm.toggleFavorite(song)}) {
                 Icon(if(song.id in vm.favoriteIds)Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    "Favorite",tint=MaterialTheme.colorScheme.primary)
+                    "Favorite",tint=JobbiCoral)
             }
         }
         Slider(value=(if(drag>=0f)drag else player.position.toFloat()).coerceIn(0f,max),
             onValueChange={drag=it},onValueChangeFinished={player.seek(drag.toLong());drag=-1f},
-            valueRange=0f..max,modifier=Modifier.fillMaxWidth())
+            valueRange=0f..max,modifier=Modifier.fillMaxWidth(),
+            colors=SliderDefaults.colors(thumbColor=Color.White,
+                activeTrackColor=Color.White,
+                inactiveTrackColor=Color.White.copy(alpha=.27f)))
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
             Text(time((if(drag>=0f)drag.toLong() else player.position)/1000),
                 style=MaterialTheme.typography.labelMedium)
@@ -1546,15 +1577,23 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQue
         }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,
             verticalAlignment=Alignment.CenterVertically){
+            TextButton(onClick={showingLyrics=!showingLyrics},
+                colors=ButtonDefaults.textButtonColors(contentColor=
+                    if(showingLyrics)JobbiTeal else Color.White)) {
+                Icon(if(showingLyrics)Icons.Rounded.Article else Icons.Rounded.Subject,
+                    contentDescription="Show or hide lyrics")
+                Spacer(Modifier.width(4.dp))
+                Text("Lyrics")
+            }
             TextButton(onClick=player::toggleShuffle){
                 Icon(Icons.Rounded.Shuffle,
                     contentDescription=if(player.shuffleEnabled)"Shuffle enabled" else "Shuffle upcoming",
-                    tint=if(player.shuffleEnabled)MaterialTheme.colorScheme.primary else
-                        MaterialTheme.colorScheme.onSurface)
+                    tint=if(player.shuffleEnabled)JobbiSky else Color.White)
                 Spacer(Modifier.width(5.dp))
                 Text("Shuffle")
             }
-            FilledTonalButton(onClick={viewingQueue=true}){
+            TextButton(onClick={viewingQueue=true},
+                colors=ButtonDefaults.textButtonColors(contentColor=Color.White)){
                 Icon(Icons.Rounded.QueueMusic,null)
                 Spacer(Modifier.width(5.dp))
                 Text("Queue · ${(player.queue.size-player.currentIndex-1).coerceAtLeast(0)}")
@@ -1569,6 +1608,25 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQue
                     else->"Off"
                 })
             }
+        }
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.spacedBy(12.dp)){
+            Icon(Icons.Rounded.VolumeDown,contentDescription="Playback volume",
+                tint=Color.White.copy(alpha=.8f))
+            Slider(value=volume.coerceIn(0f,maxVolume.toFloat()),
+                onValueChange={
+                    volume=it
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC,
+                        it.toInt(),0)
+                },valueRange=0f..maxVolume.toFloat(),modifier=Modifier.weight(1f),
+                colors=SliderDefaults.colors(thumbColor=Color.White,
+                    activeTrackColor=Color.White,
+                    inactiveTrackColor=Color.White.copy(alpha=.25f)))
+            IconButton(onClick={
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                    AudioManager.ADJUST_SAME,AudioManager.FLAG_SHOW_UI)
+            }){Icon(Icons.Rounded.Speaker,contentDescription="Android audio output controls",
+                tint=Color.White)}
         }
         Box {
             OutlinedButton(onClick={sleepMenu=true},modifier=Modifier.fillMaxWidth()){
@@ -1587,8 +1645,8 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQue
                     onClick={player.setSleepTimer(0);sleepMenu=false})
             }
         }
-        Text("High fidelity playback · Android Media3",style=MaterialTheme.typography.bodySmall,
-            color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Native playback · Android Media3",style=MaterialTheme.typography.bodySmall,
+            color=Color.White.copy(alpha=.65f))
     }
 }
 @Composable
