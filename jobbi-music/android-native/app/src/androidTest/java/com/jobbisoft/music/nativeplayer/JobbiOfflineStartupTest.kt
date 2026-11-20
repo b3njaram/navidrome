@@ -109,24 +109,31 @@ class JobbiOfflineStartupTest {
                 rule.onAllNodesWithText("Offline fixture recording",
                     useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()
             }
-            rule.onNodeWithText("Offline fixture recording",useUnmergedTree=true)
+            rule.onNodeWithText("Offline fixture recording",substring=true)
                 .performClick()
             val token=SessionToken(app,ComponentName(app,
                 MusicPlaybackService::class.java))
             val pending=MediaController.Builder(app,token).buildAsync()
             try{
                 val controller=pending.get(20,TimeUnit.SECONDS)
-                rule.waitUntil(15000){
-                    controller.currentMediaItem?.mediaId==songId &&
-                    controller.currentMediaItem?.localConfiguration?.uri?.scheme=="file"
+                fun onMain(predicate:()->Boolean):Boolean{
+                    val result=java.util.concurrent.atomic.AtomicBoolean(false)
+                    rule.runOnUiThread{result.set(predicate())}
+                    return result.get()
                 }
-                assertEquals("file",controller.currentMediaItem
-                    ?.localConfiguration?.uri?.scheme)
                 rule.waitUntil(15000){
-                    controller.playbackState==Player.STATE_READY
+                    onMain {
+                        controller.currentMediaItem?.mediaId==songId &&
+                        controller.currentMediaItem?.localConfiguration?.uri?.scheme=="file"
+                    }
+                }
+                assertTrue("Offline recording was not wired to a local file",
+                    onMain {controller.currentMediaItem?.localConfiguration?.uri?.scheme=="file"})
+                rule.waitUntil(15000){
+                    onMain{controller.playbackState==Player.STATE_READY}
                 }
                 assertTrue("Offline PCM recording did not enter playback",
-                    controller.playWhenReady)
+                    onMain{controller.playWhenReady})
                 rule.runOnUiThread{controller.pause()}
             }finally{
                 rule.runOnUiThread{MediaController.releaseFuture(pending)}
