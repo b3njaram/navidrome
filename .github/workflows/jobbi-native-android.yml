@@ -98,7 +98,7 @@ jobs:
             # The emulator is still alive inside this action's script.
             adb pull /sdcard/Android/data/com.jobbisoft.music.nativeplayer.debug/files/jobbi-parity/. \
               "$GITHUB_WORKSPACE/jobbi-parity-android/"
-            test "$(find "$GITHUB_WORKSPACE/jobbi-parity-android" -name 'parity-android-*.png' | wc -l)" -ge 4
+            test "$(find "$GITHUB_WORKSPACE/jobbi-parity-android" -name 'parity-android-*.png' | wc -l)" -ge 5
       - name: Upload native Android signed-in screen captures
         if: always()
         uses: actions/upload-artifact@v4
