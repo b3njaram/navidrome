@@ -1,6 +1,8 @@
 package com.jobbisoft.music.nativeplayer
 
+import android.net.Uri
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -43,16 +45,78 @@ internal object SystemMediaControls {
  * We do not override seekability or available commands: a real unsupported
  * seek remains unsupported, while elapsed-time progress is still visible.
  */
+/**
+ * An uncached Navidrome MP3 transcode may be non-seekable until caching
+ * finishes. Navidrome advertises OpenSubsonic transcodeOffset, so the client
+ * can reopen a fresh stream at the requested *absolute* song time.
+ */
+internal object TranscodeSeekOffset {
+    fun millis(item:MediaItem?):Long {
+        val uri=item?.localConfiguration?.uri ?:return 0L
+        if(uri.scheme!="https")return 0L
+        val seconds=runCatching{uri.getQueryParameter("timeOffset")?.toLongOrNull()}
+            .getOrNull() ?:return 0L
+        return seconds.takeIf{it in 0L..86400L}?.times(1000L) ?:0L
+    }
+
+    fun withTimeOffset(item:MediaItem,serverQuality:String,targetMs:Long):MediaItem {
+        val seconds=(targetMs.coerceAtLeast(0L)/1000L).coerceAtMost(86400L)
+        val oldUri=item.localConfiguration?.uri
+        val quality=oldUri?.getQueryParameter("quality")
+            ?.takeIf{it in listOf("original","balanced","saver")}
+            ?:serverQuality
+        val resumed=Uri.parse(JobbiApi.streamUrl(item.mediaId,quality))
+            .buildUpon().appendQueryParameter("timeOffset",seconds.toString()).build()
+        return item.buildUpon().setUri(resumed).build()
+    }
+
+    fun absolutePositionMs(decodedMs:Long,offsetMs:Long,totalMs:Long?):Long {
+        if(decodedMs==C.TIME_UNSET)return C.TIME_UNSET
+        val absolute=(decodedMs.coerceAtLeast(0L)+offsetMs).coerceAtLeast(0L)
+        return if(totalMs!=null&&totalMs>0)absolute.coerceAtMost(totalMs)
+            else absolute
+    }
+
+    fun relativeSeekMs(targetMs:Long,offsetMs:Long):Long =
+        (targetMs-offsetMs).coerceAtLeast(0L)
+}
+
 internal class SystemTimelinePlayer(player: Player) : ForwardingPlayer(player) {
     private fun knownMs(): Long? =
         currentMediaItem?.mediaMetadata?.durationMs
             ?: super.getMediaMetadata().durationMs
 
-    override fun getDuration(): Long =
-        SystemMediaControls.durationForSystem(super.getDuration(), knownMs())
+    private fun offsetMs():Long=TranscodeSeekOffset.millis(currentMediaItem)
+    private fun adjusted(ms:Long):Long =
+        TranscodeSeekOffset.absolutePositionMs(ms,offsetMs(),knownMs())
 
-    override fun getContentDuration(): Long =
-        SystemMediaControls.durationForSystem(super.getContentDuration(), knownMs())
+    override fun getCurrentPosition():Long = adjusted(super.getCurrentPosition())
+    override fun getBufferedPosition():Long = adjusted(super.getBufferedPosition())
+    override fun getContentPosition():Long = adjusted(super.getContentPosition())
+    override fun getContentBufferedPosition():Long =
+        adjusted(super.getContentBufferedPosition())
+
+    override fun getDuration(): Long {
+        // Offset transcodes report their *remaining* stream duration, but
+        // Samsung's timeline must show the full original recording.
+        if(offsetMs()>0 && knownMs()!=null)return knownMs()!!
+        return SystemMediaControls.durationForSystem(super.getDuration(),knownMs())
+    }
+
+    override fun getContentDuration(): Long {
+        if(offsetMs()>0 && knownMs()!=null)return knownMs()!!
+        return SystemMediaControls.durationForSystem(super.getContentDuration(),knownMs())
+    }
+
+    override fun seekTo(positionMs:Long) {
+        super.seekTo(TranscodeSeekOffset.relativeSeekMs(positionMs,offsetMs()))
+    }
+
+    override fun seekTo(mediaItemIndex:Int,positionMs:Long) {
+        val offset=if(mediaItemIndex in 0 until mediaItemCount)
+            TranscodeSeekOffset.millis(getMediaItemAt(mediaItemIndex)) else 0L
+        super.seekTo(mediaItemIndex,TranscodeSeekOffset.relativeSeekMs(positionMs,offset))
+    }
 
     override fun getMediaMetadata(): MediaMetadata {
         val source = super.getMediaMetadata()
