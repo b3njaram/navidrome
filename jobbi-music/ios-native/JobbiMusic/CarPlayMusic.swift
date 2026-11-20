@@ -206,7 +206,7 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
         guard let api, api.user != nil else { return }
         do {
             let detail: CollectionDetail = try await api.get(
-                "/api/library/albums/" + JobbiAPI.encode(album.id))
+                "/api/albums/" + JobbiAPI.encode(album.id))
             showSongs(album.name, songs: detail.tracks)
         } catch {
             carPush(CPListTemplate(title: album.name, sections: [
