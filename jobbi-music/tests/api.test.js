@@ -49,6 +49,11 @@ before(async()=>{
     if(name==='getPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')||'Road trip',
       entry:received.mockPlaylistEntries||[]}}));
     if(name==='updatePlaylist'){
+      const add=u.searchParams.get('songIdToAdd');
+      if(add!==null&&!received.ignorePlaylistAddition){
+        if(!Array.isArray(received.mockPlaylistEntries))received.mockPlaylistEntries=[];
+        received.mockPlaylistEntries.push({id:add,title:'Added test song'});
+      }
       const index=u.searchParams.get('songIndexToRemove');
       if(index!==null&&Array.isArray(received.mockPlaylistEntries)&&!received.ignorePlaylistRemoval)
         received.mockPlaylistEntries.splice(Number(index),1);
@@ -191,6 +196,7 @@ test('playlist create, edit and delete',async()=>{
   assert.equal((await made.json()).playlist.name,'Road trip');
   const updated=await patch('/api/playlists/pl-1',{addSongId:'song-1'});
   assert.equal(updated.status,200);
+  assert.equal((await updated.json()).verified,true);
   assert.equal(received.lastSubsonic.name,'getPlaylist');
   assert.equal((await patch('/api/playlists/pl-1',{removeIndex:-1})).status,400);
   const gone=await fetch(base+'/api/playlists/pl-1',{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
@@ -206,6 +212,24 @@ test('playlist create, edit and delete',async()=>{
   } finally {
     delete received.mockPlaylistDeleted;
     delete received.ignorePlaylistDeletion;
+    delete received.mockPlaylistEntries;
+  }
+});
+test('song additions require Navidrome playlist readback, including duplicate occurrences',async()=>{
+  received.mockPlaylistEntries=[{id:'song-1',title:'Original'}];
+  try{
+    const repeated=await patch('/api/playlists/pl-1',{addSongId:'song-1'});
+    assert.equal(repeated.status,200);
+    assert.equal((await repeated.json()).addedSongId,'song-1');
+    assert.deepEqual(received.mockPlaylistEntries.map(song=>song.id),['song-1','song-1']);
+    received.ignorePlaylistAddition=true;
+    const ignored=await patch('/api/playlists/pl-1',{addSongId:'song-2'});
+    assert.equal(ignored.status,409);
+    assert.match((await ignored.json()).error,/did not confirm/i);
+    assert.deepEqual(received.mockPlaylistEntries.map(song=>song.id),['song-1','song-1']);
+  }finally{
+    delete received.ignorePlaylistAddition;
+    delete received.mockPlaylistEntries;
   }
 });
 test('playlist entry deletion verifies exact song and refuses stale indices',async()=>{
