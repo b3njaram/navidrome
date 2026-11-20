@@ -718,8 +718,8 @@ private fun HomeScreen(vm:MusicViewModel,player:NativePlayer,
                 .height(313.dp).clip(RoundedCornerShape(20.dp))
                 .background(Brush.linearGradient(listOf(
                     JobbiIndigo,JobbiViolet.copy(alpha=.92f),Color(0xFF125E78))))) {
-                vm.home.songs.firstOrNull()?.cover?.let{art->
-                    Cover(art,245.dp,modifier=Modifier.align(Alignment.TopEnd)
+                vm.home.songs.firstOrNull()?.let{song->
+                    Cover(song.cover,245.dp,modifier=Modifier.align(Alignment.TopEnd)
                         .offset(x=47.dp,y=(-33).dp)
                         .graphicsLayer(rotationZ=11f)
                         .shadow(20.dp,RoundedCornerShape(16.dp)))
@@ -930,10 +930,10 @@ private fun AlbumShelf(title:String,albums:List<Album>,open:(String)->Unit) {
 private fun Cover(art:String?,size: androidx.compose.ui.unit.Dp,modifier:Modifier=Modifier) {
     val context=LocalContext.current
     val loader=remember { ImageLoader.Builder(context.applicationContext).okHttpClient(JobbiApi.client).build() }
-    Box(modifier.size(size).clip(RoundedCornerShape(18.dp))
-        .background(MaterialTheme.colorScheme.secondaryContainer),contentAlignment=Alignment.Center) {
-        Icon(Icons.Rounded.Album,null,Modifier.size(size*.38f),
-            tint=MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha=.65f))
+    Box(modifier.size(size).clip(RoundedCornerShape(12.dp))
+        .background(JobbiSky.copy(alpha=.15f)),contentAlignment=Alignment.Center) {
+        Icon(Icons.Rounded.MusicNote,null,Modifier.size(size*.38f),
+            tint=JobbiSky)
         if(art!=null) {
             AsyncImage(
                 model=ImageRequest.Builder(context).data(JobbiApi.coverUrl(art))
