@@ -16,6 +16,53 @@ import org.json.JSONObject
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
     var signedIn by androidx.compose.runtime.mutableStateOf(false)
         private set
+    // Screenshot-test-only sample state. Never signs into or changes NAS data.
+    // The release APK rejects this entry point.
+    var parityScreenshotFixture by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    fun installParityScreenshotFixture() {
+        check(BuildConfig.DEBUG) { "Visual fixtures are debug-only" }
+        val sample=Song(
+            id="fixture-track-1",title="Sunset Drive",artist="Jobbi Studio",
+            album="Evening Sounds",cover=null,duration=213L,suffix="flac"
+        )
+        val second=sample.copy(
+            id="fixture-track-2",title="Ocean Lights",duration=198L
+        )
+        parityScreenshotFixture=true
+        account="fixture.listener"
+        isAdmin=false
+        offlineMode=false
+        restoringSession=false
+        signedIn=true
+        server="https://music.jobbisoft.com.mx"
+        selected="Home"
+        home=HomeResult(
+            recent=listOf(Album("fixture-album","Evening Sounds","Jobbi Studio",null)),
+            featured=listOf(Album("fixture-album-2","New Horizons","Jobbi Studio",null)),
+            songs=listOf(sample,second),
+            playlists=listOf(MusicPlaylist("fixture-playlist","Evening Mix",2,false)),
+            played=listOf(Album("fixture-album","Evening Sounds","Jobbi Studio",null))
+        )
+        albums=home.recent+home.featured
+        playlists=home.playlists
+        favorites=listOf(sample)
+        favoriteIds=setOf(sample.id)
+        recommendations=RecommendationsResult(
+            recentTracks=listOf(second),topWeek=listOf(sample),
+            topMonth=listOf(second),madeForYou=listOf(sample,second),
+            timeMix=listOf(second),timeLabel="Evening Mix",
+            weatherMix=listOf(sample),weatherLabel="Weather Mix",
+            weatherCity="Test City",weatherTemperature=21.0
+        )
+        savedSignInAvailable=false
+    }
+    fun showParityScreenshotScreen(screen:String) {
+        check(BuildConfig.DEBUG && parityScreenshotFixture)
+        require(screen in listOf("Home","Library","Search","More"))
+        selected=screen
+    }
+
     var offlineMode by androidx.compose.runtime.mutableStateOf(false)
         private set
     var downloadedSongs by androidx.compose.runtime.mutableStateOf<List<Song>>(emptyList())
