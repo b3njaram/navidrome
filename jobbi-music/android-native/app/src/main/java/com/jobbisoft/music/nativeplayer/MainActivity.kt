@@ -780,9 +780,11 @@ private fun LoginScreen(vm:MusicViewModel) {
         }
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
             Text("Your music. Your place.",fontSize=31.sp,
-                fontWeight=FontWeight.Bold,lineHeight=36.sp)
+                fontWeight=FontWeight.Bold,lineHeight=36.sp,
+                color=MaterialTheme.colorScheme.onSurface)
             Text("Stream your private music library in a native Android experience.",
-                fontSize=15.sp,color=dim,lineHeight=21.sp)
+                fontSize=15.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight=21.sp)
         }
         Surface(shape=RoundedCornerShape(22.dp),color=card){
             Column(Modifier.padding(horizontal=15.dp,vertical=10.dp)){
@@ -795,6 +797,7 @@ private fun LoginScreen(vm:MusicViewModel) {
                 Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=7.dp),
                     verticalAlignment=Alignment.CenterVertically) {
                     Text("Keep me signed in securely",fontSize=14.sp,
+                        color=MaterialTheme.colorScheme.onSurface,
                         modifier=Modifier.weight(1f))
                     Switch(checked=keepSignedIn,onCheckedChange={keepSignedIn=it},
                         enabled=!vm.busy)
@@ -810,17 +813,29 @@ private fun LoginScreen(vm:MusicViewModel) {
                 color=MaterialTheme.colorScheme.onPrimary)
             Text(if(vm.busy)"Signing in…" else "Listen now",
                 modifier=Modifier.weight(1f),textAlign=TextAlign.Center,
-                fontWeight=FontWeight.SemiBold)
+                fontWeight=FontWeight.SemiBold,
+                color=MaterialTheme.colorScheme.onPrimary)
             Icon(Icons.Rounded.ArrowForward,contentDescription=null,
                 modifier=Modifier.size(20.dp))
         }
         if(vm.savedSignInAvailable) {
+            // Do not make the user's offline music wait for a failed DNS
+            // lookup. Explicitly open completed, account-scoped files from
+            // Android storage with zero server or Wi-Fi dependency.
+            FilledTonalButton(onClick=vm::listenOffline,
+                enabled=!vm.busy&&!vm.restoringSession,
+                modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),
+                shape=RoundedCornerShape(13.dp)) {
+                Icon(Icons.Rounded.CloudOff,contentDescription=null)
+                Spacer(Modifier.width(10.dp))
+                Text("Listen to downloads offline",fontWeight=FontWeight.SemiBold)
+            }
             OutlinedButton(onClick=vm::retrySavedSignIn,
                 enabled=!vm.busy&&!vm.restoringSession,
                 modifier=Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.CloudSync,contentDescription=null)
                 Spacer(Modifier.width(8.dp))
-                Text("Retry saved sign-in or listen offline")
+                Text("Reconnect to server")
             }
         }
         if(vm.error.isNotBlank()){
@@ -829,7 +844,8 @@ private fun LoginScreen(vm:MusicViewModel) {
         }
         Text("Credentials go only to the HTTPS server you choose. "+
             "Remembered sign-ins are encrypted on this device with Android Keystore.",
-            fontSize=12.sp,color=dim,lineHeight=17.sp)
+            fontSize=12.sp,
+            color=MaterialTheme.colorScheme.onSurfaceVariant,lineHeight=17.sp)
         Spacer(Modifier.height(22.dp))
     }
 }
