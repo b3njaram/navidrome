@@ -96,7 +96,8 @@ class AndroidAutoSessionTest {
                 AndroidAutoLibrary.HOME_PLAYLISTS,AndroidAutoLibrary.HOME_WEEK,
                 AndroidAutoLibrary.FAVORITES,AndroidAutoLibrary.PLAYLISTS,
                 AndroidAutoLibrary.ALBUMS,AndroidAutoLibrary.DOWNLOADED,
-                AndroidAutoLibrary.RECENT)) {
+                AndroidAutoLibrary.OFFLINE_PLAYLISTS,
+                AndroidAutoLibrary.ARTISTS,AndroidAutoLibrary.RECENT)) {
                 val children=main { browser.getChildren(id,0,20,null) }
                     .get(15,TimeUnit.SECONDS)
                 assertEquals("Error browsing $id",
@@ -228,15 +229,29 @@ class AndroidAutoSessionTest {
             assertTrue(prefs.edit().putString(scope+":"+hash(id),saved.toString())
                 .commit())
             JobbiApi.useOfflineIdentity(name)
+            JobbiDownloads.rememberCollection(context,name,host,
+                "playlist:roadtrip","Road Trip",
+                listOf(Song(id,"Downloaded Drive Song","Local music","Offline",
+                    null,12L)))
             connected { browser ->
                 val root=main{browser.getChildren(AndroidAutoLibrary.ROOT,0,20,null)}
                     .get(15,TimeUnit.SECONDS)
                 assertEquals(LibraryResult.RESULT_SUCCESS,root.resultCode)
-                assertEquals(listOf(AndroidAutoLibrary.HOME,AndroidAutoLibrary.DOWNLOADED,
+                assertEquals(listOf(AndroidAutoLibrary.HOME,
+                    AndroidAutoLibrary.OFFLINE_PLAYLISTS,AndroidAutoLibrary.DOWNLOADED,
                     AndroidAutoLibrary.QUEUE),root.value?.map{it.mediaId})
                 val home=main{browser.getChildren(AndroidAutoLibrary.HOME,0,20,null)}
                     .get(15,TimeUnit.SECONDS)
                 assertTrue(home.value?.any{it.mediaId==AndroidAutoLibrary.DOWNLOADED}==true)
+                val lists=main{browser.getChildren(AndroidAutoLibrary.OFFLINE_PLAYLISTS,0,20,null)}
+                    .get(15,TimeUnit.SECONDS)
+                val offlineFolder=AndroidAutoLibrary.PREFIX_OFFLINE_PLAYLIST+"playlist:roadtrip"
+                assertEquals(offlineFolder,lists.value?.singleOrNull()?.mediaId)
+                val savedPlaylist=main{browser.getChildren(offlineFolder,0,20,null)}
+                    .get(15,TimeUnit.SECONDS)
+                assertEquals(id,savedPlaylist.value?.singleOrNull()?.mediaId)
+                assertEquals("file",savedPlaylist.value?.singleOrNull()
+                    ?.localConfiguration?.uri?.scheme)
                 val downloads=main{browser.getChildren(AndroidAutoLibrary.DOWNLOADED,0,20,null)}
                     .get(15,TimeUnit.SECONDS)
                 assertEquals(id,downloads.value?.singleOrNull()?.mediaId)
@@ -267,7 +282,10 @@ class AndroidAutoSessionTest {
                 main{browser.clearMediaItems()}
             }
         } finally {
-            prefs.edit().remove(scope+":"+hash(id)).commit()
+            val edit=prefs.edit()
+            prefs.all.keys.filter{it.startsWith(scope+":")||
+                it.startsWith("collection:"+scope+":")}.forEach(edit::remove)
+            edit.commit()
             dir.deleteRecursively()
             audio.delete()
             JobbiApi.clearSession()
