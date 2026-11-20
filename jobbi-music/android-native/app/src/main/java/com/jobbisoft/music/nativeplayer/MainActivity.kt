@@ -889,63 +889,106 @@ private fun Cover(art:String?,size: androidx.compose.ui.unit.Dp,modifier:Modifie
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SongRow(song: Song,index:Int,hearted:Boolean,play:()->Unit,favorite:()->Unit,
-                    add:()->Unit, removeFromNas:()->Unit={},
-                    playNext:()->Unit={}, addQueue:()->Unit={},
-                    downloadOffline:()->Unit={},
+private fun SongRow(song:Song,index:Int,hearted:Boolean,play:()->Unit,
+                    favorite:()->Unit,add:()->Unit,removeFromNas:()->Unit={},
+                    playNext:()->Unit={},addQueue:()->Unit={},
+                    downloadOffline:()->Unit={},offlineSaved:Boolean=false,
+                    removeOffline:()->Unit={},removeFromPlaylist:(()->Unit)?=null,
+                    showTrackNumber:Boolean=false,showAlbum:Boolean=true,
                     selected:Boolean=false,selectionMode:Boolean=false,
-                    onSelect:()->Unit={},onLongSelect:()->Unit={}) {
-    var moreOpen by remember { mutableStateOf(false) }
+                    onSelect:()->Unit={},onLongSelect:()->Unit={}){
+    var moreOpen by remember{mutableStateOf(false)}
+    var confirmPlaylistRemoval by remember(song.id,index){mutableStateOf(false)}
     Row(Modifier.fillMaxWidth()
         .background(if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
         .combinedClickable(onClick={if(selectionMode)onSelect()else play()},
             onLongClick=onLongSelect)
-        .padding(horizontal=13.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+        .padding(horizontal=13.dp,vertical=6.dp),
+        verticalAlignment=Alignment.CenterVertically){
         if(selectionMode){
             Checkbox(checked=selected,onCheckedChange={onSelect()},
-                modifier=Modifier.width(45.dp))
-        }else Text("${index+1}",Modifier.width(23.dp),style=MaterialTheme.typography.labelMedium,
-            color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center)
-        Cover(song.cover,52.dp)
-        Spacer(Modifier.width(11.dp))
-        Column(Modifier.weight(1f)) {
-            Text(song.title,maxLines=1,overflow=TextOverflow.Ellipsis,
-                style=MaterialTheme.typography.bodyLarge,fontWeight=FontWeight.SemiBold)
-            Text(song.artist,maxLines=1,overflow=TextOverflow.Ellipsis,
-                style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                modifier=Modifier.width(42.dp))
+        }else if(showTrackNumber){
+            Text((index+1).toString(),modifier=Modifier.width(42.dp),
+                style=MaterialTheme.typography.bodySmall,
+                textAlign=TextAlign.Center,
+                color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }else{
+            Cover(song.cover,48.dp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)){
+            Text(song.title,fontSize=16.sp,fontWeight=FontWeight.Medium,
+                maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(if(showAlbum && song.album.isNotBlank())
+                    song.artist+" · "+song.album else song.artist,
+                fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines=1,overflow=TextOverflow.Ellipsis)
         }
         if(!selectionMode){
-            IconButton(onClick=favorite,modifier=Modifier.size(44.dp)) {
-                Icon(if(hearted)Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription=if(hearted)"Remove from Favorites" else "Add to Favorites",
-                    tint=if(hearted)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Box {
-                IconButton(onClick={moreOpen=true},modifier=Modifier.size(40.dp)) {
-                    Icon(Icons.Rounded.MoreVert,contentDescription="More options for ${song.title}")
+            Box{
+                IconButton(onClick={moreOpen=true},modifier=Modifier.size(44.dp)){
+                    Icon(Icons.Rounded.MoreVert,
+                        contentDescription="More options for "+song.title)
                 }
-                DropdownMenu(expanded=moreOpen,onDismissRequest={moreOpen=false}) {
-                    DropdownMenuItem(text={Text("Play next")},
+                // Matches SwiftUI SongRow: the dangerous server action belongs
+                // in the menu, NOT as a red trash icon beside every recording.
+                DropdownMenu(expanded=moreOpen,onDismissRequest={moreOpen=false}){
+                    DropdownMenuItem(text={Text("Play Next")},
                         leadingIcon={Icon(Icons.Rounded.PlaylistPlay,null)},
                         onClick={moreOpen=false;playNext()})
-                    DropdownMenuItem(text={Text("Add to queue")},
+                    DropdownMenuItem(text={Text("Add to Queue")},
                         leadingIcon={Icon(Icons.Rounded.QueueMusic,null)},
                         onClick={moreOpen=false;addQueue()})
+                    HorizontalDivider()
+                    DropdownMenuItem(text={Text(if(hearted)
+                        "Remove from Favorites" else "Add to Favorites")},
+                        leadingIcon={Icon(if(hearted)Icons.Rounded.Favorite
+                             else Icons.Rounded.FavoriteBorder,null)},
+                        onClick={moreOpen=false;favorite()})
                     DropdownMenuItem(text={Text("Add to playlist")},
                         leadingIcon={Icon(Icons.Rounded.PlaylistAdd,null)},
                         onClick={moreOpen=false;add()})
-                    DropdownMenuItem(text={Text("Download offline")},
-                        leadingIcon={Icon(Icons.Rounded.Download,null)},
-                        onClick={moreOpen=false;downloadOffline()})
+                    if(offlineSaved){
+                        DropdownMenuItem(text={Text("Saved offline")},
+                            leadingIcon={Icon(Icons.Rounded.CheckCircle,null)},
+                            enabled=false,onClick={})
+                        DropdownMenuItem(text={Text("Remove offline copy")},
+                            leadingIcon={Icon(Icons.Rounded.DeleteOutline,null)},
+                            onClick={moreOpen=false;removeOffline()})
+                    }else{
+                        DropdownMenuItem(text={Text("Download song")},
+                            leadingIcon={Icon(Icons.Rounded.Download,null)},
+                            onClick={moreOpen=false;downloadOffline()})
+                    }
+                    HorizontalDivider()
+                    if(removeFromPlaylist!=null){
+                        DropdownMenuItem(text={Text("Remove from this playlist")},
+                            leadingIcon={Icon(Icons.Rounded.RemoveCircleOutline,null)},
+                            onClick={moreOpen=false;confirmPlaylistRemoval=true})
+                    }
+                    DropdownMenuItem(text={Text("Remove recording from NAS…",
+                        color=MaterialTheme.colorScheme.error)},
+                        leadingIcon={Icon(Icons.Rounded.DeleteOutline,null,
+                            tint=MaterialTheme.colorScheme.error)},
+                        onClick={moreOpen=false;removeFromNas()})
                 }
-            }
-            IconButton(onClick=removeFromNas,modifier=Modifier.size(40.dp)) {
-                Icon(Icons.Rounded.DeleteOutline,
-                    contentDescription="Remove ${song.title} from NAS",
-                    tint=MaterialTheme.colorScheme.error)
             }
         }
     }
+    if(confirmPlaylistRemoval&&removeFromPlaylist!=null)AlertDialog(
+        onDismissRequest={confirmPlaylistRemoval=false},
+        title={Text("Remove from playlist?")},
+        text={Text(song.title+" will leave this playlist, but its recording "+
+            "will stay on the NAS and in other playlists.")},
+        confirmButton={TextButton(onClick={
+            confirmPlaylistRemoval=false
+            removeFromPlaylist()
+        }){Text("Remove from playlist",color=JobbiCoral)}},
+        dismissButton={TextButton(onClick={confirmPlaylistRemoval=false}){
+            Text("Cancel")
+        }}
+    )
 }
 
 @Composable
@@ -1814,6 +1857,13 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 downloadOffline={vm.downloadSong(song)},
                 add={onSongAdd(song)},
                 removeFromNas={vm.prepareSongRemoval(listOf(song))},
+                offlineSaved=vm.downloadedSongs.any{it.id==song.id},
+                removeOffline={vm.removeOfflineSong(song)},
+                removeFromPlaylist=if(detail.isPlaylist){{
+                    vm.removeSelectedFromPlaylist(listOf(pair.first))
+                }}else null,
+                showTrackNumber=!detail.isPlaylist,
+                showAlbum=false,
                 selected=pair.first in selected,selectionMode=selecting,
                 onSelect={selected=if(pair.first in selected)selected-pair.first else selected+pair.first},
                 onLongSelect={selecting=true;selected=selected+pair.first})
