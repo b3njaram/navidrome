@@ -28,6 +28,18 @@ final class MusicPlayer: ObservableObject {
     private var artworkTask: Task<Void, Never>?
     private var artworkCache: [String: UIImage] = [:]
 
+    #if DEBUG
+    // The simulator parity test renders the real Now Playing view without
+    // creating an AVPlayerItem or opening any NAS stream.
+    func installVisualParityFixture(_ songs: [Song]) {
+        queue = songs
+        currentIndex = 0
+        playing = false
+        elapsed = 45
+        duration = songs.first?.durationSeconds ?? 0
+    }
+    #endif
+
     var active: Song? { queue.indices.contains(currentIndex) ? queue[currentIndex] : nil }
     var hasMusic: Bool { active != nil }
     var fraction: Double {
