@@ -274,20 +274,24 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
         }
     }
 
-    private func queueSections() -> [CPListSection] {
+    private func queueSections(page: Int = 0) -> [CPListSection] {
         guard let player else { return [section([status("Open Jobbi Music to start listening")])] }
         let queue = player.queue
         guard queue.indices.contains(player.currentIndex) else {
             return [section([status("Nothing in the queue")])]
         }
         let current = player.currentIndex
-        var result = [section([action("Now Playing",
-            details: queue[current].title + " — " + queue[current].artist) {
-                [weak self] in self?.showNowPlaying()
-            }],title: "Playing")]
-        let next = Array(queue.enumerated().dropFirst(current+1).prefix(75))
+        var result: [CPListSection] = []
+        if page == 0 {
+            result.append(section([action("Now Playing",
+                details: queue[current].title + " — " + queue[current].artist) {
+                    [weak self] in self?.showNowPlaying()
+                }],title: "Playing"))
+        }
+        let start = current + 1 + page * 35
+        let next = Array(queue.enumerated().dropFirst(start).prefix(35))
         if !next.isEmpty {
-            let rows = next.map { index, song -> CPListItem in
+            var rows = next.map { index, song -> CPListItem in
                 let item = CPListItem(text: song.title, detailText: song.artist)
                 item.handler = { [weak self] _, done in
                     Task { @MainActor [weak self] in
@@ -298,9 +302,30 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
                 }
                 return item
             }
+            if start + 35 < queue.count {
+                rows.append(action("More Up Next",
+                    details:"\(queue.count - start - 35) tracks remaining") { [weak self] in
+                    guard let self else { return }
+                    self.carPush(CPListTemplate(title:"Up Next",
+                        sections:self.queueSections(page:page + 1)))
+                })
+            }
             result.append(section(rows,title: "Up Next"))
         } else {
             result.append(section([status("No upcoming songs")],title:"Up Next"))
+        }
+        if page == 0 {
+            result.append(section([
+                action(player.shuffled ? "Shuffle: On" : "Shuffle: Off") { [weak self] in
+                    self?.player?.toggleShuffle()
+                    self?.updateQueue()
+                },
+                action(player.repeatOne ? "Repeat Track: On" : "Repeat Track: Off") {
+                    [weak self] in
+                    self?.player?.repeatOne.toggle()
+                    self?.updateQueue()
+                }
+            ],title:"Playback Options"))
         }
         return result
     }
