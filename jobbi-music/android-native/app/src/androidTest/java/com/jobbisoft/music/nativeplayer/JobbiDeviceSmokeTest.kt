@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModelProvider
@@ -156,7 +157,7 @@ class JobbiDeviceSmokeTest {
         // its tiny thumb; the debug fixture records the requested timestamp.
         rule.onNodeWithContentDescription("Song position",useUnmergedTree=true)
             .performTouchInput {
-                click(Offset(size.width*.77f,size.height*.5f))
+                click(percentOffset(.77f,.5f))
             }
         rule.waitUntil(7000){
             rule.onAllNodesWithText("0:45",useUnmergedTree=true)
