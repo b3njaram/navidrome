@@ -206,71 +206,103 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         restoreSavedSignIn()
     }
 
+    /** Enter the cached library for a previously server-verified identity.
+     * This function does no DNS, HTTP, or Navidrome login at all. Its songs
+     * are restricted to actual completed files scoped by server and username.
+     */
+    private suspend fun openRememberedDownloads(saved:RememberedLogin):Boolean {
+        val app=getApplication<android.app.Application>()
+        val cached=withContext(Dispatchers.IO) {
+            val songs=JobbiDownloads.downloadedSongs(app,saved.username,saved.server)
+            val groups=JobbiDownloads.completedCollections(app,saved.username,saved.server)
+            val statistics=JobbiDownloads.stats(app,saved.username,saved.server)
+            Triple(songs,groups,statistics)
+        }
+        if(cached.first.isEmpty())return false
+        JobbiApi.changeServer(app,saved.server)
+        JobbiApi.useOfflineIdentity(saved.username)
+        account=saved.username
+        server=saved.server
+        isAdmin=false
+        offlineMode=true
+        signedIn=true
+        selected="Downloads"
+        downloadedSongs=cached.first
+        offlineCollections=cached.second
+        downloadStats=cached.third
+        error=""
+        message="Playing ${cached.first.size} saved songs from your device. "+
+            "No internet or NAS sign-in required."
+        return true
+    }
+
     private fun restoreSavedSignIn() {
         if(signedIn && !offlineMode)return
         viewModelScope.launch {
-            restoringSession = true
-            error = ""
-            var remembered: RememberedLogin? = null
+            restoringSession=true
+            error=""
+            var remembered:RememberedLogin?=null
             try {
                 remembered=withContext(Dispatchers.IO){
                     SecureLoginStorage.load(getApplication())
                 }
-                savedSignInAvailable = remembered != null
-                val saved = remembered
-                if(saved != null){
+                val saved=remembered
+                savedSignInAvailable=saved!=null
+                if(saved!=null){
                     JobbiApi.changeServer(getApplication(),saved.server)
-                    server = JobbiApi.serverUrl()
-                    account = JobbiApi.login(saved.username,saved.password)
-                    isAdmin = JobbiApi.isAdmin
-                    offlineMode = false
-                    signedIn = true
-                    selected = "Home"
+                    server=JobbiApi.serverUrl()
+                    // On a flight / airplane mode / no validated network,
+                    // NEVER wait for a DNS timeout before showing offline music.
+                    if(!OfflineNetwork.isOnline(getApplication())){
+                        if(!openRememberedDownloads(saved)){
+                            if(!signedIn){
+                                error="No internet connection and no completed offline "+
+                                    "downloads for this saved account. Download music "+
+                                    "while online to listen without a connection."
+                            }
+                        }
+                        return@launch
+                    }
+                    // A connection is present. First try the user's normal
+                    // saved sign-in; any temporary outage falls back to local
+                    // downloads without logging them out.
+                    account=JobbiApi.login(saved.username,saved.password)
+                    isAdmin=JobbiApi.isAdmin
+                    offlineMode=false
+                    signedIn=true
+                    selected="Home"
                     loadWeatherPreference()
                     refresh()
                 }
-            }catch(e: Exception){
+            }catch(e:Exception){
                 JobbiApi.clearSession()
-                isAdmin = false
-                if(e is JobbiException && e.status == 401){
+                isAdmin=false
+                if(e is JobbiException && e.status==401){
                     withContext(Dispatchers.IO){
                         runCatching{SecureLoginStorage.clear(getApplication())}
                     }
-                    savedSignInAvailable = false
-                    signedIn = false
-                    offlineMode = false
-                    account = ""
-                    error = "Saved credentials are no longer valid. Sign in again."
+                    savedSignInAvailable=false
+                    signedIn=false
+                    offlineMode=false
+                    account=""
+                    error="Saved credentials were rejected by the server. "+
+                        "Sign in again once online."
                 }else{
-                    // Remembered account unlocks ONLY its own locally downloaded
-                    // music; no server actions or admin privileges are granted.
-                    val cached=remembered?.let {saved ->
-                        withContext(Dispatchers.IO){
-                            JobbiDownloads.downloadedSongs(getApplication(),saved.username,saved.server)
-                        }
-                    }.orEmpty()
-                    if(remembered!=null && cached.isNotEmpty()){
-                        account=remembered!!.username
-                        server=remembered!!.server
-                        JobbiApi.useOfflineIdentity(account)
-                        downloadedSongs=cached
-                        offlineCollections=withContext(Dispatchers.IO){
-                            JobbiDownloads.completedCollections(getApplication(),account,server)
-                        }
-                        offlineMode=true
-                        signedIn=true
-                        selected="Downloads"
-                        message="You're offline. Playing ${cached.size} downloaded recordings. "+
-                            "Reconnect from More when the server becomes available."
-                        updateDownloadStats()
-                    }else{
+                    val recovered=remembered?.let{
+                        runCatching{openRememberedDownloads(it)}.getOrDefault(false)
+                    } ?: false
+                    if(!recovered){
                         signedIn=false
+                        offlineMode=false
                         account=""
                         error="Couldn't connect to your music server. "+
-                            "Your saved sign-in is still on this device; retry when online."
+                            "Your saved sign-in is still on this device. "+
+                            "Connect to download music, or retry when online."
                     }
                 }
-            }finally{restoringSession=false}
+            }finally{
+                restoringSession=false
+            }
         }
     }
     /**
