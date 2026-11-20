@@ -146,6 +146,28 @@ object JobbiDownloads {
      * collection or explicit single-song download claims those recordings.
      * This never contacts the server or removes songs from the NAS.
      */
+    /**
+     * Remove a single device-only recording and any pending Android download.
+     * Deliberately leaves playlist records and the NAS library untouched.
+     */
+    fun removeSong(c:Context,user:String,server:String,id:String):Boolean {
+        require(user.isNotBlank()&&id.isNotBlank()){"Sign in and select a recording."}
+        val store=prefs(c)
+        val entry=store.getString(key(user,server,id),null)?.let(OfflineEntry::from)
+            ?:return false
+        val accountFolder=File(root(c),"jobbi/"+scope(user,server)).canonicalFile
+        val targetFile=file(c,user,server,entry).canonicalFile
+        check(targetFile.parentFile==accountFolder){"Invalid private offline recording path."}
+        if(entry.downloadId>0)manager(c).remove(entry.downloadId)
+        if(targetFile.exists()&&!targetFile.delete())
+            throw JobbiException("Could not remove "+entry.title+" from offline storage.")
+        check(store.edit().remove(key(user,server,id))
+            .remove(manualKey(user,server,id)).commit()){
+            "Could not save offline recording removal."
+        }
+        return true
+    }
+
     fun removePlaylist(c:Context,user:String,server:String,id:String):JobbiRemovalResult {
         require(user.isNotBlank()){"Select an offline account first."}
         val store=prefs(c)
