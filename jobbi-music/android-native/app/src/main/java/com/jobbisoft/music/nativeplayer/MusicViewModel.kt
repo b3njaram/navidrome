@@ -273,6 +273,59 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }finally{restoringSession=false}
         }
     }
+    /**
+     * Explicit offline unlock: never performs DNS, HTTP, or a saved-login
+     * retry. Downloads are private to the last account whose credentials
+     * were verified by the NAS and encrypted using Android Keystore.
+     * No remembered identity, or no finished files, means no offline access.
+     */
+    fun listenOffline() {
+        if(restoringSession||busy)return
+        viewModelScope.launch {
+            busy=true
+            error=""
+            try {
+                val app=getApplication<android.app.Application>()
+                val remembered=withContext(Dispatchers.IO){
+                    SecureLoginStorage.load(app)
+                } ?: throw JobbiException(
+                    "Offline listening needs a previously saved sign-in. "+
+                    "Sign in once online with Keep me signed in enabled.")
+                savedSignInAvailable=true
+                val data=withContext(Dispatchers.IO) {
+                    val songs=JobbiDownloads.downloadedSongs(app,
+                        remembered.username,remembered.server)
+                    val groups=JobbiDownloads.completedCollections(app,
+                        remembered.username,remembered.server)
+                    val stats=JobbiDownloads.stats(app,
+                        remembered.username,remembered.server)
+                    Triple(songs,groups,stats)
+                }
+                if(data.first.isEmpty()){
+                    throw JobbiException(
+                        "No completed downloads for this account on this device. "+
+                        "${data.third.queued} queued, ${data.third.failed} failed. "+
+                        "Finish downloading at least one song while online; "+
+                        "a queued download is not an offline copy.")
+                }
+                JobbiApi.changeServer(app,remembered.server)
+                JobbiApi.useOfflineIdentity(remembered.username)
+                account=remembered.username
+                server=remembered.server
+                isAdmin=false
+                offlineMode=true
+                signedIn=true
+                selected="Downloads"
+                downloadedSongs=data.first
+                offlineCollections=data.second
+                downloadStats=data.third
+                message="Offline library: ${data.first.size} locally saved songs. "+
+                    "No internet or server connection required."
+            }catch(e:Exception){
+                error=e.message?:"Offline downloads are unavailable on this device."
+            }finally{busy=false}
+        }
+    }
     fun retrySavedSignIn() {
         if((!signedIn || offlineMode)&&!restoringSession&&savedSignInAvailable)
             restoreSavedSignIn()
