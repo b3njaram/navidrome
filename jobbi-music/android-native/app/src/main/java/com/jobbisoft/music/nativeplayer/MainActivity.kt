@@ -634,7 +634,7 @@ private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)
                     color=JobbiTeal)
                 Spacer(Modifier.height(8.dp))
                 Text("Listen Now",fontSize=29.sp,fontWeight=FontWeight.Bold,
-                    letterSpacing=(-0.7).sp)
+                    letterSpacing=(-0.7f).sp)
                 Spacer(Modifier.height(14.dp))
                 Box(Modifier.fillMaxWidth().height(310.dp)
                     .clip(RoundedCornerShape(22.dp))
@@ -972,17 +972,25 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
 private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
                          onBulkPlaylist:(List<Song>)->Unit,
                          onQuarantine:(List<Song>)->Unit) {
+    var source by remember { mutableStateOf(0) }
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Set<Int>>(emptySet()) }
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=7.dp),
             horizontalArrangement=Arrangement.spacedBy(9.dp)){
-            FilterChip(selected=true,onClick={},label={Text("My library")},
+            FilterChip(selected=source==0,onClick={source=0},
+                label={Text("My Library")},
                 leadingIcon={Icon(Icons.Rounded.LibraryMusic,null)})
-            FilterChip(selected=false,onClick=vm::openServerSearch,
-                label={Text("Search server")},
-                leadingIcon={Icon(Icons.Rounded.UploadFile,null)})
+            FilterChip(selected=source==1,onClick={source=1},
+                label={Text("Find New Music")},
+                leadingIcon={Icon(Icons.Rounded.TravelExplore,null)})
         }
+        if(source==1){
+            // Same source choices as the native iPhone Search tab. All existing
+            // Soulseek / Invidious / NAS import controls stay in this screen.
+            ServerDiscoverScreen(onBack={source=0},
+                initialQuery=vm.searchQuery.ifBlank{vm.serverSearchSeed})
+        }else{
         OutlinedTextField(vm.searchQuery,{selecting=false;selected=emptySet();vm.search(it)},
             modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=12.dp),
             placeholder={Text("Songs, albums, artists...")},
@@ -1006,6 +1014,9 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             }
         }
         LazyColumn(contentPadding=PaddingValues(bottom=20.dp)) {
+            if(vm.searchQuery.isBlank()&&vm.home.recent.isNotEmpty()){
+                item{AlbumShelf("Recently Added",vm.home.recent,vm::openAlbum)}
+            }
             if(vm.searchResult.albums.isNotEmpty()) {
                 item { AlbumShelf("Albums",vm.searchResult.albums,vm::openAlbum) }
                 item { Spacer(Modifier.height(14.dp)) }
@@ -1043,6 +1054,7 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                         onLongSelect={selecting=true;selected=selected+index})
                 }
             }
+        }
         }
     }
 }
