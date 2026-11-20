@@ -7,6 +7,7 @@ the emulator's scheduler. No fabricated result is emitted if the system
 doesn't export data; recorded values are diagnostics, not pass/fail gates.
 """
 import json
+import os
 import pathlib
 import re
 import statistics
@@ -57,7 +58,7 @@ def percentile(items, pct):
 output = {
     "measurement": "Android emulator SurfaceFlinger/egl gfxinfo app-frame latency",
     "device": "GitHub Actions Android emulator, not an actual phone or vehicle",
-    "animations_enabled": True,
+    "animations_enabled": os.environ.get("JOBBI_ANIMATIONS_ENABLED", "0") == "1",
     "refresh_budget_ms_assumed": 16.67,
     "interpretation": "These are emulator-only diagnostics and do not establish iPhone-equivalent animation fluidity.",
     "status": "sampled" if frames else "unavailable",
@@ -74,6 +75,12 @@ if reported:
     output["gfxinfo_reported_janky_frames"] = int(reported.group(2))
     output["gfxinfo_reported_janky_percent"] = reported.group(3)
 
+if not output["animations_enabled"]:
+    output["status"] = "not-assessed"
+    output["interpretation"] = (
+        "Animations disabled for stable visual snapshots. "
+        "Frame data below covers drawing only and does not assess transition fluidity."
+    )
 if frames:
     output.update({
         "median_latency_ms": round(statistics.median(frames), 2),
