@@ -463,14 +463,45 @@ class NativePlayer(private val context: Context) {
             error="Music playback is still connecting. Try seeking again."
             return
         }
-        if(!c.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)){
-            error="This audio stream does not allow timestamp seeking. Try the original-quality stream."
+        val current=c.currentMediaItem
+        val baseOffset=TranscodeSeekOffset.millis(current)
+        val directSeekable=c.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+        if(directSeekable && target>=baseOffset){
+            // Normal Range/file seek (or a seek inside an already-offset
+            // transcode). The session wrapper converts absolute to relative.
+            error=""
+            position=target
+            c.seekTo(target)
             return
         }
-        // Update the now-playing label immediately while ExoPlayer resolves
-        // the selected offset. syncFromPlayer confirms the real position.
+        // Navidrome's first uncached transcoding stream may have no Range
+        // support. OpenSubsonic transcodeOffset can restart its audio at an
+        // arbitrary time without silently switching to expensive original
+        // FLAC streams. Preserve the selected bitrate and the whole queue.
+        val uri=current?.localConfiguration?.uri
+        val quality=runCatching{uri?.getQueryParameter("quality")}.getOrNull()
+            ?:JobbiApi.quality
+        if(current==null||uri?.scheme!="https"||
+            !c.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)||
+            quality=="original"){
+            error="This stream is not seekable yet. Try again after buffering or download the song for offline seeking."
+            return
+        }
+        val index=c.currentMediaItemIndex
+        if(index<0){
+            error="The selected recording is not ready to seek."
+            return
+        }
+        val wasPlaying=c.playWhenReady
+        val resumed=TranscodeSeekOffset.withTimeOffset(current,quality,target)
+        error=""
         position=target
-        c.seekTo(target)
+        c.replaceMediaItem(index,resumed)
+        // The new URI begins at the requested time. Seek to zero relative to
+        // the *new* stream; the system timeline reports the absolute offset.
+        c.seekTo(index,0L)
+        c.prepare()
+        if(wasPlaying)c.play()
     }
     fun shuffle(enabled: Boolean) { controller?.shuffleModeEnabled=enabled }
     fun repeat(mode: Int) { controller?.repeatMode=mode }
