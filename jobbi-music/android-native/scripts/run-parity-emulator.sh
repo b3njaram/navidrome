@@ -8,6 +8,14 @@ gradle --no-daemon -p jobbi-music/android-native :app:assembleDebug :app:assembl
 adb install -r jobbi-music/android-native/app/build/outputs/apk/debug/app-debug.apk
 adb install -r jobbi-music/android-native/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
+# Exercise real window/transition/Compose animator durations (the previous
+# screenshot workflow disabled animations and therefore could not assess them).
+adb shell settings put global window_animation_scale 1.0
+adb shell settings put global transition_animation_scale 1.0
+adb shell settings put global animator_duration_scale 1.0
+echo "Animation scales: $(adb shell settings get global window_animation_scale), $(adb shell settings get global transition_animation_scale), $(adb shell settings get global animator_duration_scale)"
+adb shell dumpsys gfxinfo com.jobbisoft.music.nativeplayer.debug reset >/dev/null 2>&1 || true
+
 # Keep the debuggable target APK installed until screenshots are exported.
 # Gradle connectedAndroidTest automatically uninstalls test artifacts.
 adb shell am instrument -w -r \
@@ -16,6 +24,11 @@ adb shell am instrument -w -r \
 grep -Eq 'OK \(([6-9]|[1-9][0-9]+) tests\)' "$ROOT/jobbi-emulator-instrumentation.log"
 
 mkdir -p "$ROOT/jobbi-parity-android"
+adb shell dumpsys gfxinfo com.jobbisoft.music.nativeplayer.debug framestats \
+  > "$ROOT/jobbi-parity-android/android-gfxinfo.txt" || true
+python3 jobbi-music/android-native/scripts/summarize-motion.py \
+  "$ROOT/jobbi-parity-android/android-gfxinfo.txt" \
+  "$ROOT/jobbi-parity-android/android-motion-profile.json"
 for screen in home library search more nowplaying; do
   output="$ROOT/jobbi-parity-android/parity-android-$screen.png"
   adb exec-out run-as com.jobbisoft.music.nativeplayer.debug \
