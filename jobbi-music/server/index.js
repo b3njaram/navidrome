@@ -614,8 +614,21 @@ app.post('/api/playlists/:id/favorite-all',mustAuth,mustBeLimited,route(async(re
 }));
 app.delete('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
+  // A successful upstream command alone is not proof the playlist disappeared.
+  // Read it back, otherwise Android/iOS can falsely report "deleted".
   await subsonic(req.user,'deletePlaylist',{id:req.params.id});
-  res.json({ok:true});
+  let verified=false;
+  for(let attempt=0;attempt<3;attempt++){
+    const current=await subsonic(req.user,'getPlaylists');
+    const raw=current.playlists?.playlist;
+    const entries=Array.isArray(raw)?raw:raw?[raw]:[];
+    if(!entries.some(item=>item?.id===req.params.id)){verified=true;break;}
+    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,150));
+  }
+  if(!verified)return res.status(409).json({
+    error:'Navidrome acknowledged deletion but the playlist still exists. Refresh your library and retry.'
+  });
+  res.json({ok:true,verified:true});
 }));
 
 
