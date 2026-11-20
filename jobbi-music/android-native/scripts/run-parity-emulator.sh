@@ -8,12 +8,18 @@ gradle --no-daemon -p jobbi-music/android-native :app:assembleDebug :app:assembl
 adb install -r jobbi-music/android-native/app/build/outputs/apk/debug/app-debug.apk
 adb install -r jobbi-music/android-native/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
-# Exercise real window/transition/Compose animator durations (the previous
-# screenshot workflow disabled animations and therefore could not assess them).
-adb shell settings put global window_animation_scale 1.0
-adb shell settings put global transition_animation_scale 1.0
-adb shell settings put global animator_duration_scale 1.0
-echo "Animation scales: $(adb shell settings get global window_animation_scale), $(adb shell settings get global transition_animation_scale), $(adb shell settings get global animator_duration_scale)"
+# Deterministic screenshot parity must not pretend to measure real animation.
+# An optional separate profiling invocation can explicitly set
+# JOBBI_ANIMATION_PROFILE=1; its performance is emulator-only.
+if [[ "${JOBBI_ANIMATION_PROFILE:-0}" == "1" ]]; then
+  animation_scale=1.0
+else
+  animation_scale=0.0
+fi
+adb shell settings put global window_animation_scale "$animation_scale"
+adb shell settings put global transition_animation_scale "$animation_scale"
+adb shell settings put global animator_duration_scale "$animation_scale"
+echo "Emulator animation scale: $animation_scale"
 adb shell dumpsys gfxinfo com.jobbisoft.music.nativeplayer.debug reset >/dev/null 2>&1 || true
 
 # Keep the debuggable target APK installed until screenshots are exported.
@@ -32,7 +38,7 @@ if ! adb exec-out run-as com.jobbisoft.music.nativeplayer.debug \
   adb shell dumpsys gfxinfo com.jobbisoft.music.nativeplayer.debug framestats \
     > "$ROOT/jobbi-parity-android/android-gfxinfo.txt" || true
 fi
-python3 jobbi-music/android-native/scripts/summarize-motion.py \
+JOBBI_ANIMATIONS_ENABLED="${JOBBI_ANIMATION_PROFILE:-0}" python3 jobbi-music/android-native/scripts/summarize-motion.py \
   "$ROOT/jobbi-parity-android/android-gfxinfo.txt" \
   "$ROOT/jobbi-parity-android/android-motion-profile.json"
 for screen in home library search more nowplaying; do
