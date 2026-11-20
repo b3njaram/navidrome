@@ -282,6 +282,11 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     LaunchedEffect(player) {
         while (isActive) { player.tick(); delay(450) }
     }
+    LaunchedEffect(vm.parityScreenshotFixture) {
+        if(vm.parityScreenshotFixture) {
+            vm.home.songs.firstOrNull()?.let(player::installVisualParityFixture)
+        }
+    }
     LaunchedEffect(vm.signedIn,vm.account,vm.parityScreenshotFixture) {
         while(isActive&&vm.signedIn&&!vm.parityScreenshotFixture){
             vm.updateDownloadStats()
@@ -1947,7 +1952,9 @@ private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
         Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=5.dp),
             verticalAlignment=Alignment.CenterVertically,
             horizontalArrangement=Arrangement.spacedBy(11.dp)){
-            Row(Modifier.weight(1f).clickable(onClick=onOpen),
+            Row(Modifier.weight(1f)
+                .semantics { contentDescription="Open Now Playing" }
+                .clickable(onClick=onOpen),
                 verticalAlignment=Alignment.CenterVertically,
                 horizontalArrangement=Arrangement.spacedBy(11.dp)){
                 Cover(song.cover,42.dp)
