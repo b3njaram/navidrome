@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
@@ -100,6 +101,33 @@ class JobbiDeviceSmokeTest {
             rule.runOnUiThread { vm.updateQuality("balanced") }
             rule.waitForIdle()
         }
+    }
+
+    @Test fun accountClosesToOriginalTabAndNativeMusicTabsRemainInteractive(){
+        val vm=ViewModelProvider(rule.activity)[MusicViewModel::class.java]
+        rule.waitUntil(25000){!vm.restoringSession}
+        rule.runOnUiThread{
+            vm.installParityScreenshotFixture()
+            vm.showParityScreenshotScreen("More")
+        }
+        rule.waitForIdle()
+        assertTrue("iPhone-style Account must have a Done action",
+            rule.onAllNodesWithText("Done",useUnmergedTree=true)
+                .fetchSemanticsNodes().isNotEmpty())
+        assertTrue("Account should be separate from the bottom tab navigator",
+            rule.onAllNodesWithText("Community",useUnmergedTree=true)
+                .fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithText("Done").performClick()
+        rule.waitUntil(5000){vm.selected=="Home"}
+        rule.onNodeWithContentDescription("Search tab").performClick()
+        rule.waitUntil(5000){vm.selected=="Search"}
+        assertTrue("Native Search source switcher is absent",
+            rule.onAllNodesWithText("Find New Music",useUnmergedTree=true)
+                .fetchSemanticsNodes().isNotEmpty())
+        rule.onNodeWithText("Find New Music").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Library tab").performClick()
+        rule.waitUntil(5000){vm.selected=="Library"}
     }
 
 }
