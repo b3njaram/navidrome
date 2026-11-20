@@ -1562,21 +1562,27 @@ private fun SavedImportsDirectoryScreen(vm:MusicViewModel){
 
 @Composable
 private fun ArtistDirectoryScreen(vm:MusicViewModel) {
+    var query by remember{mutableStateOf("")}
+    val filtered=vm.artists.filter{
+        it.name.contains(query,ignoreCase=true)
+    }.sortedBy{it.name.lowercase(Locale.getDefault())}
     LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=15.dp),
         verticalArrangement=Arrangement.spacedBy(8.dp)){
         item {
             Text("Artists",fontSize=25.sp,fontWeight=FontWeight.Bold)
-            Text("Artists from your private Navidrome library",
-                style=MaterialTheme.typography.bodySmall,
-                color=MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(value=query,onValueChange={query=it},
+                modifier=Modifier.fillMaxWidth(),singleLine=true,
+                placeholder={Text("Find an artist")},
+                leadingIcon={Icon(Icons.Rounded.Search,null)})
         }
-        if(vm.artists.isEmpty())item {
-            Text("No artists found yet. Try refreshing the library.",
+        if(filtered.isEmpty())item {
+            Text(if(query.isBlank())"No artists found yet. Try refreshing the library."
+                 else "No matching artists.",
                 modifier=Modifier.padding(vertical=18.dp),
                 color=MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick=vm::loadArtists){Text("Refresh artists")}
         }
-        items(vm.artists,key={it.id}){artist->
+        items(filtered,key={it.id}){artist->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                 .clickable{vm.openArtist(artist.id)}
                 .padding(vertical=10.dp,horizontal=7.dp),
