@@ -8,6 +8,16 @@ gradle --no-daemon -p jobbi-music/android-native :app:assembleDebug :app:assembl
 adb install -r jobbi-music/android-native/app/build/outputs/apk/debug/app-debug.apk
 adb install -r jobbi-music/android-native/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
+# Waydroid screenshot regression: explicitly exercise Android's 3-button
+# navbar when the emulator exposes the built-in navigation overlay.
+if adb shell cmd overlay list --user 0 2>/dev/null | grep -q 'com.android.internal.systemui.navbar.threebutton'; then
+  adb shell cmd overlay enable --user 0 \
+    com.android.internal.systemui.navbar.threebutton || true
+  echo "Android 3-button navbar overlay requested for navigation-inset tests"
+else
+  echo "Three-button navigation overlay unavailable; check real reported nav insets"
+fi
+
 # Deterministic screenshot parity must not pretend to measure real animation.
 # An optional separate profiling invocation can explicitly set
 # JOBBI_ANIMATION_PROFILE=1; its performance is emulator-only.
