@@ -89,6 +89,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -391,9 +392,9 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     })
                 }
                 if(large){
-                    LargeTopAppBar(
+                    MediumTopAppBar(
                         title=heading,navigationIcon=leading,actions=trailing,
-                        colors=TopAppBarDefaults.largeTopAppBarColors(
+                        colors=TopAppBarDefaults.mediumTopAppBarColors(
                             containerColor=MaterialTheme.colorScheme.background,
                             scrolledContainerColor=MaterialTheme.colorScheme.background)
                     )
@@ -2347,94 +2348,139 @@ private fun AccountSettingRow(title:String,subtitle:String="",
 }
 
 @Composable
+private fun AccountValueRow(label:String,value:String) {
+    Row(Modifier.fillMaxWidth().heightIn(min=47.dp)
+        .padding(horizontal=14.dp,vertical=11.dp),
+        verticalAlignment=Alignment.CenterVertically) {
+        Text(label,fontSize=14.sp,modifier=Modifier.weight(1f))
+        Text(value,fontSize=13.sp,maxLines=2,overflow=TextOverflow.Ellipsis,
+            textAlign=TextAlign.End,
+            color=MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier=Modifier.weight(1.1f))
+    }
+}
+
+@Composable
+private fun AccountLinkRow(title:String,icon:ImageVector,tint:Color=JobbiSky,
+                           onClick:()->Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min=49.dp)
+        .clickable(onClick=onClick)
+        .padding(horizontal=14.dp,vertical=10.dp),
+        verticalAlignment=Alignment.CenterVertically) {
+        Icon(icon,contentDescription=null,tint=tint,modifier=Modifier.size(19.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(title,fontSize=14.sp,modifier=Modifier.weight(1f))
+        Icon(Icons.Rounded.ChevronRight,contentDescription=null,
+            tint=MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier=Modifier.size(20.dp))
+    }
+}
+
+@Composable
 private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
     var signingOut by remember { mutableStateOf(false) }
+    var qualityPicker by remember { mutableStateOf(false) }
     var cityDraft by remember(vm.account){mutableStateOf(vm.weatherCity)}
     LaunchedEffect(vm.weatherCity){cityDraft=vm.weatherCity}
+    val sectionColor=MaterialTheme.colorScheme.onSurfaceVariant
+    val divider: @Composable () -> Unit = {
+        HorizontalDivider(modifier=Modifier.padding(horizontal=14.dp),
+            color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.45f))
+    }
+    val qualityLabel=when(vm.quality){
+        "original"->"Original / Lossless"
+        "saver"->"Data saver · 128 kbps"
+        else->"High quality · 320 kbps"
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-        .padding(horizontal=18.dp,vertical=17.dp),
-        verticalArrangement=Arrangement.spacedBy(18.dp)){
-        Text("ACCOUNT",fontSize=12.sp,fontWeight=FontWeight.Bold,
-            letterSpacing=1.2.sp,color=JobbiViolet)
-        Card(shape=RoundedCornerShape(18.dp)){
-            Column(Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement=Arrangement.spacedBy(9.dp)){
-                Text("Signed in as",style=MaterialTheme.typography.labelSmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(vm.account,fontSize=19.sp,fontWeight=FontWeight.SemiBold)
-                HorizontalDivider()
-                Text("Server · ${vm.server}",style=MaterialTheme.typography.bodySmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(if(vm.isAdmin)"Role · Administrator" else "Role · Listener",
-                    style=MaterialTheme.typography.bodySmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(if(vm.savedSignInAvailable)"Secure remembered sign-in enabled"
-                    else "Automatic sign-in disabled",
-                    style=MaterialTheme.typography.bodySmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            HorizontalDivider()
-            AccountSettingRow("View or edit profile picture",
-                icon=Icons.Rounded.AccountCircle,tint=JobbiViolet,
-                onClick={vm.select("Profile")})
-        }
-        if(vm.isAdmin){
-            Text("SERVER ADMINISTRATION",fontSize=12.sp,
-                fontWeight=FontWeight.Bold,letterSpacing=1.2.sp,color=JobbiViolet)
-            Card(shape=RoundedCornerShape(18.dp)){
-                AccountSettingRow("Admin Console","NAS storage, users and access",
-                    Icons.Rounded.AdminPanelSettings,JobbiViolet,
-                    onClick={vm.select("Admin")})
-                HorizontalDivider()
-                AccountSettingRow("Scan new music","Request a Navidrome library scan",
-                    Icons.Rounded.Refresh,JobbiTeal,onClick=vm::rescan)
+        .padding(horizontal=18.dp,vertical=8.dp),
+        verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Text("Account",fontSize=13.sp,color=sectionColor,
+            modifier=Modifier.padding(start=12.dp,top=6.dp,bottom=2.dp))
+        Surface(shape=RoundedCornerShape(17.dp),
+            color=MaterialTheme.colorScheme.surface) {
+            Column {
+                AccountValueRow("Signed in as",vm.account)
+                divider()
+                AccountValueRow("Server",vm.server)
+                divider()
+                AccountValueRow("Role",if(vm.isAdmin)"Administrator" else "Listener")
+                divider()
+                AccountLinkRow("View or edit profile picture",
+                    Icons.Rounded.AccountCircle,JobbiSky,onClick={vm.select("Profile")})
             }
         }
-        Text("PLAYBACK",fontSize=12.sp,fontWeight=FontWeight.Bold,
-            letterSpacing=1.2.sp,color=JobbiViolet)
-        Card(shape=RoundedCornerShape(18.dp)){
-            Column(Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement=Arrangement.spacedBy(10.dp)){
-                Text("Streaming quality",fontWeight=FontWeight.SemiBold)
-                Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                    listOf("original" to "Lossless",
-                        "balanced" to "High · 320",
-                        "saver" to "Saver").forEach{(value,label)->
-                        FilterChip(selected=vm.quality==value,
-                            onClick={vm.updateQuality(value)},label={Text(label)})
-                    }
+        if(vm.isAdmin) {
+            Text("Server administration",fontSize=13.sp,color=sectionColor,
+                modifier=Modifier.padding(start=12.dp,top=12.dp,bottom=2.dp))
+            Surface(shape=RoundedCornerShape(17.dp),
+                color=MaterialTheme.colorScheme.surface) {
+                Column {
+                    AccountLinkRow("Admin Console",Icons.Rounded.AdminPanelSettings,
+                        onClick={vm.select("Admin")})
+                    divider()
+                    AccountLinkRow("Scan new music",Icons.Rounded.Refresh,JobbiTeal,
+                        onClick=vm::rescan)
                 }
-                Text("Changes apply to the next streamed song.",
-                    color=MaterialTheme.colorScheme.onSurfaceVariant,
-                    style=MaterialTheme.typography.bodySmall)
+            }
+            Text("NAS storage, user management, library rescans and import configuration.",
+                fontSize=12.sp,color=sectionColor,
+                modifier=Modifier.padding(horizontal=12.dp))
+        }
+        Text("Playback",fontSize=13.sp,color=sectionColor,
+            modifier=Modifier.padding(start=12.dp,top=12.dp,bottom=2.dp))
+        Surface(shape=RoundedCornerShape(17.dp),
+            color=MaterialTheme.colorScheme.surface) {
+            Column {
+                Row(Modifier.fillMaxWidth().clickable{qualityPicker=true}
+                    .padding(horizontal=14.dp,vertical=13.dp),
+                    verticalAlignment=Alignment.CenterVertically) {
+                    Text("Streaming quality",fontSize=14.sp,
+                        modifier=Modifier.weight(1f))
+                    Text(qualityLabel,fontSize=12.sp,color=sectionColor)
+                    Spacer(Modifier.width(5.dp))
+                    Icon(Icons.Rounded.UnfoldMore,contentDescription="Choose streaming quality",
+                        modifier=Modifier.size(18.dp),tint=sectionColor)
+                }
+                divider()
+                Text("Changing quality applies to the next streamed track.",
+                    fontSize=12.sp,color=sectionColor,
+                    modifier=Modifier.padding(horizontal=14.dp,vertical=11.dp))
             }
         }
-        Text("YOUR ANDROID",fontSize=12.sp,fontWeight=FontWeight.Bold,
-            letterSpacing=1.2.sp,color=JobbiViolet)
-        Card(shape=RoundedCornerShape(18.dp)){
-            AccountSettingRow("Manage downloaded music",
-                "${vm.downloadStats.saved} saved · ${vm.downloadStats.queued} queued · ${vm.downloadStats.failed} failed",
-                Icons.Rounded.Download,JobbiTeal,
-                onClick={vm.select("Downloads")})
-            HorizontalDivider()
-            AccountSettingRow("Download all playlists",
-                "Save private local copies for offline listening (Wi-Fi)",
-                Icons.Rounded.FileDownload,JobbiSky,
-                onClick={vm.downloadAllPlaylists(true)})
-            HorizontalDivider()
-            AccountSettingRow("Refresh offline downloads",
-                icon=Icons.Rounded.Sync,tint=JobbiTeal,
-                onClick=vm::updateDownloadStats)
-            if(vm.offlineMode){
-                HorizontalDivider()
-                AccountSettingRow("Reconnect to Jobbi Music",icon=Icons.Rounded.CloudSync,
-                    onClick=vm::retrySavedSignIn)
+        Text("Your Android",fontSize=13.sp,color=sectionColor,
+            modifier=Modifier.padding(start=12.dp,top=12.dp,bottom=2.dp))
+        Surface(shape=RoundedCornerShape(17.dp),
+            color=MaterialTheme.colorScheme.surface) {
+            Column {
+                AccountValueRow("Downloaded tracks",vm.downloadStats.saved.toString())
+                divider()
+                AccountLinkRow("Download all playlists to this Android",
+                    Icons.Rounded.FileDownload,JobbiSky,
+                    onClick={vm.downloadAllPlaylists(true)})
+                divider()
+                AccountLinkRow("Manage downloaded music",Icons.Rounded.Download,JobbiTeal,
+                    onClick={vm.select("Downloads")})
+                divider()
+                AccountLinkRow("Refresh offline downloads",Icons.Rounded.Sync,JobbiTeal,
+                    onClick=vm::updateDownloadStats)
+                if(vm.offlineMode){
+                    divider()
+                    AccountLinkRow("Reconnect to Jobbi Music",Icons.Rounded.CloudSync,
+                        onClick=vm::retrySavedSignIn)
+                }
             }
         }
-        Text("PERSONAL RECOMMENDATIONS",fontSize=12.sp,
-            fontWeight=FontWeight.Bold,letterSpacing=1.2.sp,color=JobbiViolet)
-        Card(shape=RoundedCornerShape(18.dp)){
-            Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+        Text("Offline copies are stored privately for this signed-in account. "+
+            "Downloading a playlist does not change your NAS music library.",
+            fontSize=12.sp,color=sectionColor,
+            modifier=Modifier.padding(horizontal=12.dp))
+        Text("Personal recommendations",fontSize=13.sp,color=sectionColor,
+            modifier=Modifier.padding(start=12.dp,top=12.dp,bottom=2.dp))
+        Surface(shape=RoundedCornerShape(17.dp),
+            color=MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(14.dp),
+                verticalArrangement=Arrangement.spacedBy(9.dp)) {
                 OutlinedTextField(cityDraft,{cityDraft=it.take(80)},
                     modifier=Modifier.fillMaxWidth(),singleLine=true,
                     label={Text("Weather city (optional)")})
@@ -2445,38 +2491,65 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
                     if(vm.weatherCity.isNotBlank())TextButton(onClick={
                         cityDraft=""
                         vm.chooseWeatherCity("")
-                    }){Text("Turn off")}
+                    }){Text("Disable Weather Mix")}
                 }
-                Text("We never request GPS access. City names are used only for Weather Mix.",
-                    style=MaterialTheme.typography.bodySmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("We don't request GPS access. City names are sent only when "+
+                    "you enable Weather Mix.",
+                    style=MaterialTheme.typography.bodySmall,color=sectionColor)
             }
         }
-        Text("YOUR MUSIC",fontSize=12.sp,fontWeight=FontWeight.Bold,
-            letterSpacing=1.2.sp,color=JobbiViolet)
-        Card(shape=RoundedCornerShape(18.dp)){
-            AccountSettingRow("Community & Friends",icon=Icons.Rounded.Groups,
-                tint=JobbiSky,onClick={vm.select("Community")})
-            HorizontalDivider()
-            AccountSettingRow("Favorite Songs",icon=Icons.Rounded.Favorite,
-                tint=JobbiCoral,onClick={vm.select("Favorites")})
-            HorizontalDivider()
-            AccountSettingRow("Find new music on NAS",icon=Icons.Rounded.TravelExplore,
-                tint=JobbiTeal,onClick={vm.select("Server")})
-            HorizontalDivider()
-            AccountSettingRow("Import track list",icon=Icons.Rounded.UploadFile,
-                tint=JobbiAmber,onClick={vm.select("Import")})
+        // Android-only quick links remain available without displacing the
+        // iPhone-matched account, playback and offline controls above.
+        Text("Your music",fontSize=13.sp,color=sectionColor,
+            modifier=Modifier.padding(start=12.dp,top=12.dp,bottom=2.dp))
+        Surface(shape=RoundedCornerShape(17.dp),
+            color=MaterialTheme.colorScheme.surface) {
+            Column {
+                AccountLinkRow("Community & Friends",Icons.Rounded.Groups,JobbiSky,
+                    onClick={vm.select("Community")})
+                divider()
+                AccountLinkRow("Favorite Songs",Icons.Rounded.Favorite,JobbiCoral,
+                    onClick={vm.select("Favorites")})
+                divider()
+                AccountLinkRow("Find new music on NAS",Icons.Rounded.TravelExplore,
+                    JobbiTeal,onClick={vm.select("Server")})
+                divider()
+                AccountLinkRow("Import track list",Icons.Rounded.UploadFile,
+                    JobbiAmber,onClick={vm.select("Import")})
+            }
         }
-        OutlinedButton(onClick={signingOut=true},modifier=Modifier.fillMaxWidth()){
-            Icon(Icons.Rounded.Logout,contentDescription=null,tint=JobbiCoral)
-            Spacer(Modifier.width(9.dp))
-            Text("Sign out",color=JobbiCoral)
+        Surface(shape=RoundedCornerShape(17.dp),
+            color=MaterialTheme.colorScheme.surface) {
+            Row(Modifier.fillMaxWidth().clickable{signingOut=true}
+                .padding(15.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text("Sign out",fontSize=14.sp,color=JobbiCoral)
+            }
         }
+        Text("Your Navidrome credentials are kept securely only when you "+
+            "enable remembered sign-in. Signing out clears the saved credentials.",
+            fontSize=12.sp,color=sectionColor,
+            modifier=Modifier.padding(horizontal=12.dp))
         Text("Jobbi Music · Native Android\nKotlin · Jetpack Compose · Media3",
-            style=MaterialTheme.typography.bodySmall,
-            color=MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
+            style=MaterialTheme.typography.bodySmall,color=sectionColor,
+            modifier=Modifier.padding(horizontal=12.dp,vertical=12.dp))
     }
+    if(qualityPicker)AlertDialog(
+        onDismissRequest={qualityPicker=false},
+        title={Text("Streaming quality")},
+        text={Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
+            listOf(
+                "original" to "Original / Lossless",
+                "balanced" to "High quality · 320 kbps",
+                "saver" to "Data saver · 128 kbps"
+            ).forEach { (value,label)->
+                TextButton(onClick={vm.updateQuality(value);qualityPicker=false},
+                    modifier=Modifier.fillMaxWidth()) {
+                    Text((if(vm.quality==value)"✓  " else "")+label)
+                }
+            }
+        }},
+        confirmButton={TextButton(onClick={qualityPicker=false}){Text("Cancel")}}
+    )
     if(signingOut)AlertDialog(
         onDismissRequest={signingOut=false},
         title={Text("Sign out of Jobbi Music?")},
