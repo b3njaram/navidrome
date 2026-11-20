@@ -2127,6 +2127,34 @@ private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
 }
 
 @Composable
+private fun MusicGlassSlider(
+    value:Float,
+    onValueChange:(Float)->Unit,
+    valueRange:ClosedFloatingPointRange<Float>,
+    modifier:Modifier=Modifier,
+    onValueChangeFinished:(()->Unit)?=null
+) {
+    Slider(
+        value=value,onValueChange=onValueChange,valueRange=valueRange,
+        onValueChangeFinished=onValueChangeFinished,modifier=modifier,
+        thumb={
+            Box(Modifier.size(8.dp).clip(CircleShape)
+                .background(Color.White))
+        },
+        track={state->
+            val extent=(valueRange.endInclusive-valueRange.start).coerceAtLeast(0.001f)
+            val fraction=((state.value-valueRange.start)/extent).coerceIn(0f,1f)
+            Box(Modifier.fillMaxWidth().height(3.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color.White.copy(alpha=.27f))) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(fraction)
+                    .background(Color.White))
+            }
+        }
+    )
+}
+
+@Composable
 private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                              startWithQueue:Boolean=false,onClose:()->Unit={}) {
     var viewingQueue by remember { mutableStateOf(startWithQueue) }
@@ -2250,7 +2278,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                     }
                 }
                 Column(verticalArrangement=Arrangement.spacedBy(1.dp)){
-                    Slider(
+                    MusicGlassSlider(
                         value=shownTime.toFloat().coerceIn(0f,duration.toFloat()),
                         onValueChange={scrubbing=it},
                         onValueChangeFinished={
@@ -2258,9 +2286,6 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                             scrubbing=-1f
                         },
                         valueRange=0f..duration.toFloat(),
-                        colors=SliderDefaults.colors(thumbColor=white,
-                            activeTrackColor=white,
-                            inactiveTrackColor=white.copy(alpha=.26f)),
                         modifier=Modifier.fillMaxWidth().height(33.dp))
                     Row(Modifier.fillMaxWidth(),
                         horizontalArrangement=Arrangement.SpaceBetween){
@@ -2302,14 +2327,12 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                     verticalAlignment=Alignment.CenterVertically){
                     Icon(Icons.Rounded.VolumeDown,contentDescription="Volume down",
                         tint=muted,modifier=Modifier.size(18.dp))
-                    Slider(value=volume.coerceIn(0f,maxVolume.toFloat()),
+                    MusicGlassSlider(value=volume.coerceIn(0f,maxVolume.toFloat()),
                         onValueChange={value->
                             volume=value
                             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC,value.toInt(),0)
                         },
                         valueRange=0f..maxVolume.toFloat(),
-                        colors=SliderDefaults.colors(thumbColor=white,
-                            activeTrackColor=white,inactiveTrackColor=white.copy(alpha=.25f)),
                         modifier=Modifier.weight(1f).padding(horizontal=8.dp))
                     Icon(Icons.Rounded.VolumeUp,contentDescription="Volume up",
                         tint=muted,modifier=Modifier.size(18.dp))
