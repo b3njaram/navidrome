@@ -48,6 +48,10 @@ class VisualParityScreenshotTest {
                     rule.onAllNodesWithText(label,substring=true,useUnmergedTree=true)
                         .fetchSemanticsNodes().isNotEmpty())
             }
+            // Compose semantics can update before SurfaceFlinger presents
+            // the frame. Wait for the actual window buffer after navigation.
+            Thread.sleep(900)
+            rule.waitForIdle()
             val screenshot=requireNotNull(
                 InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
             ) { "Android emulator could not capture the full UI display" }
@@ -70,6 +74,10 @@ class VisualParityScreenshotTest {
             rule.onAllNodesWithText("PLAYING FROM",substring=true,useUnmergedTree=true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
+        // The ModalBottomSheet entrance also animates after semantics
+        // become available; otherwise UiAutomation captures the Home frame.
+        Thread.sleep(1100)
+        rule.waitForIdle()
         val playerImage=requireNotNull(
             InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         ) { "Android emulator could not capture the Now Playing display" }
