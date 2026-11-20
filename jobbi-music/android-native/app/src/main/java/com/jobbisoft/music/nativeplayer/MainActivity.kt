@@ -50,6 +50,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -150,6 +151,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -1122,6 +1124,36 @@ private fun SongsScreen(songs:List<Song>,vm:MusicViewModel,player:NativePlayer,
 }
 
 @Composable
+private fun CompactMusicSearchField(
+    value:String,onValueChange:(String)->Unit,placeholder:String,
+    modifier:Modifier=Modifier
+){
+    val foreground=MaterialTheme.colorScheme.onSurface
+    val hint=MaterialTheme.colorScheme.onSurfaceVariant
+    BasicTextField(
+        value=value,onValueChange=onValueChange,singleLine=true,
+        textStyle=TextStyle(color=foreground,fontSize=13.sp),
+        cursorBrush=SolidColor(MaterialTheme.colorScheme.primary),
+        modifier=modifier.heightIn(min=40.dp)
+            .clip(RoundedCornerShape(23.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal=12.dp,vertical=10.dp),
+        decorationBox={field->
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Search,contentDescription=null,
+                    tint=hint,modifier=Modifier.size(17.dp))
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.weight(1f)) {
+                    if(value.isEmpty()) Text(placeholder,color=hint,fontSize=13.sp,
+                        maxLines=1,overflow=TextOverflow.Ellipsis)
+                    field()
+                }
+            }
+        }
+    )
+}
+
+@Composable
 private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)->Unit,
                          onBulkPlaylist:(List<Song>)->Unit,
                          onQuarantine:(List<Song>)->Unit) {
@@ -1131,13 +1163,11 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
     Column {
         // SwiftUI Search has the search field in the navigation drawer,
         // above the two-way source selector.
-        if(source==0)OutlinedTextField(
-            vm.searchQuery,{selecting=false;selected=emptySet();vm.search(it)},
-            modifier=Modifier.fillMaxWidth()
-                .padding(horizontal=18.dp,vertical=9.dp),
-            placeholder={Text("Songs, artists, albums")},
-            leadingIcon={Icon(Icons.Rounded.Search,null)},
-            singleLine=true,shape=RoundedCornerShape(28.dp))
+        if(source==0)CompactMusicSearchField(
+            value=vm.searchQuery,
+            onValueChange={selecting=false;selected=emptySet();vm.search(it)},
+            modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=9.dp),
+            placeholder="Songs, artists, albums")
         SingleChoiceSegmentedButtonRow(
             modifier=Modifier.fillMaxWidth()
                 .padding(horizontal=18.dp,vertical=8.dp)){
@@ -1347,11 +1377,10 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
         contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
-            OutlinedTextField(playlistSearch,{playlistSearch=it},
+            CompactMusicSearchField(value=playlistSearch,
+                onValueChange={playlistSearch=it},
                 modifier=Modifier.fillMaxWidth().padding(bottom=7.dp),
-                placeholder={Text("Search playlists by name")},
-                leadingIcon={Icon(Icons.Rounded.Search,null)},
-                singleLine=true,shape=RoundedCornerShape(28.dp))
+                placeholder="Search playlists by name")
         }
         item {
             Column {
