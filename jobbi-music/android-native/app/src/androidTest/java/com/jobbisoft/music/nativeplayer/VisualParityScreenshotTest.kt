@@ -26,21 +26,51 @@ import java.util.ArrayDeque
 class VisualParityScreenshotTest {
     @get:Rule val rule=createAndroidComposeRule<MainActivity>()
 
-    /** Screenshots with system ANR overlays are invalid visual evidence even
-     * when the app's Compose semantics remain available behind that dialog.
+    /**
+     * The hosted emulator sometimes hangs its own Pixel Launcher, even when
+     * Jobbi is responsive. Dismiss ONLY that unrelated launcher dialog, then
+     * require a completely unobstructed app surface. Any Jobbi/SystemUI ANR
+     * remains a hard failure. Log every external recovery for transparency.
      */
     private fun assertNoSystemErrorOverlay() {
-        val root=InstrumentationRegistry.getInstrumentation().uiAutomation
-            .rootInActiveWindow ?: return
-        val nodes=ArrayDeque<AccessibilityNodeInfo>()
-        nodes.add(root)
-        while(nodes.isNotEmpty()) {
-            val node=nodes.removeFirst()
+        val automation=InstrumentationRegistry.getInstrumentation().uiAutomation
+        repeat(3) {
+            val root=automation.rootInActiveWindow ?:return
+            val nodes=mutableListOf<AccessibilityNodeInfo>()
+            val pending=ArrayDeque<AccessibilityNodeInfo>()
+            pending.add(root)
+            while(pending.isNotEmpty()){
+                val node=pending.removeFirst()
+                nodes.add(node)
+                for(i in 0 until node.childCount)node.getChild(i)?.let(pending::add)
+            }
+            val errors=nodes.mapNotNull{it.text?.toString()}
+                .filter{it.contains("isn't responding",ignoreCase=true) ||
+                    it.contains("keeps stopping",ignoreCase=true)}
+            if(errors.isEmpty())return
+            assertTrue("App/system error obscures UI: "+errors.joinToString(),
+                errors.all{it.contains("Pixel Launcher",ignoreCase=true)})
+            val choice=nodes.firstOrNull{
+                it.text?.toString()=="Close app" ||
+                    it.text?.toString()=="Wait"
+            }
+            val clickable=generateSequence(choice){it.parent}
+                .firstOrNull{it.isClickable}
+            assertTrue("Could not dismiss emulator-only launcher ANR",
+                clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK)==true)
+            println("EMULATOR_PIXEL_LAUNCHER_ANR_RECOVERED=1")
+            Thread.sleep(650)
+        }
+        val root=automation.rootInActiveWindow ?:return
+        val pending=ArrayDeque<AccessibilityNodeInfo>()
+        pending.add(root)
+        while(pending.isNotEmpty()){
+            val node=pending.removeFirst()
             val shown=node.text?.toString().orEmpty()
-            assertTrue("System error overlay obscures parity screenshot: "+shown,
+            assertTrue("Persistent system error overlay: "+shown,
                 !shown.contains("isn't responding",ignoreCase=true) &&
                 !shown.contains("keeps stopping",ignoreCase=true))
-            for(i in 0 until node.childCount)node.getChild(i)?.let(nodes::add)
+            for(i in 0 until node.childCount)node.getChild(i)?.let(pending::add)
         }
     }
 
