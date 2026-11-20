@@ -190,6 +190,52 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
             sections: [section(rows)]))
     }
 
+    private func showArtists(page: Int = 0) async {
+        guard let api, api.user != nil else { return }
+        do {
+            let directory: MusicDirectoryArtists = try await api.get("/api/library/artists")
+            let artists = directory.artists.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            let size = 35
+            let start = page * size
+            guard start < artists.count else { return }
+            var rows: [CPListItem] = []
+            for artist in artists[start..<min(start + size, artists.count)] {
+                let item = CPListItem(text: artist.name, detailText: "Artist")
+                item.handler = { [weak self] _, done in
+                    Task { @MainActor [weak self] in
+                        await self?.openArtist(artist)
+                        done()
+                    }
+                }
+                rows.append(item)
+            }
+            if start + size < artists.count {
+                rows.append(action("More Artists",
+                    details: "\(artists.count - start - size) remaining") { [weak self] in
+                    await self?.showArtists(page: page + 1)
+                })
+            }
+            carPush(CPListTemplate(title:"Artists",sections:[section(rows)]))
+        } catch {
+            carPush(CPListTemplate(title:"Artists",sections:[
+                section([status("Artists unavailable. Reconnect on your iPhone.")])]))
+        }
+    }
+
+    private func openArtist(_ artist: MusicDirectoryArtist) async {
+        guard let api, api.user != nil else {return}
+        do {
+            let detail: MusicDirectoryArtistDetail = try await api.get(
+                "/api/artists/" + JobbiAPI.encode(artist.id))
+            showSongs(artist.name, songs: detail.song ?? [])
+        } catch {
+            carPush(CPListTemplate(title: artist.name, sections:[
+                section([status("Artist music unavailable.")])]))
+        }
+    }
+
     private func openPlaylist(_ playlist: MusicPlaylist) async {
         guard let api, api.user != nil else { return }
         do {
@@ -356,6 +402,10 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
             libraryRows.append(action("Liked Songs",
                 details:"\(library.favorites.count) favorites") { [weak self] in
                 self?.showSongs("Liked Songs",songs:library.favorites)
+            })
+            libraryRows.append(action("Artists",
+                details:"Browse your music by artist") { [weak self] in
+                await self?.showArtists()
             })
             libraryRows.append(action("Albums",
                 details:"\(library.albums.count) albums") { [weak self] in
