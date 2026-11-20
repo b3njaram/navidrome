@@ -363,6 +363,10 @@ object JobbiApi {
             .getJSONObject("playlist").playlist()
     suspend fun editPlaylist(id: String, update: JSONObject): JSONObject =
         patch("/api/playlists/" + Uri.encode(id), update)
+    suspend fun deletePlaylist(id:String){
+        val receipt=delete("/api/playlists/"+Uri.encode(id))
+        if(!receipt.optBoolean("ok"))throw JobbiException("Navidrome did not confirm playlist deletion.")
+    }
     suspend fun favoriteAll(id: String): Set<String> {
         val data = post("/api/playlists/" + Uri.encode(id) + "/favorite-all")
         return data.optJSONArray("ids")?.let { a ->
