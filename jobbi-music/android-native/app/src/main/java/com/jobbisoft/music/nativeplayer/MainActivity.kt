@@ -708,61 +708,103 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
 }
 
 @Composable
-private fun LoginScreen(vm: MusicViewModel) {
+private fun CredentialField(
+    value:String,onChange:(String)->Unit,placeholder:String,
+    password:Boolean=false
+){
+    val fg=MaterialTheme.colorScheme.onSurface
+    val muted=MaterialTheme.colorScheme.onSurfaceVariant
+    BasicTextField(
+        value=value,onValueChange=onChange,singleLine=true,
+        textStyle=TextStyle(color=fg,fontSize=16.sp),
+        visualTransformation=if(password)PasswordVisualTransformation()
+            else androidx.compose.ui.text.input.VisualTransformation.None,
+        cursorBrush=SolidColor(MaterialTheme.colorScheme.primary),
+        modifier=Modifier.fillMaxWidth().heightIn(min=53.dp)
+            .padding(horizontal=13.dp,vertical=15.dp),
+        decorationBox={field->
+            Box {
+                if(value.isEmpty())Text(placeholder,color=muted,fontSize=16.sp)
+                field()
+            }
+        }
+    )
+}
+
+@Composable
+private fun LoginScreen(vm:MusicViewModel) {
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var server by remember { mutableStateOf(vm.server) }
     var keepSignedIn by remember { mutableStateOf(true) }
-    Box(Modifier.fillMaxSize().background(
-        Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface,
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha=.5f),
-            MaterialTheme.colorScheme.background))
-    ),contentAlignment=Alignment.Center){
-        Column(Modifier.fillMaxWidth().widthIn(max=440.dp).padding(28.dp),
-            horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){
-            Surface(shape=RoundedCornerShape(28.dp),
-                color=MaterialTheme.colorScheme.primaryContainer,modifier=Modifier.size(86.dp)){
-                Box(contentAlignment=Alignment.Center){ Icon(Icons.Rounded.MusicNote,null,Modifier.size(46.dp),
-                    tint=MaterialTheme.colorScheme.onPrimaryContainer) }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text("Jobbi Music",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)
-            Text("Your music. Made for Android.",style=MaterialTheme.typography.bodyLarge,
-                color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(server,{server=it},label={Text("Music server (HTTPS)")},
-                singleLine=true,modifier=Modifier.fillMaxWidth())
-            OutlinedTextField(user,{user=it},label={Text("Navidrome username")},
-                singleLine=true,modifier=Modifier.fillMaxWidth())
-            OutlinedTextField(password,{password=it},label={Text("Password")},
-                visualTransformation=PasswordVisualTransformation(),
-                singleLine=true,modifier=Modifier.fillMaxWidth())
-            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                Checkbox(checked=keepSignedIn,onCheckedChange={keepSignedIn=it},
-                    enabled=!vm.busy)
-                Column(Modifier.weight(1f)){
-                    Text("Keep me signed in",style=MaterialTheme.typography.bodyMedium)
-                    Text("Encrypted on this device with Android Keystore",
-                        style=MaterialTheme.typography.bodySmall,
-                        color=MaterialTheme.colorScheme.onSurfaceVariant)
+    val dim=MaterialTheme.colorScheme.onSurfaceVariant
+    val isDark=isSystemInDarkTheme()
+    val card=if(isDark)Color(0xFF2C2C35)else Color(0xF9FFFFFF)
+    Column(
+        modifier=Modifier.fillMaxSize().background(
+            if(isDark)Color(0xFF14151B) else Color(0xFFF2F2F7))
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal=24.dp),
+        verticalArrangement=Arrangement.spacedBy(24.dp)
+    ){
+        Spacer(Modifier.height(56.dp))
+        Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){
+            Icon(Icons.Rounded.MusicNote,contentDescription="Jobbi Music",
+                tint=JobbiTeal,modifier=Modifier.size(58.dp))
+        }
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+            Text("Your music. Your place.",fontSize=31.sp,
+                fontWeight=FontWeight.Bold,lineHeight=36.sp)
+            Text("Stream your private music library in a native Android experience.",
+                fontSize=15.sp,color=dim,lineHeight=21.sp)
+        }
+        Surface(shape=RoundedCornerShape(22.dp),color=card){
+            Column(Modifier.padding(horizontal=15.dp,vertical=10.dp)){
+                CredentialField(server,{server=it},"HTTPS music server")
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.5f))
+                CredentialField(user,{user=it},"Username")
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.5f))
+                CredentialField(password,{password=it},"Password",password=true)
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.5f))
+                Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=7.dp),
+                    verticalAlignment=Alignment.CenterVertically) {
+                    Text("Keep me signed in securely",fontSize=14.sp,
+                        modifier=Modifier.weight(1f))
+                    Switch(checked=keepSignedIn,onCheckedChange={keepSignedIn=it},
+                        enabled=!vm.busy)
                 }
             }
-            Button(onClick={vm.login(user,password,server,keepSignedIn)},
-                enabled=!vm.busy&&user.isNotBlank()&&password.isNotBlank(),
-                modifier=Modifier.fillMaxWidth().height(54.dp)) {
-                Icon(Icons.Rounded.PlayArrow,null); Spacer(Modifier.width(9.dp)); Text("Listen now")
-            }
-            if(vm.savedSignInAvailable) OutlinedButton(onClick=vm::retrySavedSignIn,
-                enabled=!vm.busy && !vm.restoringSession,
-                modifier=Modifier.fillMaxWidth()) {
-                Icon(Icons.Rounded.Refresh,null)
-                Spacer(Modifier.width(8.dp))
-                Text("Retry saved sign-in")
-            }
-            Text("Native playback · No WebView · Secured HTTPS",
-                style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            if(vm.error.isNotBlank())Text(vm.error,color=MaterialTheme.colorScheme.error)
         }
+        Button(onClick={vm.login(user,password,server,keepSignedIn)},
+            enabled=!vm.busy&&user.isNotBlank()&&password.isNotBlank(),
+            modifier=Modifier.fillMaxWidth().height(54.dp),
+            shape=RoundedCornerShape(13.dp)){
+            if(vm.busy)CircularProgressIndicator(
+                modifier=Modifier.size(17.dp),strokeWidth=2.dp,
+                color=MaterialTheme.colorScheme.onPrimary)
+            Text(if(vm.busy)"Signing in…" else "Listen now",
+                modifier=Modifier.weight(1f),textAlign=TextAlign.Center,
+                fontWeight=FontWeight.SemiBold)
+            Icon(Icons.Rounded.ArrowForward,contentDescription=null,
+                modifier=Modifier.size(20.dp))
+        }
+        if(vm.savedSignInAvailable) {
+            OutlinedButton(onClick=vm::retrySavedSignIn,
+                enabled=!vm.busy&&!vm.restoringSession,
+                modifier=Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.CloudSync,contentDescription=null)
+                Spacer(Modifier.width(8.dp))
+                Text("Retry saved sign-in or listen offline")
+            }
+        }
+        if(vm.error.isNotBlank()){
+            Text(vm.error,color=MaterialTheme.colorScheme.error,
+                fontSize=13.sp)
+        }
+        Text("Credentials go only to the HTTPS server you choose. "+
+            "Remembered sign-ins are encrypted on this device with Android Keystore.",
+            fontSize=12.sp,color=dim,lineHeight=17.sp)
+        Spacer(Modifier.height(22.dp))
     }
 }
 
