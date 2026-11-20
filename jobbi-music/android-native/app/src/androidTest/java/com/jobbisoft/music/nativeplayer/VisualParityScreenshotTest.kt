@@ -38,7 +38,9 @@ class VisualParityScreenshotTest {
             "More" to listOf("Account","Signed in as")
         )
         val application=ApplicationProvider.getApplicationContext<Application>()
-        val folder=File(application.getExternalFilesDir(null),"jobbi-parity")
+        // Internal app files are retrievable by adb run-as in debug builds.
+        // External-file directories vary by target/test package on newer Android.
+        val folder=File(application.filesDir,"jobbi-parity")
         assertTrue("Cannot create test-only screenshot directory",folder.mkdirs()||folder.isDirectory)
         for((screen,texts) in labels){
             rule.runOnUiThread { vm.showParityScreenshotScreen(screen) }
@@ -57,6 +59,7 @@ class VisualParityScreenshotTest {
                     screenshot.compress(Bitmap.CompressFormat.PNG,100,stream))
             }
             assertTrue("Screenshot is empty: "+output.name,output.length()>1000)
+            println("PARITY_ANDROID_FILE="+output.absolutePath)
             screenshot.recycle()
         }
         // Validate the actual full-screen Compose player, not only its
