@@ -11,6 +11,9 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModelProvider
 import androidx.compose.ui.test.onAllNodesWithText
 import org.junit.Rule
@@ -128,6 +131,55 @@ class JobbiDeviceSmokeTest {
         rule.waitForIdle()
         rule.onNodeWithContentDescription("Library tab").performClick()
         rule.waitUntil(5000){vm.selected=="Library"}
+    }
+
+    @Test fun fullscreenPlayerSeekAndLyricsControlsActuallyRespondToTouch(){
+        val vm=ViewModelProvider(rule.activity)[MusicViewModel::class.java]
+        rule.waitUntil(25000){!vm.restoringSession}
+        rule.runOnUiThread {
+            vm.installParityScreenshotFixture()
+            vm.showParityScreenshotScreen("Home")
+        }
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Open Now Playing",useUnmergedTree=true)
+            .performClick()
+        rule.waitUntil(10000){
+            rule.onAllNodesWithText("Sunset Drive",useUnmergedTree=true)
+                .fetchSemanticsNodes().isNotEmpty() &&
+            rule.onAllNodesWithContentDescription("Song position",
+                useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue("Fixture player should initially display 0:45",
+            rule.onAllNodesWithText("0:45",useUnmergedTree=true)
+                .fetchSemanticsNodes().isNotEmpty())
+        // This tests the full seek track as a touch target, not just tapping
+        // its tiny thumb; the debug fixture records the requested timestamp.
+        rule.onNodeWithContentDescription("Song position",useUnmergedTree=true)
+            .performTouchInput {
+                click(Offset(size.width*.77f,size.height*.5f))
+            }
+        rule.waitUntil(7000){
+            rule.onAllNodesWithText("0:45",useUnmergedTree=true)
+                .fetchSemanticsNodes().isEmpty()
+        }
+        rule.onNodeWithContentDescription("Show lyrics",useUnmergedTree=true)
+            .performClick()
+        rule.waitUntil(7000){
+            rule.onAllNodesWithContentDescription("Lyrics view",
+                useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithContentDescription("Hide lyrics",useUnmergedTree=true)
+            .performClick()
+        rule.waitUntil(7000){
+            rule.onAllNodesWithContentDescription("Lyrics view",
+                useUnmergedTree=true).fetchSemanticsNodes().isEmpty()
+        }
+        rule.onNodeWithContentDescription("Close Now Playing",
+            useUnmergedTree=true).performClick()
+        rule.waitUntil(7000){
+            rule.onAllNodesWithContentDescription("Song position",
+                useUnmergedTree=true).fetchSemanticsNodes().isEmpty()
+        }
     }
 
 }
