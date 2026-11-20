@@ -25,6 +25,20 @@ data class JobbiRemovalResult(val removed:Int,val keptShared:Int)
 internal fun offlineSongsSafeToDelete(requested:Set<String>, referencedElsewhere:Set<String>):Set<String> =
     requested - referencedElsewhere
 
+/**
+ * The system DownloadManager may prune old rows after a successful download.
+ * A previously confirmed completed copy must remain playable when the device
+ * has no connectivity and its OS download-history row has disappeared.
+ * A known exact Content-Length also proves a finished original-file copy.
+ */
+internal fun isVerifiedOfflineRecording(
+    storedStatus:Int,managerStatus:Int?,fileBytes:Long,expectedBytes:Long
+):Boolean = fileBytes>0L && (
+    storedStatus==DownloadManager.STATUS_SUCCESSFUL ||
+    managerStatus==DownloadManager.STATUS_SUCCESSFUL ||
+    (expectedBytes>0L && fileBytes==expectedBytes)
+)
+
 internal fun shouldEnqueueDownload(status:Int?,fileReady:Boolean):Boolean =
     when(status){
         DownloadManager.STATUS_PENDING,DownloadManager.STATUS_RUNNING,
@@ -92,24 +106,30 @@ object JobbiDownloads {
             return it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
         }
     }
+    private fun confirmedLocalFile(c:Context,user:String,server:String,
+                                   entry:OfflineEntry):File? {
+        val local=file(c,user,server,entry)
+        if(!local.isFile||local.length()<=0L)return null
+        val statusFromSystem=if(entry.status==DownloadManager.STATUS_SUCCESSFUL)
+            null else runCatching{status(c,entry.downloadId)}.getOrNull()
+        if(!isVerifiedOfflineRecording(entry.status,statusFromSystem,
+                local.length(),entry.size))return null
+        if(entry.status!=DownloadManager.STATUS_SUCCESSFUL)
+            prefs(c).edit().putString(key(user,server,entry.id),
+                entry.copy(status=DownloadManager.STATUS_SUCCESSFUL).json()).apply()
+        return local
+    }
     fun playableUri(c:Context,user:String,server:String,id:String):Uri? {
         if(user.isBlank()||id.isBlank())return null
         val entry=prefs(c).getString(key(user,server,id),null)?.let(OfflineEntry::from)
             ?:return null
-        val downloaded=file(c,user,server,entry)
-        if(!downloaded.isFile||downloaded.length()==0L)return null
-        if(entry.status==DownloadManager.STATUS_SUCCESSFUL||
-            runCatching{status(c,entry.downloadId)}.getOrNull()==DownloadManager.STATUS_SUCCESSFUL)
-            return Uri.fromFile(downloaded)
-        return null
+        val local=confirmedLocalFile(c,user,server,entry) ?:return null
+        return Uri.fromFile(local)
     }
     fun downloadedSongs(c:Context,user:String,server:String):List<Song> {
         if(user.isBlank())return emptyList()
         return entries(c,user,server).filter {entry->
-            val target=file(c,user,server,entry)
-            target.isFile&&target.length()>0L&&
-                (entry.status==DownloadManager.STATUS_SUCCESSFUL||
-                  runCatching{status(c,entry.downloadId)}.getOrNull()==DownloadManager.STATUS_SUCCESSFUL)
+            confirmedLocalFile(c,user,server,entry)!=null
         }.sortedWith(compareBy<OfflineEntry> {it.artist.lowercase()}
             .thenBy{it.album.lowercase()}.thenBy{it.title.lowercase()})
             .map {Song(id=it.id,title=it.title,artist=it.artist,
@@ -234,9 +254,17 @@ object JobbiDownloads {
         val pending=unique.filter {song->
             val current=existing[song.id]
             if(current==null)true
-            else shouldEnqueueDownload(
-                runCatching{status(c,current.downloadId)}.getOrNull(),
-                file(c,user,server,current).let{it.isFile&&it.length()>0L})
+            else {
+                // Don't re-download and overwrite a valid offline file just
+                // because Android has forgotten its DownloadManager ID.
+                val local=file(c,user,server,current)
+                val length=if(local.isFile)local.length() else 0L
+                val state=if(current.status==DownloadManager.STATUS_SUCCESSFUL)
+                    null else runCatching{status(c,current.downloadId)}.getOrNull()
+                if(isVerifiedOfflineRecording(current.status,state,length,current.size))
+                    false
+                else shouldEnqueueDownload(state,length>0L)
+            }
         }
         val bytes=pending.sumOf {it.size.coerceAtLeast(0)}
         val free=StatFs(root.absolutePath).availableBytes
@@ -292,11 +320,16 @@ object JobbiDownloads {
         var saved=0;var queued=0;var failed=0;var bytes=0L
         val editor=prefs(c).edit()
         for(item in entries(c,user,server)){
-            val status=runCatching{status(c,item.downloadId)}.getOrDefault(item.status)
             val path=file(c,user,server,item)
+            val size=if(path.isFile)path.length() else 0L
+            val fromSystem=if(item.status==DownloadManager.STATUS_SUCCESSFUL)
+                null else runCatching{status(c,item.downloadId)}.getOrNull()
+            val status=if(isVerifiedOfflineRecording(
+                item.status,fromSystem,size,item.size))DownloadManager.STATUS_SUCCESSFUL
+                else fromSystem ?:item.status
             when {
-                status==DownloadManager.STATUS_SUCCESSFUL && path.isFile && path.length()>0 -> {
-                    saved++;bytes+=path.length()
+                status==DownloadManager.STATUS_SUCCESSFUL && size>0 -> {
+                    saved++;bytes+=size
                 }
                 status==DownloadManager.STATUS_FAILED -> failed++
                 else -> queued++
