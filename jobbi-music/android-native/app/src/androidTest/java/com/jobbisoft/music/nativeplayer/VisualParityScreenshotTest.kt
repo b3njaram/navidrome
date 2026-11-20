@@ -1,6 +1,5 @@
 package com.jobbisoft.music.nativeplayer
 
-import android.app.Application
 import android.graphics.Bitmap
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -8,7 +7,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -37,10 +35,10 @@ class VisualParityScreenshotTest {
             "Search" to listOf("My Library","Find New Music"),
             "More" to listOf("Account","Signed in as")
         )
-        val application=ApplicationProvider.getApplicationContext<Application>()
-        // Internal app files are retrievable by adb run-as in debug builds.
-        // External-file directories vary by target/test package on newer Android.
-        val folder=File(application.filesDir,"jobbi-parity")
+        // Use the actual target app package, not the separate instrumentation
+        // APK package; adb run-as can retrieve these private files safely.
+        val target=InstrumentationRegistry.getInstrumentation().targetContext
+        val folder=File(target.filesDir,"jobbi-parity")
         assertTrue("Cannot create test-only screenshot directory",folder.mkdirs()||folder.isDirectory)
         for((screen,texts) in labels){
             rule.runOnUiThread { vm.showParityScreenshotScreen(screen) }
