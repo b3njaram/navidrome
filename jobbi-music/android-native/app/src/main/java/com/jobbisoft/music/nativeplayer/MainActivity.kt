@@ -81,6 +81,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -124,6 +125,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -155,24 +159,73 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val Rose = Color(0xFFBA4E7D)
-private val Plum = Color(0xFFBBA7D1)
+// Mirrors the existing native SwiftUI Jobbi palette while keeping Material 3
+// system bars, typography, touch targets and Android accessibility native.
+private val JobbiIndigo = Color(0xFF6154EB)
+private val JobbiViolet = Color(0xFF8C5CE0)
+private val JobbiTeal = Color(0xFF0AABA3)
+private val JobbiCoral = Color(0xFFF55773)
+private val JobbiSky = Color(0xFF2991EB)
+private val JobbiAmber = Color(0xFFE6942B)
 
 @Composable
 private fun JobbiTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val ctx = LocalContext.current
-    val colors = if (Build.VERSION.SDK_INT >= 31) {
-        if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-    } else if (dark) {
-        darkColorScheme(primary = Color(0xFFFFADCF), secondary = Color(0xFFDFBED0),
-            surface = Color(0xFF151218), background = Color(0xFF100F14),
-            surfaceContainer = Color(0xFF242029))
-    } else {
-        lightColorScheme(primary = Rose, secondary = Color(0xFF825A89),
-            surface = Color(0xFFFFF7FB), background = Color(0xFFFFFAFD))
+    val dark=isSystemInDarkTheme()
+    val colors=if(dark) darkColorScheme(
+        primary=Color(0xFFA9A2FF),onPrimary=Color(0xFF16112B),
+        secondary=Color(0xFF80DED4),onSecondary=Color(0xFF0E302C),
+        tertiary=Color(0xFFE0ABFF),
+        background=Color(0xFF111217),surface=Color(0xFF16171D),
+        surfaceVariant=Color(0xFF272933),
+        surfaceContainer=Color(0xFF22232D),
+        surfaceContainerHigh=Color(0xFF2D2D38),
+        secondaryContainer=Color(0xFF26243C),
+        onSecondaryContainer=Color(0xFFECE8FF),
+        primaryContainer=Color(0xFF312B56),
+        onPrimaryContainer=Color(0xFFEAE5FF)
+    ) else lightColorScheme(
+        primary=Color(0xFF4F46E5),onPrimary=Color.White,
+        secondary=Color(0xFF087C77),onSecondary=Color.White,
+        tertiary=Color(0xFF7A38BC),
+        background=Color(0xFFF9FAFD),surface=Color.White,
+        surfaceVariant=Color(0xFFEEEFF7),
+        surfaceContainer=Color(0xFFF0F1F8),
+        surfaceContainerHigh=Color(0xFFE8E9F4),
+        secondaryContainer=Color(0xFFE8E5FE),
+        onSecondaryContainer=Color(0xFF23204C),
+        primaryContainer=Color(0xFFE4E2FF),
+        onPrimaryContainer=Color(0xFF24205D)
+    )
+    MaterialTheme(colorScheme=colors,content=content)
+}
+
+@Composable
+private fun JobbiAccountAvatar(vm:MusicViewModel,onClick:()->Unit) {
+    val context=LocalContext.current
+    val loader=remember(context){ImageLoader.Builder(context.applicationContext)
+        .okHttpClient(JobbiApi.client).build()}
+    val username=vm.account
+    Surface(modifier=Modifier.padding(end=10.dp).size(36.dp).clip(CircleShape)
+        .clickable(onClick=onClick),
+        shape=CircleShape,color=JobbiViolet) {
+        Box(contentAlignment=Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(Brush.linearGradient(
+                listOf(JobbiViolet,JobbiTeal))),contentAlignment=Alignment.Center) {
+                Text(username.firstOrNull()?.uppercaseChar()?.toString()?:"J",
+                    color=Color.White,fontWeight=FontWeight.Bold,fontSize=16.sp)
+            }
+            if(username.isNotBlank()){
+                AsyncImage(
+                    model=ImageRequest.Builder(context)
+                        .data(JobbiApi.authenticatedUrl("/api/social/profiles/"+
+                            Uri.encode(username)+"/avatar?v="+vm.avatarRevision))
+                        .crossfade(true).build(),
+                    imageLoader=loader,contentDescription="Your profile and settings",
+                    contentScale=ContentScale.Crop,modifier=Modifier.fillMaxSize()
+                )
+            }
+        }
     }
-    MaterialTheme(colorScheme = colors, content = content)
 }
 
 private data class DownloadChoice(val kind:String,val title:String,val id:String="")
@@ -181,10 +234,9 @@ private data class BulkChoice(val songs:List<Song>,val sourceId:String?=null,
 private data class Dest(val name: String, val icon: ImageVector)
 private val tabs = listOf(
     Dest("Home", Icons.Rounded.Home),
-    Dest("Search", Icons.Rounded.Search),
-    Dest("Library", Icons.Rounded.LibraryMusic),
     Dest("Community", Icons.Rounded.Groups),
-    Dest("More", Icons.Rounded.MoreHoriz)
+    Dest("Library", Icons.Rounded.LibraryMusic),
+    Dest("Search", Icons.Rounded.Search)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -203,6 +255,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     var offlineRemovalChoice by remember { mutableStateOf<DownloadChoice?>(null) }
     var downloadWifiOnly by remember { mutableStateOf(true) }
     var removalConfirm by remember { mutableStateOf("") }
+    var accountReturnTab by remember { mutableStateOf("Home") }
     LaunchedEffect(vm.removalPreviews) { removalConfirm = "" }
 
     DisposableEffect(player) { onDispose { player.disconnect() } }
@@ -240,29 +293,44 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
-                CenterAlignedTopAppBar(
+                TopAppBar(
                     title = {
-                        Text(if(vm.selected=="Detail")vm.detail?.title ?: "Collection"
-                            else if(vm.selected=="More") "Jobbi Music"
-                            else vm.selected, fontWeight=FontWeight.Bold)
+                        Text(when(vm.selected){
+                            "Detail"->vm.detail?.title?:"Collection"
+                            "More"->"Account"
+                            "Profile"->"Profile"
+                            "Admin"->"Admin"
+                            "Server"->"Search"
+                            "Favorites"->"Favorite Songs"
+                            "Downloads"->"Downloaded"
+                            "Import"->"Import Music"
+                            else->vm.selected
+                        },fontWeight=FontWeight.Bold,
+                          fontSize=if(vm.selected in tabs.map{it.name})28.sp else 21.sp,
+                          maxLines=1,overflow=TextOverflow.Ellipsis)
                     },
                     navigationIcon = {
-                        if(vm.selected=="Detail") IconButton(onClick=vm::back) {
-                            Icon(Icons.Rounded.ArrowBack,contentDescription="Back to library")
-                        }
+                        if(vm.selected !in tabs.map{it.name}) IconButton(onClick={
+                            when(vm.selected) {
+                                "Detail"->vm.back()
+                                "Server"->vm.select("Search")
+                                "More"->vm.select(accountReturnTab)
+                                "Admin","Profile","Import"->vm.select("More")
+                                else->vm.select("Library")
+                            }
+                        }) { Icon(Icons.Rounded.ArrowBack,contentDescription="Back") }
                     },
                     actions = {
                         if(vm.selected=="Library")IconButton(onClick={createPlaylist=true}){
                             Icon(Icons.Rounded.Add,contentDescription="Create playlist")
                         }
-                        if(player.active!=null)IconButton(onClick={
-                            openQueueFirst=true;showNowPlaying=true
-                        }){
-                            Icon(Icons.Rounded.QueueMusic,contentDescription="Open playback queue")
-                        }
                         if(vm.selected=="Home")IconButton(onClick=vm::refresh){
-                            Icon(Icons.Rounded.AutoAwesome,contentDescription="Refresh music")
+                            Icon(Icons.Rounded.Refresh,contentDescription="Refresh music")
                         }
+                        if(vm.selected in tabs.map{it.name})JobbiAccountAvatar(vm,onClick={
+                            accountReturnTab=vm.selected
+                            vm.select("More")
+                        })
                     }
                 )
             },
@@ -278,7 +346,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             NavigationBarItem(
                                 selected=vm.selected==destination.name ||
                                      (destination.name=="Search"&&vm.selected=="Server") ||
-                                     (destination.name=="More"&&vm.selected in listOf("Admin","Profile","Import","Favorites","Downloads")),
+                                     (destination.name=="Library"&&vm.selected in listOf("Detail","Favorites","Downloads")),
                                 onClick={vm.select(destination.name)},
                                 icon={Icon(destination.icon,contentDescription=null)},
                                 label={Text(destination.name)},
