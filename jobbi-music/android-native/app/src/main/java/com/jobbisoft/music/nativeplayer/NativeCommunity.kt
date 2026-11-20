@@ -66,7 +66,8 @@ private fun SocialCard(title:String,subtitle:String?=null,content:@Composable Co
 }
 
 @Composable
-fun CommunityScreen(vm:MusicViewModel,player:NativePlayer,onDiscoverMusic:()->Unit){
+fun CommunityScreen(vm:MusicViewModel,player:NativePlayer,onDiscoverMusic:()->Unit,
+                    refreshSignal:Int=0,createSignal:Int=0){
     val scope=rememberCoroutineScope()
     var home by remember{mutableStateOf<JSONObject?>(null)}
     var people by remember{mutableStateOf<List<JSONObject>>(emptyList())}
@@ -96,7 +97,8 @@ fun CommunityScreen(vm:MusicViewModel,player:NativePlayer,onDiscoverMusic:()->Un
             finally{busy=false}
         }
     }
-    LaunchedEffect(vm.account){refresh()}
+    LaunchedEffect(vm.account,refreshSignal){refresh()}
+    LaunchedEffect(createSignal){if(createSignal>0)createPlaylist=true}
     if(profileTarget!=null){
         Column(Modifier.fillMaxSize()){
             TextButton(onClick={profileTarget=null}){Icon(Icons.Rounded.ArrowBack,null);Text("Community")}
@@ -152,10 +154,12 @@ fun CommunityScreen(vm:MusicViewModel,player:NativePlayer,onDiscoverMusic:()->Un
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(issue.isNotBlank())Text(issue,Modifier.padding(14.dp),
             color=MaterialTheme.colorScheme.error)
-        ScrollableTabRow(selectedTabIndex=listOf("Discover","Friends","Playlists","Me").indexOf(tab),
-            edgePadding=8.dp){
-            listOf("Discover","Friends","Playlists","Me").forEach{name->
-                Tab(selected=tab==name,onClick={tab=name},text={Text(name)})
+        SingleChoiceSegmentedButtonRow(
+            modifier=Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=9.dp)){
+            listOf("Discover","Friends","My Profile").forEachIndexed{index,name->
+                SegmentedButton(selected=tab==name,onClick={tab=name},
+                    shape=SegmentedButtonDefaults.itemShape(index=index,count=3),
+                    label={Text(name)})
             }
         }
         LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
@@ -262,36 +266,21 @@ fun CommunityScreen(vm:MusicViewModel,player:NativePlayer,onDiscoverMusic:()->Un
                         }
                     }
                 }
-            }
-            if(tab=="Playlists"){
                 item{
-                    SocialCard("Create a shared playlist"){
-                        OutlinedTextField(playlistTitle,{playlistTitle=it},singleLine=true,
-                            label={Text("Playlist name")},modifier=Modifier.fillMaxWidth())
-                        Button(enabled=playlistTitle.trim().isNotBlank(),onClick={mutate{
-                            JobbiApi.post("/api/social/playlists",JSONObject()
-                                .put("title",playlistTitle.trim()).put("visibility","private"))
-                            playlistTitle=""
-                        }}){Icon(Icons.Rounded.Add,null);Text("Create privately")}
-                    }
-                }
-                item{
-                    SocialCard("Collaborative playlists"){
-                        val playlists=home?.optJSONArray("playlists").objects()
-                        if(playlists.isEmpty())Text("Create one above or accept an invitation.")
-                        playlists.forEach{p->
-                            ListItem(
-                                headlineContent={Text(p.str("title"))},
-                                supportingContent={Text(p.str("visibility")+" · "+p.optInt("song_count")+" tracks")},
+                    SocialCard("Shared with me"){
+                        val shared=home?.optJSONArray("playlists").objects()
+                        if(shared.isEmpty())Text("No shared playlists yet.")
+                        shared.forEach{playlist->
+                            ListItem(headlineContent={Text(playlist.str("title"))},
+                                supportingContent={Text("@"+playlist.str("owner")+
+                                    " · "+playlist.optInt("song_count")+" songs")},
                                 leadingContent={Icon(Icons.Rounded.QueueMusic,null)},
-                                trailingContent={Icon(Icons.Rounded.ChevronRight,null)},
-                                modifier=Modifier.clickable{openPlaylist=p}
-                            )
+                                modifier=Modifier.clickable{openPlaylist=playlist})
                         }
                     }
                 }
             }
-            if(tab=="Me"){
+            if(tab=="My Profile"){
                 item{
                     SocialCard("My Jobbi profile"){
                         home?.optJSONObject("me")?.let{person->
@@ -305,14 +294,52 @@ fun CommunityScreen(vm:MusicViewModel,player:NativePlayer,onDiscoverMusic:()->Un
                                 }
                             }
                         }
-                        Button(onClick={profileTarget=vm.account}) {
-                            Icon(Icons.Rounded.Edit,null);Text("Edit my profile")
+                        TextButton(onClick={profileTarget=vm.account}){
+                            Icon(Icons.Rounded.Edit,null)
+                            Text("Edit my profile")
+                        }
+                    }
+                }
+                item{
+                    SocialCard("My playlists"){
+                        val owned=home?.optJSONArray("playlists").objects().filter{
+                            it.str("owner").equals(vm.account,ignoreCase=true)
+                        }.orEmpty()
+                        if(owned.isEmpty())Text("No shared playlists created yet.")
+                        owned.forEach{playlist->
+                            ListItem(headlineContent={Text(playlist.str("title"))},
+                                supportingContent={Text(playlist.str("visibility")+" · "+
+                                    playlist.optInt("song_count")+" songs")},
+                                leadingContent={Icon(Icons.Rounded.QueueMusic,null)},
+                                modifier=Modifier.clickable{openPlaylist=playlist})
                         }
                     }
                 }
             }
         }
     }
+    if(createPlaylist)AlertDialog(
+        onDismissRequest={createPlaylist=false},
+        title={Text("New shared playlist")},
+        text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
+            OutlinedTextField(playlistTitle,{playlistTitle=it.take(100)},
+                singleLine=true,modifier=Modifier.fillMaxWidth(),
+                label={Text("Playlist name")})
+            Text("New shared playlists are private until you change their visibility.",
+                style=MaterialTheme.typography.bodySmall)
+        }},
+        confirmButton={TextButton(
+            enabled=playlistTitle.trim().isNotBlank()&&!busy,
+            onClick={
+                createPlaylist=false
+                mutate{
+                    JobbiApi.post("/api/social/playlists",JSONObject()
+                        .put("title",playlistTitle.trim()).put("visibility","private"))
+                    playlistTitle=""
+                }
+            }){Text("Create privately")}},
+        dismissButton={TextButton(onClick={createPlaylist=false}){Text("Cancel")}}
+    )
 }
 
 @Composable
