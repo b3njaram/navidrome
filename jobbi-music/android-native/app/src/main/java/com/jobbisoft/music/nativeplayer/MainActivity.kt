@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -87,6 +88,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -318,68 +321,87 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text(when(vm.selected){
-                            "Detail"->vm.detail?.title?:"Collection"
-                            "More"->"Account"
-                            "Profile"->"Profile"
-                            "Admin"->"Admin"
-                            "ArtistDetail"->vm.artistName.ifBlank{"Artist"}
-                            "PlaylistDirectory"->"Playlists"
-                            "AlbumDirectory"->"Albums"
-                            "SavedImports"->"Saved imports"
-                            "Server"->"Search"
-                            "Favorites"->"Favorite Songs"
-                            "Downloads"->"Downloaded"
-                            "Import"->"Import Music"
-                            else->vm.selected
-                        },fontWeight=FontWeight.Bold,
-                          fontSize=if(vm.selected in tabs.map{it.name})28.sp else 21.sp,
-                          maxLines=1,overflow=TextOverflow.Ellipsis)
-                    },
-                    navigationIcon = {
-                        if(vm.selected=="Home"){
-                            IconButton(onClick=vm::refresh){
-                                Icon(Icons.Rounded.Refresh,contentDescription="Refresh music")
+                val label=when(vm.selected){
+                    "Detail"->vm.detail?.title?:"Collection"
+                    "More"->"Account"
+                    "Profile"->"Profile"
+                    "Admin"->"Admin"
+                    "ArtistDetail"->vm.artistName.ifBlank{"Artist"}
+                    "PlaylistDirectory"->"Playlists"
+                    "AlbumDirectory"->"Albums"
+                    "SavedImports"->"Saved imports"
+                    "Server"->"Search"
+                    "Favorites"->"Favorite Songs"
+                    "Downloads"->"Downloaded"
+                    "Import"->"Import Music"
+                    else->vm.selected
+                }
+                // SwiftUI NavigationStack places its large titles BELOW the
+                // toolbar row. The earlier Android single-line TopAppBar
+                // stacked title and actions side by side instead.
+                val large=vm.selected in setOf(
+                    "Home","Community","Library","Search","More")
+                val heading: @Composable () -> Unit = {
+                    Text(label,fontWeight=FontWeight.Bold,
+                        fontSize=if(large)32.sp else 21.sp,
+                        maxLines=1,overflow=TextOverflow.Ellipsis)
+                }
+                val leading: @Composable () -> Unit = {
+                    if(vm.selected=="Home"){
+                        IconButton(onClick=vm::refresh) {
+                            Icon(Icons.Rounded.Refresh,contentDescription="Refresh music")
+                        }
+                    }else if(vm.selected=="Search"){
+                        IconButton(onClick={vm.search(vm.searchQuery)},
+                            enabled=vm.searchQuery.trim().length>=2){
+                            Icon(Icons.Rounded.ArrowForward,contentDescription="Search")
+                        }
+                    }else if(vm.selected=="Community"){
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            IconButton(onClick={communityCreateSignal++}){
+                                Icon(Icons.Rounded.GroupAdd,
+                                    contentDescription="New shared playlist")
                             }
-                        }else if(vm.selected=="Search"){
-                            IconButton(onClick={vm.search(vm.searchQuery)},
-                                enabled=vm.searchQuery.trim().length>=2){
-                                Icon(Icons.Rounded.ArrowForward,
-                                    contentDescription="Search")
+                            IconButton(onClick={communityRefreshSignal++}){
+                                Icon(Icons.Rounded.Refresh,
+                                    contentDescription="Refresh community")
                             }
-                        }else if(vm.selected=="Community"){
-                            Row(verticalAlignment=Alignment.CenterVertically){
-                                IconButton(onClick={communityCreateSignal++}){
-                                    Icon(Icons.Rounded.GroupAdd,
-                                        contentDescription="New shared playlist")
-                                }
-                                IconButton(onClick={communityRefreshSignal++}){
-                                    Icon(Icons.Rounded.Refresh,
-                                        contentDescription="Refresh community")
-                                }
-                            }
-                        }else if(vm.selected !in tabs.map{it.name}) IconButton(onClick={
-                            when(vm.selected) {
+                        }
+                    }else if(vm.selected !in tabs.map{it.name}){
+                        IconButton(onClick={
+                            when(vm.selected){
                                 "Detail","ArtistDetail"->vm.back()
                                 "Server"->vm.select("Search")
                                 "More"->vm.select(accountReturnTab)
                                 "Admin","Profile","Import"->vm.select("More")
                                 else->vm.select("Library")
                             }
-                        }) { Icon(Icons.Rounded.ArrowBack,contentDescription="Back") }
-                    },
-                    actions = {
-                        if(vm.selected=="Library")IconButton(onClick={createPlaylist=true}){
-                            Icon(Icons.Rounded.Add,contentDescription="Create playlist")
+                        }){
+                            Icon(Icons.Rounded.ArrowBack,contentDescription="Back")
                         }
-                        if(vm.selected in tabs.map{it.name})JobbiAccountAvatar(vm,onClick={
-                            accountReturnTab=vm.selected
-                            vm.select("More")
-                        })
                     }
-                )
+                }
+                val trailing: @Composable RowScope.() -> Unit = {
+                    if(vm.selected=="Library")IconButton(onClick={createPlaylist=true}){
+                        Icon(Icons.Rounded.Add,contentDescription="Create playlist")
+                    }
+                    if(vm.selected in tabs.map{it.name})JobbiAccountAvatar(vm,onClick={
+                        accountReturnTab=vm.selected
+                        vm.select("More")
+                    })
+                }
+                if(large){
+                    LargeTopAppBar(
+                        title=heading,navigationIcon=leading,actions=trailing,
+                        colors=TopAppBarDefaults.largeTopAppBarColors(
+                            containerColor=MaterialTheme.colorScheme.background,
+                            scrolledContainerColor=MaterialTheme.colorScheme.background)
+                    )
+                }else{
+                    TopAppBar(title=heading,navigationIcon=leading,actions=trailing,
+                        colors=TopAppBarDefaults.topAppBarColors(
+                            containerColor=MaterialTheme.colorScheme.background))
+                }
             },
             snackbarHost = { SnackbarHost(snack) },
             bottomBar = {
@@ -2332,10 +2354,6 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(horizontal=18.dp,vertical=17.dp),
         verticalArrangement=Arrangement.spacedBy(18.dp)){
-        Text("Account",fontSize=29.sp,fontWeight=FontWeight.Bold)
-        Text("Your private music, settings and access.",
-            style=MaterialTheme.typography.bodyMedium,
-            color=MaterialTheme.colorScheme.onSurfaceVariant)
         Text("ACCOUNT",fontSize=12.sp,fontWeight=FontWeight.Bold,
             letterSpacing=1.2.sp,color=JobbiViolet)
         Card(shape=RoundedCornerShape(18.dp)){
