@@ -121,15 +121,25 @@ internal class CarMediaSessionCallback(
         scope.launch {
             try {
                 val requested=mediaItems.map(library::resolveRequested)
-                // Phone already supplies whole lists with URIs. Car browsers
-                // tend to send one selected ID: expand to its source playlist
-                // so Next/Previous and the real Up Next remain populated.
-                val collection=if(mediaItems.size==1 &&
+                // Tapping an item inside Up Next should jump in the current
+                // session queue, not discard everything after that song.
+                val playing=mediaSession.player
+                val queueIndex=if(mediaItems.size==1)
+                    (playing.currentMediaItemIndex+1 until playing.mediaItemCount)
+                        .firstOrNull { playing.getMediaItemAt(it).mediaId==
+                            mediaItems.first().mediaId } else null
+                val queued=queueIndex?.let{index->
+                    (0 until playing.mediaItemCount).map(playing::getMediaItemAt) to index
+                }
+                // Selecting a track inside a browsed album or playlist must
+                // preserve the entire collection for next/previous.
+                val collection=if(queued==null&&mediaItems.size==1 &&
                     JobbiApi.username.isNotBlank())
                     library.browseQueueForSelection(mediaItems.first().mediaId)
                     else null
-                val tracks=collection?.first?:requested
-                val index=collection?.second?:startIndex
+                val chosen=queued?:collection
+                val tracks=chosen?.first?:requested
+                val index=chosen?.second?:startIndex
                 future.set(MediaSession.MediaItemsWithStartPosition(
                     tracks,if(index==C.INDEX_UNSET)0 else index,
                     startPositionMs))
