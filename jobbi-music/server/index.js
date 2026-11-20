@@ -563,6 +563,14 @@ app.patch('/api/playlists/:id',mustAuth,route(async(req,res)=>{
   // Verify the real playlist occurrence BEFORE applying a removal, never trust
   // stale client indices (or a server that silently ignores a request).
   let removal=null;
+  let addition=null;
+  if(addSongId!==undefined&&removeIndex===undefined){
+    const before=await subsonic(req.user,'getPlaylist',{id:req.params.id});
+    addition={
+      songId:addSongId,
+      beforeCount:(before.playlist?.entry||[]).filter(song=>song.id===addSongId).length
+    };
+  }
   if(removeIndex!==undefined){
     const current=await subsonic(req.user,'getPlaylist',{id:req.params.id});
     try{removal=preparePlaylistRemoval(current.playlist,removeIndex,expectedSongId)}
@@ -593,13 +601,20 @@ app.patch('/api/playlists/:id',mustAuth,route(async(req,res)=>{
     updated.playlist.public!==publicVisibility)){
     return res.status(502).json({error:'The music server did not confirm the visibility change. Please retry.'});
   }
+  if(addition&&
+    (updated.playlist?.entry||[]).filter(song=>song.id===addition.songId).length
+        <=addition.beforeCount){
+    return res.status(409).json({error:
+      'Navidrome did not confirm that the song was added to the playlist. Refresh the playlist and retry.'});
+  }
   if(removal&&!verifyPlaylistRemoval(removal,updated.playlist)){
     return res.status(409).json({error:
       'Navidrome did not confirm removal of the requested playlist entry. Refresh the playlist before trying again; the request may have changed the playlist.'});
   }
   res.setHeader('Cache-Control','private, no-store');
   res.json({playlist:updated.playlist||null,
-    ...(removal?{removedEntry:{id:removal.id,title:removal.title},verified:true}: {})});
+    ...(removal?{removedEntry:{id:removal.id,title:removal.title},verified:true}: {}),
+    ...(addition?{addedSongId:addition.songId,verified:true}: {})});
 }));
 app.post('/api/playlists/:id/favorite-all',mustAuth,mustBeLimited,route(async(req,res)=>{
   if(!validId(req.params.id))return res.status(400).json({error:'Invalid playlist'});
