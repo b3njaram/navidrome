@@ -101,6 +101,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var artRevision by androidx.compose.runtime.mutableIntStateOf(0)
         private set
+    var avatarRevision by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    fun avatarUpdated() { avatarRevision++ }
     var recommendations by androidx.compose.runtime.mutableStateOf<RecommendationsResult?>(null)
         private set
     var recommendationsLoading by androidx.compose.runtime.mutableStateOf(false)
