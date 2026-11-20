@@ -2193,21 +2193,27 @@ private fun MusicGlassSlider(
     modifier:Modifier=Modifier,
     onValueChangeFinished:(()->Unit)?=null
 ) {
+    // 44dp touch area with a visible progress line and thumb. Material3
+    // handles taps ANYWHERE on the track, continuous drags and a final seek;
+    // a 3dp-only clickable Box would make timestamp changes impractical.
     Slider(
         value=value,onValueChange=onValueChange,valueRange=valueRange,
-        onValueChangeFinished=onValueChangeFinished,modifier=modifier,
+        onValueChangeFinished=onValueChangeFinished,modifier=modifier.heightIn(min=44.dp),
         thumb={
-            Box(Modifier.size(8.dp).clip(CircleShape)
-                .background(Color.White))
+            Box(Modifier.size(14.dp).shadow(3.dp,CircleShape)
+                .clip(CircleShape).background(Color.White)
+                .border(1.dp,Color.White.copy(alpha=.65f),CircleShape))
         },
         track={state->
-            val extent=(valueRange.endInclusive-valueRange.start).coerceAtLeast(0.001f)
+            val extent=(valueRange.endInclusive-valueRange.start)
+                .coerceAtLeast(0.001f)
             val fraction=((state.value-valueRange.start)/extent).coerceIn(0f,1f)
-            Box(Modifier.fillMaxWidth().height(3.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color.White.copy(alpha=.27f))) {
+            Box(Modifier.fillMaxWidth().height(5.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color.White.copy(alpha=.32f))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(fraction)
-                    .background(Color.White))
+                    .background(Brush.horizontalGradient(listOf(
+                        Color.White,Color(0xFFB9C9FF)))))
             }
         }
     )
@@ -2256,7 +2262,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                 .crossfade(true).build(),
             imageLoader=imageLoader,contentDescription=null,
             contentScale=ContentScale.Crop,
-            modifier=Modifier.fillMaxSize().blur(70.dp).graphicsLayer(alpha=.65f)
+            modifier=Modifier.fillMaxSize().blur(34.dp).graphicsLayer(alpha=.65f)
         )
         // Layered dark glass: artwork blurred underneath with a consistent
         // high-contrast scrim, so white text remains readable on any cover.
@@ -2266,7 +2272,9 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
             1f to Color(0xF40A0A10)
         )))
         Column(Modifier.fillMaxSize().widthIn(max=482.dp)
-            .align(Alignment.Center).padding(horizontal=25.dp,vertical=6.dp),
+            .align(Alignment.Center)
+            .padding(horizontal=20.dp)
+            .padding(top=6.dp,bottom=14.dp),
             horizontalAlignment=Alignment.CenterHorizontally) {
             // iPhone: fixed 52pt header, centered source independent of buttons.
             Box(Modifier.fillMaxWidth().height(53.dp)) {
@@ -2324,9 +2332,20 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
             }
             // iPhone: metadata + favorite, scrubber, five playback buttons,
             // volume and lyrics / output / Up Next in predictable rows.
-            Column(Modifier.fillMaxWidth(),
-                verticalArrangement=Arrangement.spacedBy(10.dp)){
-                Row(Modifier.fillMaxWidth().heightIn(min=55.dp),
+            Column(
+                Modifier.fillMaxWidth()
+                    .shadow(12.dp,RoundedCornerShape(29.dp))
+                    .clip(RoundedCornerShape(29.dp))
+                    .background(Brush.verticalGradient(listOf(
+                        Color(0x60FFFFFF),Color(0x253E4567),
+                        Color(0x3B090B1B))))
+                    .border(1.dp,
+                        Brush.verticalGradient(listOf(
+                            Color(0x91FFFFFF),Color(0x24FFFFFF),
+                            Color(0x45B9BFFF))),RoundedCornerShape(29.dp))
+                    .padding(horizontal=17.dp,vertical=14.dp),
+                verticalArrangement=Arrangement.spacedBy(8.dp)){
+                Row(Modifier.fillMaxWidth().heightIn(min=52.dp),
                     verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text(song.title,fontSize=22.sp,fontWeight=FontWeight.Bold,
@@ -2346,11 +2365,14 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                         value=shownTime.toFloat().coerceIn(0f,duration.toFloat()),
                         onValueChange={scrubbing=it},
                         onValueChangeFinished={
-                            if(scrubbing>=0f)player.seek(scrubbing.toLong())
+                            if(scrubbing>=0f) {
+                                player.seek(scrubbing.toLong().coerceIn(0L,duration))
+                            }
                             scrubbing=-1f
                         },
                         valueRange=0f..duration.toFloat(),
-                        modifier=Modifier.fillMaxWidth().height(33.dp))
+                        modifier=Modifier.fillMaxWidth()
+                            .semantics { contentDescription="Song position" })
                     Row(Modifier.fillMaxWidth(),
                         horizontalArrangement=Arrangement.SpaceBetween){
                         Text(time(shownTime/1000),fontSize=11.sp,color=muted)
@@ -2405,11 +2427,19 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                     horizontalArrangement=Arrangement.SpaceEvenly,
                     verticalAlignment=Alignment.CenterVertically){
                     Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
-                        IconButton(onClick={showingLyrics=!showingLyrics}){
+                        IconButton(
+                            onClick={showingLyrics=!showingLyrics},
+                            modifier=Modifier.size(48.dp)
+                                .clip(CircleShape)
+                                .background(if(showingLyrics)Color(0x4DFFFFFF)
+                                    else Color(0x1FFFFFFF))
+                                .border(1.dp,Color.White.copy(alpha=if(showingLyrics).4f else .18f),
+                                    CircleShape)
+                        ){
                             Icon(Icons.Rounded.ChatBubbleOutline,
                                 contentDescription=if(showingLyrics)"Hide lyrics" else "Show lyrics",
-                                tint=white.copy(alpha=if(showingLyrics)1f else .8f),
-                                modifier=Modifier.size(26.dp))
+                                tint=white,
+                                modifier=Modifier.size(25.dp))
                         }
                     }
                     Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
