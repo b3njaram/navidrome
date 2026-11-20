@@ -2126,6 +2126,7 @@ private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MusicGlassSlider(
     value:Float,
