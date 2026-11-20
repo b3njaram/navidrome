@@ -44,7 +44,8 @@ before(async()=>{
     received.lastSubsonic={name,params:Object.fromEntries(u.searchParams)};
     if(name==='getUser')return json(res,ok({user:{username:u.searchParams.get('username'),adminRole:u.searchParams.get('username')==='testadmin'}}));
     if(name==='getUsers')return json(res,ok({users:{user:[{username:'testadmin',adminRole:true},{username:'listener',adminRole:false}]}}));
-    if(name==='getPlaylists')return json(res,ok({playlists:{playlist:[{id:'pl-1',name:'Road trip',songCount:0}]}}));
+    if(name==='getPlaylists')return json(res,ok({playlists:{playlist:received.mockPlaylistDeleted?[]:[{id:'pl-1',name:'Road trip',songCount:0}]}}));
+    if(name==='deletePlaylist'){if(!received.ignorePlaylistDeletion)received.mockPlaylistDeleted=true;return json(res,ok());}
     if(name==='getPlaylist')return json(res,ok({playlist:{id:'pl-1',name:u.searchParams.get('name')||'Road trip',
       entry:received.mockPlaylistEntries||[]}}));
     if(name==='updatePlaylist'){
@@ -194,7 +195,18 @@ test('playlist create, edit and delete',async()=>{
   assert.equal((await patch('/api/playlists/pl-1',{removeIndex:-1})).status,400);
   const gone=await fetch(base+'/api/playlists/pl-1',{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
   assert.equal(gone.status,200);
-  assert.deepEqual(await gone.json(),{ok:true});
+  assert.deepEqual(await gone.json(),{ok:true,verified:true});
+  assert.equal(received.mockPlaylistDeleted,true);
+  received.mockPlaylistDeleted=false;
+  received.ignorePlaylistDeletion=true;
+  try {
+    const ignored=await fetch(base+'/api/playlists/pl-1',{method:'DELETE',headers:{cookie,'x-csrf-token':csrfToken}});
+    assert.equal(ignored.status,409);
+    assert.match((await ignored.json()).error,/still exists/);
+  } finally {
+    delete received.mockPlaylistDeleted;
+    delete received.ignorePlaylistDeletion;
+  }
 });
 test('playlist entry deletion verifies exact song and refuses stale indices',async()=>{
   try{
