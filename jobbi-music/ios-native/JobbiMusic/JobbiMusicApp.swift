@@ -192,6 +192,10 @@ struct RootView: View {
         }
         .task {
             player.configure(api: api, offline: offline)
+            // The iPhone and CarPlay scenes must share one authenticated
+            // music library and AVPlayer queue, not two unrelated players.
+            CarPlayMusicCoordinator.shared.install(
+                api: api, library: library, player: player, offline: offline)
             await api.restore()
             if api.user != nil { await initializeSession() }
             restoring = false
@@ -203,6 +207,9 @@ struct RootView: View {
             offline.configure(server: api.server, username: username)
             await library.refresh(api: api)
         }
+        // If CarPlay is already connected, reflect restored playlists and
+        // account changes without waiting for the vehicle to reconnect.
+        await CarPlayMusicCoordinator.shared.refresh()
     }
 }
 
