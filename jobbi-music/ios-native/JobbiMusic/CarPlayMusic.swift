@@ -40,6 +40,11 @@ final class CarPlayMusicCoordinator: NSObject, CPNowPlayingTemplateObserver {
         player.$currentIndex.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.updateQueue() }
         }.store(in: &observers)
+        // Clear private browse titles promptly on logout and refresh them
+        // after a successful account switch; never show the previous user.
+        api.$user.sink { [weak self] _ in
+            Task { @MainActor [weak self] in await self?.refresh() }
+        }.store(in: &observers)
         Task { await refresh() }
     }
 
