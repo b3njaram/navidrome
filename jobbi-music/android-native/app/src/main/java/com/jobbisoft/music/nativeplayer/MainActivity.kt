@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -138,6 +139,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -155,6 +157,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1790,32 +1793,47 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
 @Composable
 private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
     val song=player.active ?: return
-    Surface(tonalElevation=6.dp,shadowElevation=3.dp,
-        modifier=Modifier.padding(horizontal=9.dp,vertical=4.dp).clip(RoundedCornerShape(22.dp)),
-        shape=RoundedCornerShape(22.dp),color=MaterialTheme.colorScheme.secondaryContainer) {
-        Column {
-            Row(Modifier.fillMaxWidth().height(72.dp).clickable(onClick=onOpen).padding(9.dp),
-                verticalAlignment=Alignment.CenterVertically) {
-                Cover(song.cover,53.dp)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(song.title,maxLines=1,overflow=TextOverflow.Ellipsis,
-                        fontWeight=FontWeight.Bold)
-                    Text(song.artist,maxLines=1,overflow=TextOverflow.Ellipsis,
-                        style=MaterialTheme.typography.bodySmall)
+    var dragAmount by remember(song.id){mutableFloatStateOf(0f)}
+    Surface(
+        tonalElevation=4.dp,shadowElevation=5.dp,
+        modifier=Modifier.padding(horizontal=8.dp,vertical=4.dp)
+            .fillMaxWidth()
+            .pointerInput(song.id){
+                detectHorizontalDragGestures(
+                    onDragStart={dragAmount=0f},
+                    onDragEnd={
+                        if(abs(dragAmount)>45f){
+                            if(dragAmount<0f)player.next() else player.previous()
+                        }
+                        dragAmount=0f
+                    },
+                    onHorizontalDrag={_,delta->dragAmount+=delta}
+                )
+            },
+        shape=RoundedCornerShape(21.dp),
+        color=MaterialTheme.colorScheme.surfaceContainerHigh
+    ){
+        Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=5.dp),
+            verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.spacedBy(11.dp)){
+            Row(Modifier.weight(1f).clickable(onClick=onOpen),
+                verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.spacedBy(11.dp)){
+                Cover(song.cover,42.dp)
+                Column(Modifier.weight(1f)){
+                    Text(song.title,fontSize=14.sp,fontWeight=FontWeight.Bold,
+                        maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Text(song.artist,fontSize=12.sp,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
-                IconButton(onClick=player::previous) {
-                    Icon(Icons.Rounded.SkipPrevious,"Previous track")
-                }
-                FilledIconButton(onClick=player::toggle) {
-                    Icon(if(player.playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        if(player.playing)"Pause" else "Play")
-                }
-                IconButton(onClick=player::next) { Icon(Icons.Rounded.SkipNext,"Next track") }
             }
-            if(player.duration>0){
-                LinearProgressIndicator(progress={ (player.position.toFloat()/player.duration)
-                    .coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth().height(3.dp))
+            IconButton(onClick=player::toggle,modifier=Modifier.size(38.dp)){
+                Icon(if(player.playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if(player.playing)"Pause" else "Play",modifier=Modifier.size(23.dp))
+            }
+            IconButton(onClick=player::next,modifier=Modifier.size(35.dp)){
+                Icon(Icons.Rounded.SkipNext,"Next track",modifier=Modifier.size(24.dp))
             }
         }
     }
