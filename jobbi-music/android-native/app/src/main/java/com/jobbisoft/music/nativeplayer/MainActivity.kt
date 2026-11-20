@@ -440,7 +440,15 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
             },
             snackbarHost = { SnackbarHost(snack) },
             bottomBar = {
-                Column {
+                // Edge-to-edge MainActivity deliberately draws behind system bars.
+                // Scaffold does not automatically inset custom bottomBar content.
+                // Keep the floating tab pill AND mini-player above 3-button and
+                // gesture navigation (especially Waydroid's 3-button navbar).
+                Column(
+                    Modifier.fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom=4.dp)
+                ) {
                     AnimatedVisibility(player.active!=null,enter=slideInVertically{it}+fadeIn(),
                         exit=slideOutVertically{it}+fadeOut()) {
                         MiniPlayer(player,onOpen={showNowPlaying=true})
