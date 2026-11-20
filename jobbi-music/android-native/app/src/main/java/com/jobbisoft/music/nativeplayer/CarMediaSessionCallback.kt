@@ -1,5 +1,6 @@
 package com.jobbisoft.music.nativeplayer
 
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -34,7 +35,8 @@ internal class CarMediaSessionCallback(
         val result = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
         scope.launch {
             try {
-                val all = library.children(parentId)
+                val all = if(parentId==AndroidAutoLibrary.QUEUE)
+                    library.upcoming(session.player) else library.children(parentId)
                 val start = page.toLong() * pageSize.toLong()
                 val shown = if (start < all.size && page >= 0) {
                     all.drop(start.toInt()).take(pageSize.coerceIn(1, 500))
@@ -106,6 +108,38 @@ internal class CarMediaSessionCallback(
             }
         }
         return result
+    }
+
+    override fun onSetMediaItems(
+        mediaSession: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+        val future=SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+        scope.launch {
+            try {
+                val requested=mediaItems.map(library::resolveRequested)
+                // Phone already supplies whole lists with URIs. Car browsers
+                // tend to send one selected ID: expand to its source playlist
+                // so Next/Previous and the real Up Next remain populated.
+                val collection=if(mediaItems.size==1 &&
+                    JobbiApi.username.isNotBlank())
+                    library.browseQueueForSelection(mediaItems.first().mediaId)
+                    else null
+                val tracks=collection?.first?:requested
+                val index=collection?.second?:startIndex
+                future.set(MediaSession.MediaItemsWithStartPosition(
+                    tracks,if(index==C.INDEX_UNSET)0 else index,
+                    startPositionMs))
+            } catch(e: Exception) {
+                val resolved=mediaItems.map(library::resolveRequested)
+                future.set(MediaSession.MediaItemsWithStartPosition(
+                    resolved,startIndex.coerceAtLeast(0),startPositionMs))
+            }
+        }
+        return future
     }
 
     override fun onAddMediaItems(
