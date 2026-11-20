@@ -17,6 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -38,6 +39,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -160,6 +163,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.ImageLoader
@@ -535,14 +540,25 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                 if(vm.busy||vm.removalBusy) LinearProgressIndicator(modifier=Modifier.fillMaxWidth().align(Alignment.TopCenter))
             }
         }
-        if(showNowPlaying) ModalBottomSheet(
+        // A full-window native dialog, not a Material3 bottom sheet:
+        // edge-to-edge background, independently inset player controls,
+        // and OS 3-button / gesture navigation can no longer cover lyrics.
+        if(showNowPlaying) Dialog(
             onDismissRequest={showNowPlaying=false;openQueueFirst=false},
-            sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
-            dragHandle={},
-            containerColor=Color(0xFF201C30)
+            properties=DialogProperties(
+                usePlatformDefaultWidth=false,
+                decorFitsSystemWindows=false
+            )
         ) {
-            NowPlayingScreen(vm,player,startWithQueue=openQueueFirst,
-                onClose={showNowPlaying=false;openQueueFirst=false})
+            Box(
+                Modifier.fillMaxSize()
+                    .background(Color(0xFF11121A))
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+            ) {
+                NowPlayingScreen(vm,player,startWithQueue=openQueueFirst,
+                    onClose={showNowPlaying=false;openQueueFirst=false})
+            }
         }
         if(addSong!=null) AlertDialog(
             onDismissRequest={addSong=null}, title={Text("Add to playlist")},
@@ -2232,7 +2248,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
     val shownTime=if(scrubbing>=0f)scrubbing.toLong() else player.position
     val white=Color.White
     val muted=white.copy(alpha=.75f)
-    Box(Modifier.fillMaxWidth().fillMaxHeight().background(Color(0xFF311F2A))) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF17131D))) {
         // Match the SwiftUI player: derive the atmosphere from the *current
         // album artwork*. The image remains behind an opaque dark scrim.
         if(!song.cover.isNullOrBlank())AsyncImage(
@@ -2242,8 +2258,13 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
             contentScale=ContentScale.Crop,
             modifier=Modifier.fillMaxSize().blur(70.dp).graphicsLayer(alpha=.65f)
         )
+        // Layered dark glass: artwork blurred underneath with a consistent
+        // high-contrast scrim, so white text remains readable on any cover.
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-            listOf(Color(0x35000000),Color(0x3C000000),Color(0xBD000000)))))
+            0f to Color(0xB11A1B29),
+            .38f to Color(0x8D252236),
+            1f to Color(0xF40A0A10)
+        )))
         Column(Modifier.fillMaxSize().widthIn(max=482.dp)
             .align(Alignment.Center).padding(horizontal=25.dp,vertical=6.dp),
             horizontalAlignment=Alignment.CenterHorizontally) {
