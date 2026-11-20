@@ -8,6 +8,9 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.lifecycle.ViewModelProvider
 import androidx.compose.ui.test.onAllNodesWithText
 import org.junit.Rule
 import kotlinx.coroutines.runBlocking
@@ -67,4 +70,36 @@ class JobbiDeviceSmokeTest {
             assertTrue(result.isFailure)
         }finally{file.delete()}
     }
+    @Test fun iPhoneStyleAccountQualityPickerAndNavigationActuallyWork() {
+        val vm=androidx.lifecycle.ViewModelProvider(rule.activity)[MusicViewModel::class.java]
+        rule.waitUntil(25000) { !vm.restoringSession }
+        rule.runOnUiThread {
+            vm.installParityScreenshotFixture()
+            vm.showParityScreenshotScreen("More")
+        }
+        rule.waitForIdle()
+        for (label in listOf("Account", "Signed in as", "Server", "Role",
+            "View or edit profile picture", "Playback", "Streaming quality",
+            "Downloaded tracks", "Download all playlists to this Android",
+            "Manage downloaded music", "Personal recommendations")) {
+            assertTrue("Account control missing: "+label,
+                rule.onAllNodesWithText(label,substring=true,useUnmergedTree=true)
+                    .fetchSemanticsNodes().isNotEmpty())
+        }
+        try {
+            rule.onNodeWithText("Streaming quality").performClick()
+            rule.waitUntil(5000) {
+                rule.onAllNodesWithText("Original / Lossless",substring=true,
+                    useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()
+            }
+            rule.onNodeWithText("Original / Lossless").performClick()
+            rule.waitUntil(5000) { vm.quality=="original" }
+            assertEquals("Quality selection did not reach native playback settings",
+                "original",vm.quality)
+        } finally {
+            rule.runOnUiThread { vm.updateQuality("balanced") }
+            rule.waitForIdle()
+        }
+    }
+
 }
