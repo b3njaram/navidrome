@@ -2,6 +2,13 @@ package com.jobbisoft.music.nativeplayer
 
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -54,7 +61,12 @@ fun NativeLyricsPanel(songId:String,positionMs:Long,onSeek:(Long)->Unit,
     LaunchedEffect(active){
         if(active>=0)state.animateScrollToItem((active-1).coerceAtLeast(0))
     }
-    Box(modifier.fillMaxWidth().heightIn(min=270.dp,max=410.dp)){
+    Box(modifier.fillMaxWidth().heightIn(min=240.dp,max=410.dp)
+        .clip(RoundedCornerShape(26.dp))
+        .background(Brush.verticalGradient(listOf(
+            Color(0x5CFFFFFF),Color(0x26293249),Color(0x66080813))))
+        .border(1.dp,Color.White.copy(alpha=.23f),RoundedCornerShape(26.dp))
+        .semantics { contentDescription="Lyrics view" }){
         when{
             loading->Column(Modifier.fillMaxSize(),
                 verticalArrangement=Arrangement.Center,
