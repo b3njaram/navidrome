@@ -1,6 +1,13 @@
 package com.jobbisoft.music.nativeplayer
 
 import android.app.DownloadManager
+import android.content.ComponentName
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import android.content.Context
 import android.os.Environment
 import androidx.lifecycle.ViewModelProvider
@@ -16,6 +23,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.TimeUnit
 import java.security.MessageDigest
 
 /**
@@ -54,9 +64,24 @@ class JobbiOfflineStartupTest {
                 "jobbi/"+scope)
             assertTrue(dir.mkdirs()||dir.isDirectory)
             val recording=File(dir,"local.wav")
-            // Content is a fixture, not remotely sourced; the saved status
-            // proves it was previously downloaded and safe to expose.
-            recording.writeBytes(byteArrayOf(82,73,70,70,0,0,0,0))
+            // A genuine 8-second silent WAV exercises the actual Media3
+            // decoder with a file:// URI, not merely a local-file lookup.
+            val rate=8000
+            val pcmBytes=rate*8*2
+            val wav=ByteBuffer.allocate(44+pcmBytes).order(ByteOrder.LITTLE_ENDIAN)
+            wav.put("RIFF".toByteArray(Charsets.US_ASCII))
+            wav.putInt(36+pcmBytes)
+            wav.put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
+            wav.putInt(16)
+            wav.putShort(1.toShort())
+            wav.putShort(1.toShort())
+            wav.putInt(rate)
+            wav.putInt(rate*2)
+            wav.putShort(2.toShort())
+            wav.putShort(16.toShort())
+            wav.put("data".toByteArray(Charsets.US_ASCII))
+            wav.putInt(pcmBytes)
+            recording.writeBytes(wav.array())
             val prefs=app.getSharedPreferences("jobbi-native-downloads-v1",
                 Context.MODE_PRIVATE)
             val entry=JSONObject().put("id",songId)
@@ -83,6 +108,28 @@ class JobbiOfflineStartupTest {
             rule.waitUntil(8000){
                 rule.onAllNodesWithText("Offline fixture recording",
                     useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()
+            }
+            rule.onNodeWithText("Offline fixture recording",useUnmergedTree=true)
+                .performClick()
+            val token=SessionToken(app,ComponentName(app,
+                MusicPlaybackService::class.java))
+            val pending=MediaController.Builder(app,token).buildAsync()
+            try{
+                val controller=pending.get(20,TimeUnit.SECONDS)
+                rule.waitUntil(15000){
+                    controller.currentMediaItem?.mediaId==songId &&
+                    controller.currentMediaItem?.localConfiguration?.uri?.scheme=="file"
+                }
+                assertEquals("file",controller.currentMediaItem
+                    ?.localConfiguration?.uri?.scheme)
+                rule.waitUntil(15000){
+                    controller.playbackState==Player.STATE_READY
+                }
+                assertTrue("Offline PCM recording did not enter playback",
+                    controller.playWhenReady)
+                rule.runOnUiThread{controller.pause()}
+            }finally{
+                rule.runOnUiThread{MediaController.releaseFuture(pending)}
             }
         } finally {
             clean()
