@@ -2,13 +2,11 @@ package com.jobbisoft.music.nativeplayer
 
 import android.app.Application
 import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.captureToImage
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.onRoot
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -50,7 +48,9 @@ class VisualParityScreenshotTest {
                     rule.onAllNodesWithText(label,substring=true,useUnmergedTree=true)
                         .fetchSemanticsNodes().isNotEmpty())
             }
-            val screenshot=rule.onRoot().captureToImage().asAndroidBitmap()
+            val screenshot=requireNotNull(
+                InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            ) { "Android emulator could not capture the full UI display" }
             val output=File(folder,"parity-android-"+screen.lowercase()+".png")
             output.outputStream().use { stream ->
                 assertTrue("Failed to export screenshot "+output.name,
@@ -69,7 +69,9 @@ class VisualParityScreenshotTest {
             rule.onAllNodesWithText("PLAYING FROM",substring=true,useUnmergedTree=true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
-        val playerImage=rule.onRoot().captureToImage().asAndroidBitmap()
+        val playerImage=requireNotNull(
+            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        ) { "Android emulator could not capture the Now Playing display" }
         val playerFile=File(folder,"parity-android-nowplaying.png")
         playerFile.outputStream().use {
             assertTrue("Could not export Android Now Playing",playerImage.compress(
