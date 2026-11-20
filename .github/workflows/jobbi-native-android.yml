@@ -15,7 +15,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: jobbi-native-${{ github.ref }}
+  group: jobbi-native-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 jobs:
   apk:
