@@ -73,6 +73,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var albums by androidx.compose.runtime.mutableStateOf<List<Album>>(emptyList())
         private set
+    var artists by androidx.compose.runtime.mutableStateOf<List<MusicArtist>>(emptyList())
+        private set
+    var artistName by androidx.compose.runtime.mutableStateOf("")
+        private set
+    var artistSongs by androidx.compose.runtime.mutableStateOf<List<Song>>(emptyList())
+        private set
+    var artistAlbums by androidx.compose.runtime.mutableStateOf<List<Album>>(emptyList())
+        private set
     var playlists by androidx.compose.runtime.mutableStateOf<List<MusicPlaylist>>(emptyList())
         private set
     var favorites by androidx.compose.runtime.mutableStateOf<List<Song>>(emptyList())
@@ -298,6 +306,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             "Library" -> {loadLibrary();refreshCollectionJobs()}
             "Favorites" -> loadFavorites()
             "Search" -> if(searchQuery.isNotBlank()) search(searchQuery)
+            "Artists" -> loadArtists()
             "Community", "Profile", "Admin" -> Unit
         }
     }
@@ -313,6 +322,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun loadLibrary() = execute {
         albums = JobbiApi.albums()
         playlists = JobbiApi.playlists()
+    }
+    fun loadArtists() = execute {
+        artists = JobbiApi.artists()
+    }
+    fun openArtist(id:String) = execute {
+        val detail=JobbiApi.artistDetails(id)
+        artistName=detail.optStr("name","Artist")
+        artistSongs=detail.optJSONArray("song").songs()
+        artistAlbums=detail.optJSONArray("album").albums()
+        selected="ArtistDetail"
     }
     fun loadFavorites() = execute {
         favorites = JobbiApi.favorites()
@@ -435,6 +454,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         selected = "Detail"
     }
     fun back() {
+        if(selected=="ArtistDetail"){
+            selected="Artists"
+            return
+        }
         detail = null
         selected = "Library"
         loadLibrary()
