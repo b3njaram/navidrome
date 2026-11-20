@@ -2081,8 +2081,9 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
 private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
     val song=player.active ?: return
     var dragAmount by remember(song.id){mutableFloatStateOf(0f)}
+    val iosBlue=if(isSystemInDarkTheme())Color(0xFF8FB4FF) else Color(0xFF2384E9)
     Surface(
-        tonalElevation=4.dp,shadowElevation=5.dp,
+        tonalElevation=0.dp,shadowElevation=3.dp,
         modifier=Modifier.padding(horizontal=8.dp,vertical=4.dp)
             .fillMaxWidth()
             .pointerInput(song.id){
@@ -2098,7 +2099,7 @@ private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
                 )
             },
         shape=RoundedCornerShape(21.dp),
-        color=MaterialTheme.colorScheme.surfaceContainerHigh
+        color=if(isSystemInDarkTheme())Color(0xF53A3A44) else Color(0xF6F8F8FB)
     ){
         Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=5.dp),
             verticalAlignment=Alignment.CenterVertically,
@@ -2119,10 +2120,10 @@ private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
             }
             IconButton(onClick=player::toggle,modifier=Modifier.size(38.dp)){
                 Icon(if(player.playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    if(player.playing)"Pause" else "Play",modifier=Modifier.size(23.dp))
+                    if(player.playing)"Pause" else "Play",tint=iosBlue,modifier=Modifier.size(23.dp))
             }
             IconButton(onClick=player::next,modifier=Modifier.size(35.dp)){
-                Icon(Icons.Rounded.SkipNext,"Next track",modifier=Modifier.size(24.dp))
+                Icon(Icons.Rounded.SkipNext,"Next track",tint=iosBlue,modifier=Modifier.size(24.dp))
             }
         }
     }
@@ -2321,8 +2322,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                     verticalAlignment=Alignment.CenterVertically){
                     Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
                         IconButton(onClick={showingLyrics=!showingLyrics}){
-                            Icon(if(showingLyrics)Icons.Rounded.FormatQuote
-                                 else Icons.Rounded.FormatQuote,
+                            Icon(Icons.Rounded.ChatBubbleOutline,
                                 contentDescription=if(showingLyrics)"Hide lyrics" else "Show lyrics",
                                 tint=white.copy(alpha=if(showingLyrics)1f else .8f),
                                 modifier=Modifier.size(26.dp))
@@ -2341,7 +2341,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                                 AudioManager.STREAM_MUSIC,AudioManager.ADJUST_SAME,
                                 AudioManager.FLAG_SHOW_UI)
                         }){
-                            Icon(Icons.Rounded.Speaker,
+                            Icon(Icons.Rounded.Airplay,
                                 contentDescription="Audio output",tint=muted,
                                 modifier=Modifier.size(25.dp))
                         }
