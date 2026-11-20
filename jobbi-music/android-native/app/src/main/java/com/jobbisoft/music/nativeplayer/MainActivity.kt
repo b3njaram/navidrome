@@ -2220,7 +2220,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
             }
             BoxWithConstraints(Modifier.fillMaxWidth().weight(1f),
                 contentAlignment=Alignment.Center){
-                val artSize=minOf((maxWidth-22.dp).coerceAtLeast(130.dp),
+                val artSize=minOf(maxWidth.coerceAtLeast(130.dp),
                     (maxHeight-20.dp).coerceAtLeast(130.dp),385.dp)
                 if(showingLyrics){
                     NativeLyricsPanel(songId=song.id,positionMs=player.position,
@@ -2345,7 +2345,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                     }
                     Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
                         IconButton(onClick={viewingQueue=true}){
-                            Icon(Icons.Rounded.QueueMusic,
+                            Icon(Icons.Rounded.FormatListBulleted,
                                 contentDescription="Show Up Next queue",tint=muted,
                                 modifier=Modifier.size(25.dp))
                         }
