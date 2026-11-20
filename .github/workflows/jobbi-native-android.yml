@@ -93,7 +93,7 @@ jobs:
           profile: pixel_4
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             # Gradle connectedAndroidTest uninstalls test APKs immediately,
             # deleting their private screenshots before adb pull. Install and
             # execute instrumentation directly, then pull before uninstall.
@@ -104,7 +104,7 @@ jobs:
             adb shell am instrument -w -r \
               com.jobbisoft.music.nativeplayer.debug.test/androidx.test.runner.AndroidJUnitRunner \
               | tee "$GITHUB_WORKSPACE/jobbi-emulator-instrumentation.log"
-            grep -Eq 'OK \\(5 tests\\)' "$GITHUB_WORKSPACE/jobbi-emulator-instrumentation.log"
+            grep -Fq 'OK (5 tests)' "$GITHUB_WORKSPACE/jobbi-emulator-instrumentation.log"
             mkdir -p "$GITHUB_WORKSPACE/jobbi-parity-android"
             adb shell ls -lh /sdcard/Android/data/com.jobbisoft.music.nativeplayer.debug/files/jobbi-parity/
             adb pull /sdcard/Android/data/com.jobbisoft.music.nativeplayer.debug/files/jobbi-parity/. \
