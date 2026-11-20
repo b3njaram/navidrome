@@ -271,6 +271,8 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     var downloadWifiOnly by remember { mutableStateOf(true) }
     var removalConfirm by remember { mutableStateOf("") }
     var accountReturnTab by remember { mutableStateOf("Home") }
+    var communityCreateSignal by remember{androidx.compose.runtime.mutableIntStateOf(0)}
+    var communityRefreshSignal by remember{androidx.compose.runtime.mutableIntStateOf(0)}
     LaunchedEffect(vm.removalPreviews) { removalConfirm = "" }
 
     DisposableEffect(player) { onDispose { player.disconnect() } }
@@ -329,7 +331,22 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                           maxLines=1,overflow=TextOverflow.Ellipsis)
                     },
                     navigationIcon = {
-                        if(vm.selected !in tabs.map{it.name}) IconButton(onClick={
+                        if(vm.selected=="Home"){
+                            IconButton(onClick=vm::refresh){
+                                Icon(Icons.Rounded.Refresh,contentDescription="Refresh music")
+                            }
+                        }else if(vm.selected=="Community"){
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                IconButton(onClick={communityCreateSignal++}){
+                                    Icon(Icons.Rounded.GroupAdd,
+                                        contentDescription="New shared playlist")
+                                }
+                                IconButton(onClick={communityRefreshSignal++}){
+                                    Icon(Icons.Rounded.Refresh,
+                                        contentDescription="Refresh community")
+                                }
+                            }
+                        }else if(vm.selected !in tabs.map{it.name}) IconButton(onClick={
                             when(vm.selected) {
                                 "Detail","ArtistDetail"->vm.back()
                                 "Server"->vm.select("Search")
@@ -342,9 +359,6 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     actions = {
                         if(vm.selected=="Library")IconButton(onClick={createPlaylist=true}){
                             Icon(Icons.Rounded.Add,contentDescription="Create playlist")
-                        }
-                        if(vm.selected=="Home")IconButton(onClick=vm::refresh){
-                            Icon(Icons.Rounded.Refresh,contentDescription="Refresh music")
                         }
                         if(vm.selected in tabs.map{it.name})JobbiAccountAvatar(vm,onClick={
                             accountReturnTab=vm.selected
@@ -385,7 +399,10 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                         "Search" -> SearchScreen(vm,player,onSongAdd={addSong=it},
                             onBulkPlaylist={bulkChoice=BulkChoice(it)},onQuarantine={vm.prepareSongRemoval(it)})
                         "Server" -> ServerDiscoverScreen(onBack={vm.select("Search")},initialQuery=vm.serverSearchSeed)
-                        "Community" -> CommunityScreen(vm,player,onDiscoverMusic={vm.select("Server")})
+                        "Community" -> CommunityScreen(vm,player,
+                            onDiscoverMusic={vm.select("Server")},
+                            refreshSignal=communityRefreshSignal,
+                            createSignal=communityCreateSignal)
                         "Profile" -> ProfileScreen(vm)
                         "Admin" -> NativeAdminScreen(vm,onBack={vm.select("More")})
                         "PlaylistDirectory" -> PlaylistDirectoryScreen(vm,onCreate={createPlaylist=true})
