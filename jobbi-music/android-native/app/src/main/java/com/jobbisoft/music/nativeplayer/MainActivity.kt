@@ -1874,8 +1874,6 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 removeOffline={vm.removeOfflineSong(song)},
                 add={onSongAdd(song)},
                 removeFromNas={vm.prepareSongRemoval(listOf(song))},
-                offlineSaved=vm.downloadedSongs.any{it.id==song.id},
-                removeOffline={vm.removeOfflineSong(song)},
                 removeFromPlaylist=if(detail.isPlaylist){{
                     vm.removeSelectedFromPlaylist(listOf(pair.first))
                 }}else null,
