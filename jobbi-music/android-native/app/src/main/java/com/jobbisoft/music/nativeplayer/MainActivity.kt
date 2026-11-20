@@ -1957,7 +1957,8 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
                 onClick={vm.downloadAllPlaylists(true)})
             HorizontalDivider()
             AccountSettingRow("Refresh offline downloads",
-                Icons.Rounded.Sync,JobbiTeal,onClick=vm::updateDownloadStats)
+                icon=Icons.Rounded.Sync,tint=JobbiTeal,
+                onClick=vm::updateDownloadStats)
             if(vm.offlineMode){
                 HorizontalDivider()
                 AccountSettingRow("Reconnect to Jobbi Music",icon=Icons.Rounded.CloudSync,
