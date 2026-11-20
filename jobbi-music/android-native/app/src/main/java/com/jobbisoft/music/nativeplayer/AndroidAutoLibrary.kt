@@ -26,11 +26,13 @@ internal class AndroidAutoLibrary(private val context: Context) {
         const val FAVORITES = "jobbi:auto:favorites"
         const val PLAYLISTS = "jobbi:auto:playlists"
         const val ALBUMS = "jobbi:auto:albums"
+        const val ARTISTS = "jobbi:auto:artists"
         const val RECENT = "jobbi:auto:recent"
         const val DOWNLOADED = "jobbi:auto:downloaded"
         const val SIGN_IN = "jobbi:auto:sign-in"
         const val PREFIX_PLAYLIST = "jobbi:auto:playlist:"
         const val PREFIX_ALBUM = "jobbi:auto:album:"
+        const val PREFIX_ARTIST = "jobbi:auto:artist:"
     }
 
     private val index = ConcurrentHashMap<String, Song>()
@@ -75,6 +77,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
             FAVORITES -> "Favorite Songs"
             PLAYLISTS -> "Playlists"
             ALBUMS -> "Albums"
+            ARTISTS -> "Artists"
             RECENT -> "Recently Added"
             DOWNLOADED -> "Downloads"
             SIGN_IN -> "Open Jobbi Music on your phone to sign in"
@@ -100,6 +103,10 @@ internal class AndroidAutoLibrary(private val context: Context) {
         category(PREFIX_PLAYLIST + playlist.id,
             playlist.name, "${playlist.count} songs")
             .also { browseIndex[it.mediaId] = it }
+
+    private fun artist(artist: MusicArtist): MediaItem =
+        category(PREFIX_ARTIST+artist.id,artist.name)
+            .also { browseIndex[it.mediaId]=it }
 
     private fun playable(song: Song): MediaItem {
         val offline = JobbiDownloads.playableUri(context, JobbiApi.username,
@@ -153,6 +160,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
                 category(PLAYLISTS,"Your Playlists"),
                 category(FAVORITES,"Liked Songs"),
                 category(ALBUMS,"Albums"),
+                category(ARTISTS,"Artists"),
                 category(QUEUE,"Up Next"),
                 category(DOWNLOADED,"Downloaded Music"),
                 category(RECENT,"Recently Added"))
@@ -183,11 +191,15 @@ internal class AndroidAutoLibrary(private val context: Context) {
             FAVORITES -> songs(JobbiApi.favorites(),FAVORITES)
             PLAYLISTS -> JobbiApi.playlists().take(300).map(::playlist)
             ALBUMS -> JobbiApi.albums().take(300).map(::album)
+            ARTISTS -> JobbiApi.artists().take(300).map(::artist)
             else -> when {
                 parentId.startsWith(PREFIX_PLAYLIST) ->
                     songs(JobbiApi.openPlaylist(parentId.removePrefix(PREFIX_PLAYLIST)).songs,parentId)
                 parentId.startsWith(PREFIX_ALBUM) ->
                     songs(JobbiApi.openAlbum(parentId.removePrefix(PREFIX_ALBUM)).songs,parentId)
+                parentId.startsWith(PREFIX_ARTIST) ->
+                    songs(JobbiApi.artistDetails(parentId.removePrefix(PREFIX_ARTIST))
+                        .optJSONArray("song").songs(),parentId)
                 else -> emptyList()
             }
         }
