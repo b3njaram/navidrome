@@ -48,7 +48,26 @@ jobs:
           if [ -z "$SIM_ID" ]; then echo "No iPhone simulator is available"; exit 1; fi
           xcodebuild -project JobbiMusic.xcodeproj -scheme JobbiMusic \
             -configuration Debug -destination "platform=iOS Simulator,id=$SIM_ID" \
+            -resultBundlePath "$RUNNER_TEMP/jobbi-visual-parity.xcresult" \
             CODE_SIGNING_ALLOWED=NO test
+      - name: Export real iPhone fixture screenshots
+        if: always()
+        run: |
+          RESULT="$RUNNER_TEMP/jobbi-visual-parity.xcresult"
+          if [ -d "$RESULT" ]; then
+            mkdir -p "$RUNNER_TEMP/jobbi-parity-ios"
+            xcrun xcresulttool export attachments \
+              --path "$RESULT" --output-path "$RUNNER_TEMP/jobbi-parity-ios"
+            find "$RUNNER_TEMP/jobbi-parity-ios" -type f -maxdepth 2
+          fi
+      - name: Upload native iPhone signed-in screen captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jobbi-iPhone-Parity-Screenshots
+          path: ${{ runner.temp }}/jobbi-parity-ios/
+          retention-days: 14
+          if-no-files-found: warn
       - name: Compile unsigned iPhone device app
         working-directory: jobbi-music/ios-native
         run: |
