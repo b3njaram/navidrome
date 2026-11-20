@@ -24,8 +24,14 @@ adb shell am instrument -w -r \
 grep -Eq 'OK \(([6-9]|[1-9][0-9]+) tests\)' "$ROOT/jobbi-emulator-instrumentation.log"
 
 mkdir -p "$ROOT/jobbi-parity-android"
-adb shell dumpsys gfxinfo com.jobbisoft.music.nativeplayer.debug framestats \
-  > "$ROOT/jobbi-parity-android/android-gfxinfo.txt" || true
+# The activity is destroyed when instrumentation exits. Prefer the frame
+# counters saved from INSIDE the running screenshot test.
+if ! adb exec-out run-as com.jobbisoft.music.nativeplayer.debug \
+    cat files/jobbi-parity/android-gfxinfo.txt \
+    > "$ROOT/jobbi-parity-android/android-gfxinfo.txt"; then
+  adb shell dumpsys gfxinfo com.jobbisoft.music.nativeplayer.debug framestats \
+    > "$ROOT/jobbi-parity-android/android-gfxinfo.txt" || true
+fi
 python3 jobbi-music/android-native/scripts/summarize-motion.py \
   "$ROOT/jobbi-parity-android/android-gfxinfo.txt" \
   "$ROOT/jobbi-parity-android/android-motion-profile.json"
