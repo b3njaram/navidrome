@@ -144,6 +144,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -221,6 +223,7 @@ private fun JobbiAccountAvatar(vm:MusicViewModel,onClick:()->Unit) {
         .okHttpClient(JobbiApi.client).build()}
     val username=vm.account
     Surface(modifier=Modifier.padding(end=10.dp).size(36.dp).clip(CircleShape)
+        .semantics { contentDescription="Your profile and settings" }
         .clickable(onClick=onClick),
         shape=CircleShape,color=JobbiViolet) {
         Box(contentAlignment=Alignment.Center) {
