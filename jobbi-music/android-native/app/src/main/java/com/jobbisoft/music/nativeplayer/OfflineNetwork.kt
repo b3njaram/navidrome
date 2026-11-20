@@ -13,7 +13,13 @@ import android.net.NetworkCapabilities
  * All credentials remain encrypted in Android Keystore, never in this object.
  */
 internal object OfflineNetwork {
-    fun isOnline(context:Context):Boolean = runCatching {
+    // Test-only switch for deterministic cold-start tests. Never consulted in
+    // release builds, and not user- or network-controllable.
+    @Volatile internal var debugOnlineOverride:Boolean?=null
+
+    fun isOnline(context:Context):Boolean {
+        if(BuildConfig.DEBUG)debugOnlineOverride?.let{return it}
+        return runCatching {
         val manager=context.getSystemService(Context.CONNECTIVITY_SERVICE)
             as? ConnectivityManager ?: return@runCatching true
         val active=manager.activeNetwork ?:return@runCatching false
@@ -21,5 +27,6 @@ internal object OfflineNetwork {
             ?:return@runCatching false
         capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }.getOrDefault(true)
+        }.getOrDefault(true)
+    }
 }
