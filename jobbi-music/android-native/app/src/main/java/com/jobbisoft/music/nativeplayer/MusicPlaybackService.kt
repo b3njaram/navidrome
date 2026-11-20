@@ -159,6 +159,51 @@ class MusicPlaybackService : MediaLibraryService() {
         }
     }
 
+    /**
+     * Android Auto can launch MediaLibraryService without ever opening the
+     * phone activity. Restore the last verified, Keystore-encrypted identity
+     * here so the car Home is not stuck on "open the phone to sign in" after
+     * each reboot. Never store new secrets or expose cross-account downloads.
+     */
+    private fun restoreCarLibraryAccount() {
+        if(JobbiApi.username.isNotBlank())return
+        scrobbleScope.launch {
+            val remembered=runCatching {
+                SecureLoginStorage.load(this@MusicPlaybackService)
+            }.getOrNull() ?:return@launch
+            if(JobbiApi.username.isNotBlank())return@launch
+            runCatching {
+                JobbiApi.changeServer(this@MusicPlaybackService,remembered.server)
+            }.getOrElse{return@launch}
+
+            val saved=runCatching {
+                JobbiDownloads.downloadedSongs(this@MusicPlaybackService,
+                    remembered.username,remembered.server)
+            }.getOrDefault(emptyList())
+
+            // Local music becomes available immediately when the NAS is
+            // offline, without requiring the user to unlock the phone.
+            if(saved.isNotEmpty()) {
+                JobbiApi.useOfflineIdentity(remembered.username)
+                artworkScope.launch {
+                    session?.notifyChildrenChanged(AndroidAutoLibrary.ROOT,4,null)
+                }
+            }
+            if(OfflineNetwork.isOnline(this@MusicPlaybackService)) {
+                try {
+                    JobbiApi.login(remembered.username,remembered.password)
+                    artworkScope.launch {
+                        session?.notifyChildrenChanged(AndroidAutoLibrary.ROOT,9,null)
+                    }
+                } catch (_:Exception) {
+                    // Do not clear verified downloaded music on a DNS error,
+                    // expired server or temporary outage. User can reconnect
+                    // when online; remote APIs remain inaccessible without CSRF.
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         if(JobbiApi.username.isBlank())JobbiApi.configure(this)
@@ -185,6 +230,7 @@ class MusicPlaybackService : MediaLibraryService() {
             .setSessionActivity(launch)
             .setMediaButtonPreferences(SystemMediaControls.transportButtons())
             .build()
+        restoreCarLibraryAccount()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibraryService.MediaLibrarySession? = session
