@@ -236,7 +236,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    private fun restoreSavedSignIn() {
+    private fun restoreSavedSignIn(forceOnline:Boolean=false) {
         if(signedIn && !offlineMode)return
         viewModelScope.launch {
             restoringSession=true
@@ -253,7 +253,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     server=JobbiApi.serverUrl()
                     // On a flight / airplane mode / no validated network,
                     // NEVER wait for a DNS timeout before showing offline music.
-                    if(!OfflineNetwork.isOnline(getApplication())){
+                    if(!forceOnline&&!OfflineNetwork.isOnline(getApplication())){
                         if(!openRememberedDownloads(saved)){
                             if(!signedIn){
                                 error="No internet connection and no completed offline "+
@@ -360,7 +360,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun retrySavedSignIn() {
         if((!signedIn || offlineMode)&&!restoringSession&&savedSignInAvailable)
-            restoreSavedSignIn()
+            // A user-requested reconnect must try HTTPS even if Android's
+            // network validation is blocked by a VPN or private DNS.
+            restoreSavedSignIn(forceOnline=true)
     }
     private fun execute(block: suspend () -> Unit) {
         viewModelScope.launch {
