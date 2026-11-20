@@ -766,7 +766,11 @@ private fun HomeScreen(vm:MusicViewModel,player:NativePlayer,
                     favorite={vm.toggleFavorite(song)},
                     playNext={player.playNext(song)},addQueue={player.addToQueue(song)},
                     downloadOffline={vm.downloadSong(song)},
-                    add={onSongAdd(song)},
+                    offlineSaved=vm.downloadedSongs.any{it.id==song.id},
+                    removeOffline={vm.removeOfflineSong(song)},
+                    offlineSaved=vm.downloadedSongs.any{it.id==song.id},
+                removeOffline={vm.removeOfflineSong(song)},
+                add={onSongAdd(song)},
                     removeFromNas={vm.prepareSongRemoval(listOf(song))})
             }
         }
