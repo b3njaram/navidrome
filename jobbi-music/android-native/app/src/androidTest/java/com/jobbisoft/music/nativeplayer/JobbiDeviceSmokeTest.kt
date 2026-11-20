@@ -32,7 +32,7 @@ class JobbiDeviceSmokeTest {
             rule.onAllNodesWithText("Keep me signed in",substring=true,useUnmergedTree=true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
-        for(label in listOf("Navidrome username","Password","Keep me signed in","Listen now")){
+        for(label in listOf("HTTPS music server","Username","Password","Keep me signed in","Listen now")){
             org.junit.Assert.assertTrue(label+" missing on real native login screen",
                 rule.onAllNodesWithText(label,substring=true,useUnmergedTree=true)
                     .fetchSemanticsNodes().isNotEmpty())
