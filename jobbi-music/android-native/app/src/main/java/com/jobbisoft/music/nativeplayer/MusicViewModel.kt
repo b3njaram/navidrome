@@ -779,11 +779,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun addToPlaylist(song: Song, id: String) = execute {
-        val receipt=JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
-        if(!receipt.optBoolean("verified")||
-            receipt.optString("addedSongId")!=song.id)
+        // Older NAS deployments did not return an add-receipt. Verify the
+        // actual playlist delta on Android too, so both old and new servers
+        // work without claiming success for silently ignored updates.
+        val before=JobbiApi.openPlaylist(id).songs.count{it.id==song.id}
+        JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
+        val updated=JobbiApi.openPlaylist(id)
+        if(updated.songs.count{it.id==song.id}<=before)
             throw JobbiException("Navidrome has not confirmed the song was added. Refresh before retrying.")
-        if(detail?.id==id)detail=JobbiApi.openPlaylist(id)
+        if(detail?.id==id)detail=updated
         playlists=JobbiApi.playlists()
         message="Verified: ${song.title} was added to the playlist."
     }
