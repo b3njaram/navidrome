@@ -229,7 +229,7 @@ private fun JobbiAccountAvatar(vm:MusicViewModel,onClick:()->Unit) {
                 Text(username.firstOrNull()?.uppercaseChar()?.toString()?:"J",
                     color=Color.White,fontWeight=FontWeight.Bold,fontSize=16.sp)
             }
-            if(username.isNotBlank()){
+            if(username.isNotBlank() && !vm.parityScreenshotFixture){
                 AsyncImage(
                     model=ImageRequest.Builder(context)
                         .data(JobbiApi.authenticatedUrl("/api/social/profiles/"+
@@ -279,8 +279,8 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
     LaunchedEffect(player) {
         while (isActive) { player.tick(); delay(450) }
     }
-    LaunchedEffect(vm.signedIn,vm.account) {
-        while(isActive&&vm.signedIn){
+    LaunchedEffect(vm.signedIn,vm.account,vm.parityScreenshotFixture) {
+        while(isActive&&vm.signedIn&&!vm.parityScreenshotFixture){
             vm.updateDownloadStats()
             if(vm.selected=="Library")vm.refreshCollectionJobs()
             delay(20000)
