@@ -3,6 +3,9 @@ package com.jobbisoft.music.nativeplayer
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
+import org.json.JSONObject
+import java.security.MessageDigest
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -89,7 +92,9 @@ class AndroidAutoSessionTest {
     @Test fun signedOutCarCannotBrowsePrivateFavoritesOrPlaylists() {
         JobbiApi.clearSession()
         connected { browser ->
-            for(id in listOf(AndroidAutoLibrary.FAVORITES,AndroidAutoLibrary.PLAYLISTS,
+            for(id in listOf(AndroidAutoLibrary.HOME,AndroidAutoLibrary.QUEUE,
+                AndroidAutoLibrary.HOME_PLAYLISTS,AndroidAutoLibrary.HOME_WEEK,
+                AndroidAutoLibrary.FAVORITES,AndroidAutoLibrary.PLAYLISTS,
                 AndroidAutoLibrary.ALBUMS,AndroidAutoLibrary.DOWNLOADED,
                 AndroidAutoLibrary.RECENT)) {
                 val children=main { browser.getChildren(id,0,20,null) }
@@ -191,4 +196,74 @@ class AndroidAutoSessionTest {
             wav.delete()
         }
     }
+    @Test fun offlineCarHomeQueueAndDownloadsWorkWithoutNAS() {
+        JobbiApi.clearSession()
+        val name="car-verified-offline-fixture"
+        val host="https://android-auto-offline.invalid"
+        val id="car-local-playable-track"
+        val hash: (String)->String={value->
+            MessageDigest.getInstance("SHA-256")
+                .digest(value.toByteArray(Charsets.UTF_8))
+                .joinToString(""){"%02x".format(it)}
+        }
+        val scope=hash(host+"\n"+name.lowercase()).take(24)
+        val dir=File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC),
+            "jobbi/"+scope)
+        val prefs=context.getSharedPreferences("jobbi-native-downloads-v1",
+            Context.MODE_PRIVATE)
+        val audio=wavFixture()
+        try {
+            JobbiApi.changeServer(context,host)
+            assertTrue(dir.mkdirs()||dir.isDirectory)
+            val local=File(dir,"car-cache.wav")
+            audio.copyTo(local,overwrite=true)
+            val saved=JSONObject().put("id",id)
+                .put("title","Downloaded Drive Song")
+                .put("artist","Local music")
+                .put("album","Offline")
+                .put("fileName",local.name)
+                .put("downloadId",0)
+                .put("status",android.app.DownloadManager.STATUS_SUCCESSFUL)
+                .put("size",local.length())
+            assertTrue(prefs.edit().putString(scope+":"+hash(id),saved.toString())
+                .commit())
+            JobbiApi.useOfflineIdentity(name)
+            connected { browser ->
+                val root=main{browser.getChildren(AndroidAutoLibrary.ROOT,0,20,null)}
+                    .get(15,TimeUnit.SECONDS)
+                assertEquals(LibraryResult.RESULT_SUCCESS,root.resultCode)
+                assertEquals(listOf(AndroidAutoLibrary.HOME,AndroidAutoLibrary.DOWNLOADED,
+                    AndroidAutoLibrary.QUEUE),root.value?.map{it.mediaId})
+                val home=main{browser.getChildren(AndroidAutoLibrary.HOME,0,20,null)}
+                    .get(15,TimeUnit.SECONDS)
+                assertTrue(home.value?.any{it.mediaId==AndroidAutoLibrary.DOWNLOADED}==true)
+                val downloads=main{browser.getChildren(AndroidAutoLibrary.DOWNLOADED,0,20,null)}
+                    .get(15,TimeUnit.SECONDS)
+                assertEquals(id,downloads.value?.singleOrNull()?.mediaId)
+                assertEquals("file",downloads.value?.singleOrNull()
+                    ?.localConfiguration?.uri?.scheme)
+                val queueTracks=listOf("current-fixture","next-fixture").mapIndexed{index,mediaId->
+                    MediaItem.Builder().setMediaId(mediaId).setUri(Uri.fromFile(audio))
+                        .setMediaMetadata(MediaMetadata.Builder()
+                            .setTitle(if(index==0)"Playing" else "Up Next")
+                            .setArtist("Fixture").build()).build()
+                }
+                main{browser.setMediaItems(queueTracks,0,0L)}
+                until("Car queue was not created"){
+                    main{browser.mediaItemCount==2&&browser.currentMediaItemIndex==0}
+                }
+                val upNext=main{browser.getChildren(AndroidAutoLibrary.QUEUE,0,20,null)}
+                    .get(15,TimeUnit.SECONDS)
+                assertEquals(LibraryResult.RESULT_SUCCESS,upNext.resultCode)
+                assertEquals("next-fixture",upNext.value?.singleOrNull()?.mediaId)
+                main{browser.clearMediaItems()}
+            }
+        } finally {
+            prefs.edit().remove(scope+":"+hash(id)).commit()
+            dir.deleteRecursively()
+            audio.delete()
+            JobbiApi.clearSession()
+        }
+    }
+
 }
