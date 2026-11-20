@@ -349,6 +349,7 @@ fun ProfileScreen(vm:MusicViewModel,targetUser:String=vm.account,onUpdated:()->U
                 val image=JobbiImageUpload.prepare(context,uri)
                 JobbiApi.uploadAvatar(image.bytes,image.mime)
                 avatarVersion++
+                vm.avatarUpdated()
                 reload()
                 onUpdated()
             }catch(e:Exception){
