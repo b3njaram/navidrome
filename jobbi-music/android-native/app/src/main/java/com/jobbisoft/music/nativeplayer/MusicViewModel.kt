@@ -304,6 +304,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             "Downloads" -> refreshDownloadedSongs()
             "Home" -> refresh()
             "Library" -> {loadLibrary();refreshCollectionJobs()}
+            "PlaylistDirectory","AlbumDirectory" -> loadLibrary()
+            "SavedImports" -> refreshCollectionJobs()
             "Favorites" -> loadFavorites()
             "Search" -> if(searchQuery.isNotBlank()) search(searchQuery)
             "Artists" -> loadArtists()
