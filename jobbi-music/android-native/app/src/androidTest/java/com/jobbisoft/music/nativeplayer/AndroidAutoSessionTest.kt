@@ -256,6 +256,14 @@ class AndroidAutoSessionTest {
                     .get(15,TimeUnit.SECONDS)
                 assertEquals(LibraryResult.RESULT_SUCCESS,upNext.resultCode)
                 assertEquals("next-fixture",upNext.value?.singleOrNull()?.mediaId)
+                // Selecting a queued song from the car should retain the
+                // entire playback list and preserve Previous/Now Playing.
+                main {browser.setMediaItem(queueTracks[1])}
+                until("Up Next selection discarded the source queue") {
+                    main {browser.mediaItemCount==2 &&
+                        browser.currentMediaItemIndex==1 &&
+                        browser.currentMediaItem?.mediaId=="next-fixture"}
+                }
                 main{browser.clearMediaItems()}
             }
         } finally {
