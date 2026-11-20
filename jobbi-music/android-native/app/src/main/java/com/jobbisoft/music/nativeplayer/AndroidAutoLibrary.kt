@@ -17,6 +17,12 @@ import java.util.concurrent.ConcurrentHashMap
 internal class AndroidAutoLibrary(private val context: Context) {
     companion object {
         const val ROOT = "jobbi:auto:root"
+        const val HOME = "jobbi:auto:home"
+        const val QUEUE = "jobbi:auto:queue"
+        const val HOME_PLAYLISTS = "jobbi:auto:home-playlists"
+        const val HOME_RECENT = "jobbi:auto:home-recent"
+        const val HOME_WEEK = "jobbi:auto:home-week"
+        const val HOME_MIX = "jobbi:auto:home-mix"
         const val FAVORITES = "jobbi:auto:favorites"
         const val PLAYLISTS = "jobbi:auto:playlists"
         const val ALBUMS = "jobbi:auto:albums"
@@ -29,6 +35,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
 
     private val index = ConcurrentHashMap<String, Song>()
     private val browseIndex = ConcurrentHashMap<String, MediaItem>()
+    private val songCollections = ConcurrentHashMap<String, String>()
     @Volatile private var indexedAccount = ""
 
     private fun syncAccount() {
@@ -36,6 +43,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
         if (current != indexedAccount) {
             index.clear()
             browseIndex.clear()
+            songCollections.clear()
             indexedAccount = current
         }
     }
@@ -58,6 +66,12 @@ internal class AndroidAutoLibrary(private val context: Context) {
         if (id == ROOT) return root()
         browseIndex[id]?.let { return it }
         val parent = when (id) {
+            HOME -> "Home"
+            QUEUE -> "Up Next"
+            HOME_PLAYLISTS -> "Your Playlists"
+            HOME_RECENT -> "Jump Back In"
+            HOME_WEEK -> "Most Played This Week"
+            HOME_MIX -> "Made for You"
             FAVORITES -> "Favorite Songs"
             PLAYLISTS -> "Playlists"
             ALBUMS -> "Albums"
@@ -105,43 +119,102 @@ internal class AndroidAutoLibrary(private val context: Context) {
             .build()
     }
 
-    private fun songs(items: List<Song>): List<MediaItem> {
+    private fun songs(items: List<Song>, parentId: String? = null): List<MediaItem> {
         syncAccount()
         return items.filter { it.id.isNotBlank() }.take(500).map {
             index[it.id] = it
+            if(parentId!=null) songCollections[it.id]=parentId
             playable(it)
         }
     }
 
+    private fun hasOfflineIdentity(): Boolean {
+        val name=JobbiApi.username
+        return name.isNotBlank() &&
+            JobbiDownloads.downloadedSongs(context,name,JobbiApi.serverUrl()).isNotEmpty()
+    }
+
+    /** Public only in structure; every child checks the active verified session
+     * or an account-scoped offline identity before revealing private titles.
+     */
     suspend fun children(parentId: String): List<MediaItem> {
         syncAccount()
-        if (parentId == ROOT) {
-            if (JobbiApi.csrf.isBlank() || JobbiApi.username.isBlank()) {
-                return listOf(category(SIGN_IN, "Open Jobbi Music to sign in"))
-            }
+        val online=JobbiApi.csrf.isNotBlank() && JobbiApi.username.isNotBlank()
+        val offline=if(!online)hasOfflineIdentity() else false
+        if(parentId==ROOT) {
+            if(!online&&!offline)
+                return listOf(category(SIGN_IN,"Open Jobbi Music on your phone to sign in"))
+            if(!online) return listOf(
+                category(HOME,"Home"),
+                category(DOWNLOADED,"Downloaded Music"),
+                category(QUEUE,"Up Next"))
             return listOf(
-                category(RECENT, "Recently Added"),
-                category(FAVORITES, "Favorite Songs"),
-                category(PLAYLISTS, "Playlists"),
-                category(ALBUMS, "Albums"),
-                category(DOWNLOADED, "Downloads")
-            )
+                category(HOME,"Home"),
+                category(PLAYLISTS,"Your Playlists"),
+                category(FAVORITES,"Liked Songs"),
+                category(ALBUMS,"Albums"),
+                category(QUEUE,"Up Next"),
+                category(DOWNLOADED,"Downloaded Music"),
+                category(RECENT,"Recently Added"))
         }
-        if (JobbiApi.csrf.isBlank() || JobbiApi.username.isBlank()) return emptyList()
-        return when (parentId) {
-            RECENT -> songs(JobbiApi.home().songs)
-            FAVORITES -> songs(JobbiApi.favorites())
+        if(!online&&!offline)return emptyList()
+        if(parentId==HOME){
+            return if(!online)listOf(
+                category(DOWNLOADED,"Play Downloaded Music"),
+                category(QUEUE,"Up Next"))
+            else listOf(
+                category(HOME_PLAYLISTS,"Your Playlists"),
+                category(HOME_RECENT,"Jump Back In"),
+                category(HOME_WEEK,"Most Played This Week"),
+                category(HOME_MIX,"Made for You"),
+                category(FAVORITES,"Liked Songs"),
+                category(QUEUE,"Up Next"),
+                category(DOWNLOADED,"Offline Downloads"))
+        }
+        if(parentId==DOWNLOADED)return songs(JobbiDownloads.downloadedSongs(
+            context,JobbiApi.username,JobbiApi.serverUrl()),DOWNLOADED)
+        if(!online)return emptyList()
+        return when(parentId){
+            HOME_PLAYLISTS -> JobbiApi.playlists().take(300).map(::playlist)
+            HOME_RECENT -> songs(JobbiApi.recommendations().recentTracks,HOME_RECENT)
+            HOME_WEEK -> songs(JobbiApi.recommendations().topWeek,HOME_WEEK)
+            HOME_MIX -> songs(JobbiApi.recommendations().madeForYou,HOME_MIX)
+            RECENT -> songs(JobbiApi.home().songs,RECENT)
+            FAVORITES -> songs(JobbiApi.favorites(),FAVORITES)
             PLAYLISTS -> JobbiApi.playlists().take(300).map(::playlist)
             ALBUMS -> JobbiApi.albums().take(300).map(::album)
-            DOWNLOADED -> songs(JobbiDownloads.downloadedSongs(
-                context, JobbiApi.username, JobbiApi.serverUrl()))
             else -> when {
                 parentId.startsWith(PREFIX_PLAYLIST) ->
-                    songs(JobbiApi.openPlaylist(parentId.removePrefix(PREFIX_PLAYLIST)).songs)
+                    songs(JobbiApi.openPlaylist(parentId.removePrefix(PREFIX_PLAYLIST)).songs,parentId)
                 parentId.startsWith(PREFIX_ALBUM) ->
-                    songs(JobbiApi.openAlbum(parentId.removePrefix(PREFIX_ALBUM)).songs)
+                    songs(JobbiApi.openAlbum(parentId.removePrefix(PREFIX_ALBUM)).songs,parentId)
                 else -> emptyList()
             }
+        }
+    }
+
+    /** When Android Auto selects a single track, preserve its containing
+     * playlist instead of replacing the entire listening queue with one song.
+     */
+    suspend fun browseQueueForSelection(mediaId: String): Pair<List<MediaItem>,Int>? {
+        syncAccount()
+        val parent=songCollections[mediaId] ?:return null
+        val all=children(parent).filter {it.mediaMetadata.isPlayable==true}
+        val start=all.indexOfFirst{it.mediaId==mediaId}
+        return if(start>=0)all to start else null
+    }
+
+    /** Real Media3 player queue, not a stale NAS playlist cache. */
+    fun upcoming(player: androidx.media3.common.Player): List<MediaItem> {
+        if(JobbiApi.username.isBlank())return emptyList()
+        if(JobbiApi.csrf.isBlank()&&!hasOfflineIdentity())return emptyList()
+        val current=player.currentMediaItemIndex
+        if(current<0)return emptyList()
+        return (current+1 until player.mediaItemCount).take(300).map { position ->
+            val playing=player.getMediaItemAt(position)
+            playing.buildUpon().setMediaMetadata(
+                playing.mediaMetadata.buildUpon().setIsPlayable(true)
+                    .setIsBrowsable(false).build()).build()
         }
     }
 
