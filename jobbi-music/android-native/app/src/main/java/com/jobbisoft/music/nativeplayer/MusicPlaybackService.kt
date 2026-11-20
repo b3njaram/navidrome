@@ -231,6 +231,19 @@ class NativePlayer(private val context: Context) {
     private val songIndex=mutableMapOf<String,Song>()
     private fun timerPrefs()=context.getSharedPreferences("jobbi-playback-timer",Context.MODE_PRIVATE)
 
+    private var visualParityFixture = false
+    fun installVisualParityFixture(song:Song) {
+        check(BuildConfig.DEBUG) { "Visual parity preview unavailable in releases" }
+        visualParityFixture=true
+        queue=listOf(song)
+        active=song
+        currentIndex=0
+        playing=false
+        position=45_000L
+        duration=song.duration*1_000L
+        hasPrevious=false
+        hasNext=false
+    }
     private var pending: Pair<List<Song>,Int>? = null
     private var future: ListenableFuture<MediaController>? = null
     private var listener: Player.Listener? = null
@@ -261,6 +274,7 @@ class NativePlayer(private val context: Context) {
     }
 
     private fun syncFromPlayer(player: Player) {
+        if(visualParityFixture)return // Never replace deterministic screenshot state.
         playing = player.isPlaying
         val index = player.currentMediaItemIndex
         val actual=(0 until player.mediaItemCount).map{n->
@@ -292,6 +306,7 @@ class NativePlayer(private val context: Context) {
     }
 
     fun tick() {
+        if(visualParityFixture)return
         controller?.let { syncFromPlayer(it) }
         sleepUntil=timerPrefs().getLong("pause-at",0L)
     }
