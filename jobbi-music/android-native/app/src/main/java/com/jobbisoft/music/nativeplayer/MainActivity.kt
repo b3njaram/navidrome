@@ -24,6 +24,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -99,6 +100,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
@@ -128,6 +130,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -405,10 +408,14 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                 if(vm.busy||vm.removalBusy) LinearProgressIndicator(modifier=Modifier.fillMaxWidth().align(Alignment.TopCenter))
             }
         }
-        if(showNowPlaying) ModalBottomSheet(onDismissRequest={
-            showNowPlaying=false;openQueueFirst=false
-        }) {
-            NowPlayingScreen(vm,player,startWithQueue=openQueueFirst)
+        if(showNowPlaying) ModalBottomSheet(
+            onDismissRequest={showNowPlaying=false;openQueueFirst=false},
+            sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
+            dragHandle={},
+            containerColor=Color(0xFF201C30)
+        ) {
+            NowPlayingScreen(vm,player,startWithQueue=openQueueFirst,
+                onClose={showNowPlaying=false;openQueueFirst=false})
         }
         if(addSong!=null) AlertDialog(
             onDismissRequest={addSong=null}, title={Text("Add to playlist")},
@@ -1632,24 +1639,28 @@ private fun MiniPlayer(player:NativePlayer,onOpen:()->Unit) {
 }
 
 @Composable
-private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQueue:Boolean=false) {
+private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
+                             startWithQueue:Boolean=false,onClose:()->Unit={}) {
     var viewingQueue by remember { mutableStateOf(startWithQueue) }
-    var sleepMenu by remember { mutableStateOf(false) }
+    var showingLyrics by remember { mutableStateOf(false) }
+    var showingMenu by remember { mutableStateOf(false) }
     if(viewingQueue){
         PlaybackQueueScreen(player,onBack={viewingQueue=false})
         return
     }
-    val song=player.active ?:return
-    var showingLyrics by remember(song.id) { mutableStateOf(false) }
+    val song=player.active ?: return
     val context=LocalContext.current
-    val audioManager=remember(context) {
+    val imageLoader=remember(context) {
+        ImageLoader.Builder(context.applicationContext).okHttpClient(JobbiApi.client).build()
+    }
+    val audioManager=remember(context){
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
-    val maxVolume=remember(audioManager) {
+    val maxVolume=remember(audioManager){
         audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
     }
-    var volume by remember(audioManager) { mutableFloatStateOf(
-        audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat())
+    var volume by remember(audioManager){
+        mutableFloatStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat())
     }
     LaunchedEffect(audioManager){
         while(isActive){
@@ -1657,131 +1668,198 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,startWithQue
             delay(1400)
         }
     }
-    var drag by remember(song.id) { mutableFloatStateOf(-1f) }
-    val max=player.duration.coerceAtLeast(1L).toFloat()
-    Column(Modifier.fillMaxWidth().fillMaxHeight(.92f)
-        .clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp))
-        .background(Brush.verticalGradient(listOf(
-            Color(0xFF443D81),Color(0xFF2A2D56),Color(0xFF161725))))
-        .verticalScroll(rememberScrollState()).padding(horizontal=24.dp),
-        horizontalAlignment=Alignment.CenterHorizontally,
-        verticalArrangement=Arrangement.spacedBy(18.dp)) {
-        Spacer(Modifier.height(10.dp))
-        if(showingLyrics){
-            NativeLyricsPanel(songId=song.id,positionMs=player.position,
-                onSeek={player.seek(it)})
-        }else{
-            Cover(song.cover,258.dp)
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment=Alignment.CenterVertically){
-            Column(Modifier.weight(1f)){
-                Text(song.title,style=MaterialTheme.typography.headlineSmall,
-                    fontWeight=FontWeight.Bold,maxLines=2,color=Color.White)
-                Text(song.artist,style=MaterialTheme.typography.titleMedium,
-                    color=Color.White.copy(alpha=.7f))
-            }
-            IconButton(onClick={vm.toggleFavorite(song)}) {
-                Icon(if(song.id in vm.favoriteIds)Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    "Favorite",tint=JobbiCoral)
-            }
-        }
-        Slider(value=(if(drag>=0f)drag else player.position.toFloat()).coerceIn(0f,max),
-            onValueChange={drag=it},onValueChangeFinished={player.seek(drag.toLong());drag=-1f},
-            valueRange=0f..max,modifier=Modifier.fillMaxWidth(),
-            colors=SliderDefaults.colors(thumbColor=Color.White,
-                activeTrackColor=Color.White,
-                inactiveTrackColor=Color.White.copy(alpha=.27f)))
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-            Text(time((if(drag>=0f)drag.toLong() else player.position)/1000),
-                style=MaterialTheme.typography.labelMedium)
-            Text(time(player.duration/1000),style=MaterialTheme.typography.labelMedium)
-        }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,
-            verticalAlignment=Alignment.CenterVertically) {
-            IconButton(onClick=player::previous,modifier=Modifier.size(64.dp)){
-                Icon(Icons.Rounded.SkipPrevious,"Previous track",Modifier.size(38.dp))
-            }
-            FilledIconButton(onClick=player::toggle,modifier=Modifier.size(86.dp)){
-                Icon(if(player.playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    if(player.playing)"Pause" else "Play",Modifier.size(46.dp))
-            }
-            IconButton(onClick=player::next,modifier=Modifier.size(64.dp)){
-                Icon(Icons.Rounded.SkipNext,"Next track",Modifier.size(38.dp))
-            }
-        }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,
-            verticalAlignment=Alignment.CenterVertically){
-            TextButton(onClick={showingLyrics=!showingLyrics},
-                colors=ButtonDefaults.textButtonColors(contentColor=
-                    if(showingLyrics)JobbiTeal else Color.White)) {
-                Icon(if(showingLyrics)Icons.Rounded.Article else Icons.Rounded.Subject,
-                    contentDescription="Show or hide lyrics")
-                Spacer(Modifier.width(4.dp))
-                Text("Lyrics")
-            }
-            TextButton(onClick=player::toggleShuffle){
-                Icon(Icons.Rounded.Shuffle,
-                    contentDescription=if(player.shuffleEnabled)"Shuffle enabled" else "Shuffle upcoming",
-                    tint=if(player.shuffleEnabled)JobbiSky else Color.White)
-                Spacer(Modifier.width(5.dp))
-                Text("Shuffle")
-            }
-            TextButton(onClick={viewingQueue=true},
-                colors=ButtonDefaults.textButtonColors(contentColor=Color.White)){
-                Icon(Icons.Rounded.QueueMusic,null)
-                Spacer(Modifier.width(5.dp))
-                Text("Queue · ${(player.queue.size-player.currentIndex-1).coerceAtLeast(0)}")
-            }
-            TextButton(onClick=player::cycleRepeat){
-                Icon(if(player.repeatMode==androidx.media3.common.Player.REPEAT_MODE_ONE)
-                    Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,null)
-                Spacer(Modifier.width(5.dp))
-                Text(when(player.repeatMode){
-                    androidx.media3.common.Player.REPEAT_MODE_ONE->"One"
-                    androidx.media3.common.Player.REPEAT_MODE_ALL->"All"
-                    else->"Off"
-                })
-            }
-        }
-        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
-            horizontalArrangement=Arrangement.spacedBy(12.dp)){
-            Icon(Icons.Rounded.VolumeDown,contentDescription="Playback volume",
-                tint=Color.White.copy(alpha=.8f))
-            Slider(value=volume.coerceIn(0f,maxVolume.toFloat()),
-                onValueChange={
-                    volume=it
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC,
-                        it.toInt(),0)
-                },valueRange=0f..maxVolume.toFloat(),modifier=Modifier.weight(1f),
-                colors=SliderDefaults.colors(thumbColor=Color.White,
-                    activeTrackColor=Color.White,
-                    inactiveTrackColor=Color.White.copy(alpha=.25f)))
-            IconButton(onClick={
-                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
-                    AudioManager.ADJUST_SAME,AudioManager.FLAG_SHOW_UI)
-            }){Icon(Icons.Rounded.Speaker,contentDescription="Android audio output controls",
-                tint=Color.White)}
-        }
-        Box {
-            OutlinedButton(onClick={sleepMenu=true},modifier=Modifier.fillMaxWidth()){
-                Icon(Icons.Rounded.Bedtime,null)
-                Spacer(Modifier.width(8.dp))
-                Text(if(player.sleepUntil>0)
-                    "Sleep timer · ${((player.sleepUntil-System.currentTimeMillis())/60_000L+1).coerceAtLeast(0)} min remaining"
-                    else "Sleep timer")
-            }
-            DropdownMenu(expanded=sleepMenu,onDismissRequest={sleepMenu=false}){
-                listOf(15,30,45,60).forEach{minutes->
-                    DropdownMenuItem(text={Text("Pause after $minutes minutes")},
-                        onClick={player.setSleepTimer(minutes);sleepMenu=false})
+    var scrubbing by remember(song.id){mutableFloatStateOf(-1f)}
+    val duration=player.duration.coerceAtLeast(1L)
+    val shownTime=if(scrubbing>=0f)scrubbing.toLong() else player.position
+    val white=Color.White
+    val muted=white.copy(alpha=.75f)
+    Box(Modifier.fillMaxWidth().fillMaxHeight().background(Color(0xFF311F2A))) {
+        // Match the SwiftUI player: derive the atmosphere from the *current
+        // album artwork*. The image remains behind an opaque dark scrim.
+        if(!song.cover.isNullOrBlank())AsyncImage(
+            model=ImageRequest.Builder(context).data(JobbiApi.coverUrl(song.cover))
+                .crossfade(true).build(),
+            imageLoader=imageLoader,contentDescription=null,
+            contentScale=ContentScale.Crop,
+            modifier=Modifier.fillMaxSize().blur(70.dp).graphicsLayer(alpha=.65f)
+        )
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+            listOf(Color(0x35000000),Color(0x3C000000),Color(0xBD000000)))))
+        Column(Modifier.fillMaxSize().widthIn(max=482.dp)
+            .align(Alignment.Center).padding(horizontal=25.dp,vertical=6.dp),
+            horizontalAlignment=Alignment.CenterHorizontally) {
+            // iPhone: fixed 52pt header, centered source independent of buttons.
+            Box(Modifier.fillMaxWidth().height(53.dp)) {
+                Column(Modifier.align(Alignment.Center),
+                    horizontalAlignment=Alignment.CenterHorizontally){
+                    Text("PLAYING FROM",fontSize=10.sp,letterSpacing=1.5.sp,
+                        fontWeight=FontWeight.SemiBold,color=white.copy(alpha=.64f))
+                    Text("Your Library",fontSize=14.sp,fontWeight=FontWeight.SemiBold,
+                        color=white)
                 }
-                DropdownMenuItem(text={Text("Cancel sleep timer")},
-                    onClick={player.setSleepTimer(0);sleepMenu=false})
+                IconButton(onClick=onClose,modifier=Modifier.align(Alignment.CenterStart)
+                    .size(44.dp)){
+                    Icon(Icons.Rounded.KeyboardArrowDown,
+                        contentDescription="Close Now Playing",tint=white,
+                        modifier=Modifier.size(28.dp))
+                }
+                Box(Modifier.align(Alignment.CenterEnd)){
+                    IconButton(onClick={showingMenu=true},modifier=Modifier.size(44.dp)){
+                        Icon(if(player.sleepUntil>0)Icons.Rounded.Bedtime
+                             else Icons.Rounded.MoreHoriz,
+                            contentDescription="More and Sleep Timer",
+                            tint=white,modifier=Modifier.size(24.dp))
+                    }
+                    DropdownMenu(expanded=showingMenu,onDismissRequest={showingMenu=false}){
+                        DropdownMenuItem(text={Text("Toggle Favorite")},
+                            leadingIcon={Icon(Icons.Rounded.Star,null)},
+                            onClick={vm.toggleFavorite(song);showingMenu=false})
+                        DropdownMenuItem(text={Text("Play Next")},
+                            leadingIcon={Icon(Icons.Rounded.PlaylistPlay,null)},
+                            onClick={player.playNext(song);showingMenu=false})
+                        HorizontalDivider()
+                        for(minutes in listOf(15,30,45,60)){
+                            DropdownMenuItem(text={Text("Pause in "+minutes+" minutes")},
+                                onClick={player.setSleepTimer(minutes);showingMenu=false})
+                        }
+                        DropdownMenuItem(text={Text("Cancel sleep timer")},
+                            onClick={player.setSleepTimer(0);showingMenu=false})
+                        if(player.repeatMode==androidx.media3.common.Player.REPEAT_MODE_ALL)
+                            DropdownMenuItem(text={Text("Repeat all is enabled")},
+                                onClick={player.cycleRepeat();showingMenu=false})
+                    }
+                }
+            }
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f),
+                contentAlignment=Alignment.Center){
+                val artSize=minOf((maxWidth-22.dp).coerceAtLeast(130.dp),
+                    (maxHeight-20.dp).coerceAtLeast(130.dp),385.dp)
+                if(showingLyrics){
+                    NativeLyricsPanel(songId=song.id,positionMs=player.position,
+                        onSeek={player.seek(it)},modifier=Modifier.fillMaxWidth())
+                }else{
+                    Cover(song.cover,artSize,modifier=Modifier
+                        .shadow(18.dp,RoundedCornerShape(13.dp)))
+                }
+            }
+            // iPhone: metadata + favorite, scrubber, five playback buttons,
+            // volume and lyrics / output / Up Next in predictable rows.
+            Column(Modifier.fillMaxWidth(),
+                verticalArrangement=Arrangement.spacedBy(10.dp)){
+                Row(Modifier.fillMaxWidth().heightIn(min=55.dp),
+                    verticalAlignment=Alignment.CenterVertically){
+                    Column(Modifier.weight(1f)){
+                        Text(song.title,fontSize=22.sp,fontWeight=FontWeight.Bold,
+                            maxLines=1,overflow=TextOverflow.Ellipsis,color=white)
+                        Text(song.artist,fontSize=18.sp,maxLines=1,
+                            overflow=TextOverflow.Ellipsis,color=muted)
+                    }
+                    IconButton(onClick={vm.toggleFavorite(song)},modifier=Modifier.size(48.dp)){
+                        Icon(if(song.id in vm.favoriteIds)Icons.Rounded.Star
+                             else Icons.Rounded.StarBorder,
+                            contentDescription="Toggle Favorite",tint=white,
+                            modifier=Modifier.size(24.dp))
+                    }
+                }
+                Column(verticalArrangement=Arrangement.spacedBy(1.dp)){
+                    Slider(
+                        value=shownTime.toFloat().coerceIn(0f,duration.toFloat()),
+                        onValueChange={scrubbing=it},
+                        onValueChangeFinished={
+                            if(scrubbing>=0f)player.seek(scrubbing.toLong())
+                            scrubbing=-1f
+                        },
+                        valueRange=0f..duration.toFloat(),
+                        colors=SliderDefaults.colors(thumbColor=white,
+                            activeTrackColor=white,
+                            inactiveTrackColor=white.copy(alpha=.26f)),
+                        modifier=Modifier.fillMaxWidth().height(33.dp))
+                    Row(Modifier.fillMaxWidth(),
+                        horizontalArrangement=Arrangement.SpaceBetween){
+                        Text(time(shownTime/1000),fontSize=11.sp,color=muted)
+                        Text("-"+time((duration-shownTime).coerceAtLeast(0L)/1000),
+                            fontSize=11.sp,color=muted)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().height(65.dp),
+                    verticalAlignment=Alignment.CenterVertically){
+                    IconButton(onClick=player::toggleShuffle,modifier=Modifier.weight(1f)){
+                        Icon(Icons.Rounded.Shuffle,contentDescription="Shuffle",
+                            tint=if(player.shuffleEnabled)JobbiSky else muted,
+                            modifier=Modifier.size(23.dp))
+                    }
+                    IconButton(onClick=player::previous,modifier=Modifier.weight(1f)){
+                        Icon(Icons.Rounded.SkipPrevious,contentDescription="Previous",
+                            tint=white,modifier=Modifier.size(36.dp))
+                    }
+                    IconButton(onClick=player::toggle,modifier=Modifier.weight(1f)){
+                        Icon(if(player.playing)Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription=if(player.playing)"Pause" else "Play",
+                            tint=white,modifier=Modifier.size(47.dp))
+                    }
+                    IconButton(onClick=player::next,modifier=Modifier.weight(1f)){
+                        Icon(Icons.Rounded.SkipNext,contentDescription="Next",
+                            tint=white,modifier=Modifier.size(36.dp))
+                    }
+                    IconButton(onClick=player::cycleRepeat,modifier=Modifier.weight(1f)){
+                        Icon(if(player.repeatMode==androidx.media3.common.Player.REPEAT_MODE_ONE)
+                                Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                            contentDescription="Repeat",
+                            tint=if(player.repeatMode!=androidx.media3.common.Player.REPEAT_MODE_OFF)
+                                JobbiSky else muted,
+                            modifier=Modifier.size(23.dp))
+                    }
+                }
+                Row(Modifier.fillMaxWidth().height(34.dp),
+                    verticalAlignment=Alignment.CenterVertically){
+                    Icon(Icons.Rounded.VolumeDown,contentDescription="Volume down",
+                        tint=muted,modifier=Modifier.size(18.dp))
+                    Slider(value=volume.coerceIn(0f,maxVolume.toFloat()),
+                        onValueChange={value->
+                            volume=value
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC,value.toInt(),0)
+                        },
+                        valueRange=0f..maxVolume.toFloat(),
+                        colors=SliderDefaults.colors(thumbColor=white,
+                            activeTrackColor=white,inactiveTrackColor=white.copy(alpha=.25f)),
+                        modifier=Modifier.weight(1f).padding(horizontal=8.dp))
+                    Icon(Icons.Rounded.VolumeUp,contentDescription="Volume up",
+                        tint=muted,modifier=Modifier.size(18.dp))
+                }
+                Row(Modifier.fillMaxWidth().height(55.dp),
+                    horizontalArrangement=Arrangement.SpaceEvenly,
+                    verticalAlignment=Alignment.CenterVertically){
+                    Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
+                        IconButton(onClick={showingLyrics=!showingLyrics}){
+                            Icon(if(showingLyrics)Icons.Rounded.FormatQuote
+                                 else Icons.Rounded.FormatQuote,
+                                contentDescription=if(showingLyrics)"Hide lyrics" else "Show lyrics",
+                                tint=white.copy(alpha=if(showingLyrics)1f else .8f),
+                                modifier=Modifier.size(26.dp))
+                        }
+                    }
+                    Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
+                        IconButton(onClick={
+                            // Use Android's system volume/output affordance; do
+                            // not fake AirPlay as an Android protocol.
+                            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                                AudioManager.ADJUST_SAME,AudioManager.FLAG_SHOW_UI)
+                        }){
+                            Icon(Icons.Rounded.Speaker,
+                                contentDescription="Audio output",tint=muted,
+                                modifier=Modifier.size(25.dp))
+                        }
+                    }
+                    Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
+                        IconButton(onClick={viewingQueue=true}){
+                            Icon(Icons.Rounded.QueueMusic,
+                                contentDescription="Show Up Next queue",tint=muted,
+                                modifier=Modifier.size(25.dp))
+                        }
+                    }
+                }
             }
         }
-        Text("Native playback · Android Media3",style=MaterialTheme.typography.bodySmall,
-            color=Color.White.copy(alpha=.65f))
     }
 }
 @Composable
