@@ -39,14 +39,10 @@ private struct NativeParityTabHost: View {
                 }
             }
         }
-        .tabViewBottomAccessory(isEnabled: player.hasMusic) {
-            MiniPlayerView(onOpen: {})
-        }
-        // Mirror RootView's native iOS 26 mini player accessory. Omitting
-        // this would make the baseline fundamentally different from a real
-        // signed-in session and invalidate placement comparisons.
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory(isEnabled: true) {
+        // Exactly one player accessory, as in RootView. A duplicate modifier
+        // distorted layout checks while still producing a green screenshot.
+        .tabViewBottomAccessory(isEnabled: player.hasMusic) {
             MiniPlayerView(onOpen: {})
         }
     }
