@@ -2159,10 +2159,16 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                     }
                     Box(Modifier.weight(1f),contentAlignment=Alignment.Center){
                         IconButton(onClick={
-                            // Use Android's system volume/output affordance; do
-                            // not fake AirPlay as an Android protocol.
-                            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
-                                AudioManager.ADJUST_SAME,AudioManager.FLAG_SHOW_UI)
+                            // Android 14+ exposes the genuine device picker,
+                            // including Bluetooth and other system media routes.
+                            // Older devices use Android's native volume panel.
+                            val opened=if(Build.VERSION.SDK_INT>=34)
+                                android.media.MediaRouter2.getInstance(context)
+                                    .showSystemOutputSwitcher()
+                            else false
+                            if(!opened)audioManager.adjustStreamVolume(
+                                AudioManager.STREAM_MUSIC,AudioManager.ADJUST_SAME,
+                                AudioManager.FLAG_SHOW_UI)
                         }){
                             Icon(Icons.Rounded.Speaker,
                                 contentDescription="Audio output",tint=muted,
