@@ -66,7 +66,7 @@ data class Listing(
     val owner: String = ""
 )
 data class SearchResult(val songs: List<Song>, val albums: List<Album>)
-data class HomeResult(val recent: List<Album>, val featured: List<Album>, val songs: List<Song>, val playlists: List<MusicPlaylist>)
+data class HomeResult(val recent: List<Album>, val featured: List<Album>, val songs: List<Song>, val playlists: List<MusicPlaylist>, val played: List<Album> = emptyList())
 data class RecommendationsResult(
     val recentTracks: List<Song> = emptyList(),
     val topWeek: List<Song> = emptyList(),
@@ -289,7 +289,8 @@ object JobbiApi {
             data.optJSONArray("recent").albums(),
             data.optJSONArray("featured").albums(),
             data.optJSONArray("songs").songs(),
-            data.optJSONArray("playlists").playlists()
+            data.optJSONArray("playlists").playlists(),
+            data.optJSONArray("played").albums()
         )
     }
     suspend fun recommendations(city: String = ""): RecommendationsResult {
