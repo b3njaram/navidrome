@@ -450,7 +450,28 @@ class NativePlayer(private val context: Context) {
             }
         }
     }
-    fun seek(ms: Long) { controller?.seekTo(ms.coerceIn(0L,duration.coerceAtLeast(0L))) }
+    fun seek(ms: Long) {
+        val target = ms.coerceIn(0L,duration.coerceAtLeast(0L))
+        if(visualParityFixture){
+            // Instrumentation must verify the same timestamp selected by
+            // touch without seeking a real user's music library.
+            position=target
+            return
+        }
+        val c=controller
+        if(c==null){
+            error="Music playback is still connecting. Try seeking again."
+            return
+        }
+        if(!c.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)){
+            error="This audio stream does not allow timestamp seeking. Try the original-quality stream."
+            return
+        }
+        // Update the now-playing label immediately while ExoPlayer resolves
+        // the selected offset. syncFromPlayer confirms the real position.
+        position=target
+        c.seekTo(target)
+    }
     fun shuffle(enabled: Boolean) { controller?.shuffleModeEnabled=enabled }
     fun repeat(mode: Int) { controller?.repeatMode=mode }
     fun stop() {
