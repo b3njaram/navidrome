@@ -13,7 +13,7 @@ adb install -r jobbi-music/android-native/app/build/outputs/apk/androidTest/debu
 adb shell am instrument -w -r \
   com.jobbisoft.music.nativeplayer.debug.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$ROOT/jobbi-emulator-instrumentation.log"
-grep -Eq 'OK \\(([6-9]|[1-9][0-9]+) tests\\)' "$ROOT/jobbi-emulator-instrumentation.log"
+grep -Eq 'OK \(([6-9]|[1-9][0-9]+) tests\)' "$ROOT/jobbi-emulator-instrumentation.log"
 
 mkdir -p "$ROOT/jobbi-parity-android"
 for screen in home library search more nowplaying; do
