@@ -54,6 +54,7 @@ data class Song(
     val size: Long = 0L
 )
 data class Album(val id: String, val name: String, val artist: String, val cover: String?)
+data class MusicArtist(val id:String,val name:String)
 data class MusicPlaylist(val id: String, val name: String, val count: Int, val public: Boolean)
 data class Listing(
     val title: String,
@@ -108,6 +109,16 @@ fun JSONArray?.songs(): List<Song> = this?.let { a ->
 } ?: emptyList()
 fun JSONArray?.albums(): List<Album> = this?.let { a ->
     (0 until a.length()).mapNotNull { a.optJSONObject(it)?.album()?.takeIf { album -> album.id.isNotBlank() } }
+} ?: emptyList()
+fun JSONArray?.artists():List<MusicArtist> = this?.let { a ->
+    (0 until a.length()).mapNotNull { i ->
+        a.optJSONObject(i)?.let { artist ->
+            val id=artist.optStr("id")
+            id.takeIf(String::isNotBlank)?.let {
+                MusicArtist(id,artist.optStr("name","Unknown artist"))
+            }
+        }
+    }
 } ?: emptyList()
 fun JSONArray?.playlists(): List<MusicPlaylist> = this?.let { a ->
     (0 until a.length()).mapNotNull { a.optJSONObject(it)?.playlist()?.takeIf { playlist -> playlist.id.isNotBlank() } }
@@ -318,6 +329,10 @@ object JobbiApi {
     }
     suspend fun albums(): List<Album> =
         getObject("/api/library/albums?offset=0&size=100").optJSONArray("albums").albums()
+    suspend fun artists():List<MusicArtist> =
+        getObject("/api/library/artists").optJSONArray("artists").artists()
+    suspend fun artistDetails(id:String):JSONObject =
+        getObject("/api/artists/"+Uri.encode(id))
     suspend fun playlists(): List<MusicPlaylist> = getArray("/api/playlists").playlists()
     suspend fun favorites(): List<Song> = getObject("/api/starred").optJSONArray("song").songs()
 
