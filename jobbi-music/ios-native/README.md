@@ -2,6 +2,33 @@
 
 This is a native SwiftUI iOS 26.1+ app, not a WebView. It uses Apple's system Liquid Glass floating tab bar and mini-player, AVPlayer streaming, MediaPlayer lock-screen controls, Keychain credentials, Photos picker, and a responsive NavigationStack interface.
 
+## CarPlay audio: native Home, Playlists, Library, Up Next
+
+The iPhone build includes a real CarPlay audio scene in `CarPlayMusic.swift`,
+registered in `project.yml`. The driving-safe CarPlay tabs are **Home**,
+**Playlists**, **Library**, and **Up Next**. Home shows the authenticated user's
+playlists, recent albums, Jump Back In, Made for You, and offline downloads.
+The shared `MusicPlayer` supports selecting a playlist track while retaining the
+playlist queue, next/previous, and the CarPlay Now Playing **Up Next** button.
+
+**Important: Apple authorization is mandatory.** The CarPlay audio feature needs
+Apple's `com.apple.developer.carplay-audio` entitlement approved on the Apple
+Developer Team that signs the app. Merely building an unsigned IPA or adding a
+scene manifest does **not** activate CarPlay on a physical dashboard.
+When the entitlement has been granted, configure the JobbiMusic target in
+Xcode > Signing & Capabilities with the CarPlay audio capability (the
+`JobbiMusic/CarPlayAudio.entitlements` sample shows its entitlement key), and
+use a signing/provisioning profile that actually contains that entitlement.
+Do **not** add the entitlement to a free-account signing profile; Apple may
+reject the signature. It is deliberately excluded from default CI signing,
+which verifies code compilation but cannot assert physical CarPlay availability.
+
+CarPlay's templates are rendered by iOS and restrict interactions for driver
+safety. It is not a mirrored iPhone UI; account management, friend invitations,
+song deletion, download creation and uploads stay on the phone. Offline music
+previously downloaded on the iPhone remains accessible after Keychain unlock.
+A real CarPlay head-unit test still requires an entitlement-enabled signed build.
+
 ## Build on a Mac
 
 1. Install Xcode 26.6 or newer and XcodeGen (brew install xcodegen).
