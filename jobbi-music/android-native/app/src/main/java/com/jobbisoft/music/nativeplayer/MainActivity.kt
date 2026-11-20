@@ -1420,7 +1420,7 @@ private fun ArtistDetailScreen(vm:MusicViewModel,player:NativePlayer,
                         Text("Play")
                     }
                     OutlinedButton(enabled=vm.artistSongs.isNotEmpty(),
-                        onClick={player.shuffle(vm.artistSongs)}){
+                        onClick={player.play(vm.artistSongs.shuffled())}){
                         Icon(Icons.Rounded.Shuffle,null)
                         Text("Shuffle")
                     }
