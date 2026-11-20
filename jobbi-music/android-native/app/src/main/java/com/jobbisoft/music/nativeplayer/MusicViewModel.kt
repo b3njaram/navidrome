@@ -779,8 +779,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun addToPlaylist(song: Song, id: String) = execute {
-        JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
-        message = "Added ${song.title} to playlist."
+        val receipt=JobbiApi.editPlaylist(id,JSONObject().put("addSongId",song.id))
+        if(!receipt.optBoolean("verified")||
+            receipt.optString("addedSongId")!=song.id)
+            throw JobbiException("Navidrome has not confirmed the song was added. Refresh before retrying.")
+        if(detail?.id==id)detail=JobbiApi.openPlaylist(id)
+        playlists=JobbiApi.playlists()
+        message="Verified: ${song.title} was added to the playlist."
     }
     fun renameOpenedPlaylist(name:String) = execute {
         val current=detail ?: throw IllegalStateException("Open a playlist first.")
