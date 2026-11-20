@@ -396,7 +396,19 @@ app.get('/api/lyrics/:id',mustAuth,route(async(req,res)=>{
 async function binaryProxy(req,res,name){
   const quality=['original','balanced','saver'].includes(req.query.quality)?req.query.quality:'balanced';
   const streamSettings=quality==='original'?{format:'raw'}:quality==='saver'?{format:'mp3',maxBitRate:128}:{format:'mp3',maxBitRate:320};
-  const url=subsonicUrl(req.user,name,{id:req.params.id,...(name==='stream'?streamSettings:{})});
+  // OpenSubsonic transcodeOffset: an uncached transcoded MP3 may not honor
+  // Range. Restarting the stream from this *time* is the server-supported
+  // alternative used by the Android native player. Reject unsafe offsets.
+  const requestOffset=req.query.timeOffset;
+  let streamOffset={};
+  if(name==='stream'&&requestOffset!==undefined){
+    const encoded=String(requestOffset);
+    if(!/^(0|[1-9][0-9]{0,5})$/.test(encoded)||Number(encoded)>86400)
+      return res.status(400).json({error:'Time offset must be whole seconds from 0 to 86400.'});
+    streamOffset={timeOffset:Number(encoded)};
+  }
+  const url=subsonicUrl(req.user,name,{id:req.params.id,
+    ...(name==='stream'?{...streamSettings,...streamOffset}:{})});
   const headers={};if(req.headers.range)headers.Range=req.headers.range;
   // A fixed 120-second abort would truncate longer songs. Limit only the initial connection.
   const controller = new AbortController();
