@@ -1,3 +1,32 @@
+## Native Android 2.0 — iPhone interface parity
+
+The **SwiftUI iPhone app** in `ios-native/JobbiMusic/` is the screen and
+feature reference. The Android counterpart stays 100% native: **Kotlin,
+Jetpack Compose, Material 3 and Media3**, not a WebView or a Swift translation.
+Android navigation follows the current iPhone's four tabs (Home, Community,
+Library, Search); all Account/More features are reached from the profile photo
+in the top-right corner.
+
+Parity landmarks:
+- Six-color Home/Now Playing palette, featured Personal Radio card, native
+  recommendation shelves, and account avatar sourced from the shared profile.
+- Library category navigation including Artists, Albums, Songs, Favorites,
+  Downloads and saved NAS imports, while preserving bulk playlist actions.
+- Search switches between My Library and Find New Music; Soulseek FLAC/MP3 and
+  Invidious fallback remain under the same authenticated NAS APIs.
+- Full-screen synced/unsynced lyrics from `/api/lyrics/:id`, tappable timed
+  lines, queue, seek, shuffle/repeat, sleep timer, local playback volume and
+  Android system audio output controls.
+- Android-only capabilities retained: Media3 foreground playback, native
+  Bluetooth / lock-screen controls, Android Auto, WorkManager/DownloadManager
+  offline downloads, photo uploads, admin tools, and account-scoped storage.
+
+Android system UI, permissions, and accessibility remain native rather than
+trying to reproduce private Apple APIs. UI parity does **not** mean a
+byte-for-byte copy of SwiftUI geometry. Keep the backend and data safe: a
+playlist-entry removal does not delete server audio; server quarantine does
+not delete device downloads. Existing feature endpoints must not be removed.
+
 ### Samsung lock-screen progress and previous-track controls (v1.0.12)
 
 Android's system media card needs a positive track duration to show elapsed-time progress and an explicit previous command before it offers a back button. Some Navidrome transcoded streams report unknown durations through HTTP even though the Subsonic track catalog knows the real song length.
