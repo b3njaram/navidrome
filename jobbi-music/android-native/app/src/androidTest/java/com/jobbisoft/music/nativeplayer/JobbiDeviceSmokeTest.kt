@@ -16,6 +16,8 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModelProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.test.onAllNodesWithText
 import org.junit.Rule
 import kotlinx.coroutines.runBlocking
@@ -181,6 +183,39 @@ class JobbiDeviceSmokeTest {
             rule.onAllNodesWithContentDescription("Song position",
                 useUnmergedTree=true).fetchSemanticsNodes().isEmpty()
         }
+    }
+
+    @Test fun floatingTabsAndMiniPlayerStayAboveAndroidSystemNavigationBar(){
+        val vm=ViewModelProvider(rule.activity)[MusicViewModel::class.java]
+        rule.waitUntil(25000){!vm.restoringSession}
+        rule.runOnUiThread {
+            vm.installParityScreenshotFixture()
+            vm.showParityScreenshotScreen("Home")
+        }
+        rule.waitUntil(10000) {
+            rule.onAllNodesWithContentDescription("Open Now Playing",useUnmergedTree=true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.waitForIdle()
+        val decor=rule.activity.window.decorView
+        val navBottom=ViewCompat.getRootWindowInsets(decor)
+            ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+        assertTrue("Android is not reporting a navigation bar; cannot exercise the bottom-insets regression",
+            navBottom>0)
+        val safeBottom=decor.height-navBottom
+        val tolerance=decor.resources.displayMetrics.density*3f
+        // Previous APK overlapped both the 3-button navigation row and
+        // Waydroid's selection/home/back strip. Test the actual rendered
+        // clickable surfaces, not merely whether icons exist in the tree.
+        for(label in listOf("Home tab","Community tab","Library tab",
+            "Search tab","Open Now Playing")) {
+            val bounds=rule.onNodeWithContentDescription(label,useUnmergedTree=true)
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue("$label is hidden behind Android navigation: bottom="+
+                bounds.bottom+" safeBottom="+safeBottom+" navInset="+navBottom,
+                bounds.bottom<=safeBottom+tolerance)
+        }
+        println("JOBBI_NAV_INSET_SAFE bottomInset=$navBottom safeBottom=$safeBottom")
     }
 
 }
