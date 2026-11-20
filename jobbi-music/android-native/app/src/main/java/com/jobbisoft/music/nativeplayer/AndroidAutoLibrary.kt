@@ -29,10 +29,12 @@ internal class AndroidAutoLibrary(private val context: Context) {
         const val ARTISTS = "jobbi:auto:artists"
         const val RECENT = "jobbi:auto:recent"
         const val DOWNLOADED = "jobbi:auto:downloaded"
+        const val OFFLINE_PLAYLISTS = "jobbi:auto:offline-playlists"
         const val SIGN_IN = "jobbi:auto:sign-in"
         const val PREFIX_PLAYLIST = "jobbi:auto:playlist:"
         const val PREFIX_ALBUM = "jobbi:auto:album:"
         const val PREFIX_ARTIST = "jobbi:auto:artist:"
+        const val PREFIX_OFFLINE_PLAYLIST = "jobbi:auto:offline-playlist:"
     }
 
     private val index = ConcurrentHashMap<String, Song>()
@@ -80,6 +82,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
             ARTISTS -> "Artists"
             RECENT -> "Recently Added"
             DOWNLOADED -> "Downloads"
+            OFFLINE_PLAYLISTS -> "Offline Playlists"
             SIGN_IN -> "Open Jobbi Music on your phone to sign in"
             else -> null
         }
@@ -153,6 +156,7 @@ internal class AndroidAutoLibrary(private val context: Context) {
                 return listOf(category(SIGN_IN,"Open Jobbi Music on your phone to sign in"))
             if(!online) return listOf(
                 category(HOME,"Home"),
+                category(OFFLINE_PLAYLISTS,"Downloaded Playlists"),
                 category(DOWNLOADED,"Downloaded Music"),
                 category(QUEUE,"Up Next"))
             return listOf(
@@ -163,11 +167,13 @@ internal class AndroidAutoLibrary(private val context: Context) {
                 category(ARTISTS,"Artists"),
                 category(QUEUE,"Up Next"),
                 category(DOWNLOADED,"Downloaded Music"),
+                category(OFFLINE_PLAYLISTS,"Downloaded Playlists"),
                 category(RECENT,"Recently Added"))
         }
         if(!online&&!offline)return emptyList()
         if(parentId==HOME){
             return if(!online)listOf(
+                category(OFFLINE_PLAYLISTS,"Downloaded Playlists"),
                 category(DOWNLOADED,"Play Downloaded Music"),
                 category(QUEUE,"Up Next"))
             else listOf(
@@ -177,10 +183,25 @@ internal class AndroidAutoLibrary(private val context: Context) {
                 category(HOME_MIX,"Made for You"),
                 category(FAVORITES,"Liked Songs"),
                 category(QUEUE,"Up Next"),
-                category(DOWNLOADED,"Offline Downloads"))
+                category(DOWNLOADED,"Offline Downloads"),
+                category(OFFLINE_PLAYLISTS,"Downloaded Playlists"))
         }
         if(parentId==DOWNLOADED)return songs(JobbiDownloads.downloadedSongs(
             context,JobbiApi.username,JobbiApi.serverUrl()),DOWNLOADED)
+        if(parentId==OFFLINE_PLAYLISTS)return JobbiDownloads.completedCollections(
+            context,JobbiApi.username,JobbiApi.serverUrl()).map { group ->
+            category(PREFIX_OFFLINE_PLAYLIST+group.id,group.title,
+                "${group.songs.size} downloaded songs").also {
+                browseIndex[it.mediaId]=it
+            }
+        }
+        if(parentId.startsWith(PREFIX_OFFLINE_PLAYLIST)){
+            val id=parentId.removePrefix(PREFIX_OFFLINE_PLAYLIST)
+            val group=JobbiDownloads.completedCollections(
+                context,JobbiApi.username,JobbiApi.serverUrl())
+                .firstOrNull{it.id==id} ?:return emptyList()
+            return songs(group.songs,parentId)
+        }
         if(!online)return emptyList()
         return when(parentId){
             HOME_PLAYLISTS -> JobbiApi.playlists().take(300).map(::playlist)
