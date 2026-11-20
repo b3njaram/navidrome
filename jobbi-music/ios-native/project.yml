@@ -46,7 +46,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.jobbisoft.jobbi.music
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Jobbi Music
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        # Preserve the explicitly configured CarPlay scene from info.properties;
+        # automatic scene-manifest generation overwrites it with an empty map.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         GENERATE_INFOPLIST_FILE: YES
         MARKETING_VERSION: "1.2.1"
