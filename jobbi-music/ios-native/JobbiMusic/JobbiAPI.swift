@@ -29,6 +29,17 @@ final class JobbiAPI: ObservableObject {
     @Published var busy = false
     @Published var error: String?
 
+    #if DEBUG
+    // Test-runner-only session. It cannot make network requests, and is never
+    // compiled into the production/unsigned device release.
+    private(set) var visualParityFixture = false
+    func installVisualParityFixture() {
+        visualParityFixture = true
+        user = UserSession(username: "fixture.listener", admin: false,
+                           csrfToken: "fixture-do-not-send")
+    }
+    #endif
+
     static func validateServer(_ raw: String) throws -> String {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -46,6 +57,9 @@ final class JobbiAPI: ObservableObject {
     }
 
     func url(_ path: String) -> URL? {
+        #if DEBUG
+        if visualParityFixture { return nil } // No accidental real NAS calls.
+        #endif
         guard path.hasPrefix("/api/"), !path.contains(".."),
               !path.hasPrefix("//") else { return nil }
         return URL(string: server + path)
