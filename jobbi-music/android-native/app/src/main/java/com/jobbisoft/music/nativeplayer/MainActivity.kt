@@ -12,6 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -2226,7 +2228,20 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
     var showingLyrics by remember { mutableStateOf(false) }
     var showingMenu by remember { mutableStateOf(false) }
     if(viewingQueue){
-        PlaybackQueueScreen(player,onBack={viewingQueue=false})
+        // Up Next stays truly full-screen and readable when Android itself
+        // uses a light theme; the player is intentionally always dark.
+        MaterialTheme(colorScheme=darkColorScheme(
+            primary=Color(0xFFA4CEFF),
+            onSurface=Color.White,
+            onSurfaceVariant=Color(0xC8FFFFFF),
+            surface=Color(0xFF171A27),
+            secondaryContainer=Color(0x3A93C5FF)
+        )){
+            Surface(modifier=Modifier.fillMaxSize(),
+                color=Color(0xFF14151F),contentColor=Color.White) {
+                PlaybackQueueScreen(player,onBack={viewingQueue=false})
+            }
+        }
         return
     }
     val song=player.active ?: return
@@ -2322,12 +2337,20 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
                 contentAlignment=Alignment.Center){
                 val artSize=minOf(maxWidth.coerceAtLeast(130.dp),
                     (maxHeight-20.dp).coerceAtLeast(130.dp),385.dp)
-                if(showingLyrics){
-                    NativeLyricsPanel(songId=song.id,positionMs=player.position,
-                        onSeek={player.seek(it)},modifier=Modifier.fillMaxWidth())
-                }else{
-                    Cover(song.cover,artSize,modifier=Modifier
-                        .shadow(18.dp,RoundedCornerShape(13.dp)))
+                // The lyrics/artwork switch is animated instead of abruptly
+                // replacing the square cover with a dense text panel.
+                Crossfade(targetState=showingLyrics,
+                    animationSpec=tween(durationMillis=230),
+                    label="Now Playing lyrics and artwork") { lyricsOpen ->
+                    Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                        if(lyricsOpen){
+                            NativeLyricsPanel(songId=song.id,positionMs=player.position,
+                                onSeek={player.seek(it)},modifier=Modifier.fillMaxWidth())
+                        }else{
+                            Cover(song.cover,artSize,modifier=Modifier
+                                .shadow(18.dp,RoundedCornerShape(13.dp)))
+                        }
+                    }
                 }
             }
             // iPhone: metadata + favorite, scrubber, five playback buttons,
@@ -2474,7 +2497,7 @@ private fun NowPlayingScreen(vm: MusicViewModel,player:NativePlayer,
 }
 @Composable
 private fun PlaybackQueueScreen(player:NativePlayer,onBack:()->Unit) {
-    Column(Modifier.fillMaxWidth().fillMaxHeight(.83f).padding(horizontal=13.dp),
+    Column(Modifier.fillMaxSize().padding(horizontal=17.dp,vertical=10.dp),
         verticalArrangement=Arrangement.spacedBy(8.dp)){
         Row(Modifier.fillMaxWidth().padding(vertical=6.dp),
             verticalAlignment=Alignment.CenterVertically){
