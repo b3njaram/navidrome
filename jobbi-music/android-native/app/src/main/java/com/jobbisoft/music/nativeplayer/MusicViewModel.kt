@@ -377,6 +377,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             JobbiDownloads.rememberIndividual(getApplication(),account,server,song.id)
         }
     }
+    fun removeOfflineSong(song:Song)=execute {
+        val removed=withContext(Dispatchers.IO){
+            JobbiDownloads.removeSong(getApplication(),account,server,song.id)
+        }
+        refreshDownloadedSongs()
+        message=if(removed)"Removed only the device copy of "+song.title+
+            ". NAS recording and playlists are unchanged."
+        else "No offline copy of "+song.title+" was found."
+    }
     fun hasOfflinePlaylist(id:String):Boolean =
         account.isNotBlank() &&
             JobbiDownloads.hasPlaylist(getApplication(),account,server,id)
