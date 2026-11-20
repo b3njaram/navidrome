@@ -628,28 +628,45 @@ private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)
     LazyColumn(contentPadding=PaddingValues(bottom=25.dp),
         verticalArrangement=Arrangement.spacedBy(22.dp)) {
         item {
-            Column(Modifier.padding(horizontal=22.dp,vertical=10.dp)){
-                Text("Made for your ears",style=MaterialTheme.typography.labelMedium,
-                    color=MaterialTheme.colorScheme.primary)
+            Column(Modifier.padding(horizontal=18.dp,vertical=10.dp)){
+                Text("MADE FOR YOUR EARS",fontSize=11.sp,
+                    fontWeight=FontWeight.Bold,letterSpacing=1.3.sp,
+                    color=JobbiTeal)
                 Spacer(Modifier.height(8.dp))
-                Text("Your soundtrack.",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)
+                Text("Listen Now",fontSize=29.sp,fontWeight=FontWeight.Bold,
+                    letterSpacing=(-0.7).sp)
                 Spacer(Modifier.height(14.dp))
-                Card(
-                    modifier=Modifier.fillMaxWidth(),
-                    colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer),
-                    shape=RoundedCornerShape(28.dp)
-                ){
-                    Column(Modifier.padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Rounded.AutoAwesome,null,Modifier.size(32.dp),
-                            tint=MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("Good music. Beautifully yours.",style=MaterialTheme.typography.headlineSmall,
-                            fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("Pick up where the music left off.",
-                            color=MaterialTheme.colorScheme.onPrimaryContainer)
+                Box(Modifier.fillMaxWidth().height(310.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Brush.linearGradient(
+                        listOf(JobbiIndigo,JobbiViolet,Color(0xFF0C6571))))) {
+                    vm.home.songs.firstOrNull()?.cover?.let { art ->
+                        Cover(art,209.dp,modifier=Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x=43.dp,y=(-22).dp)
+                            .graphicsLayer(rotationZ=9f)
+                            .shadow(19.dp,RoundedCornerShape(18.dp)))
+                    }
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                        listOf(Color.Transparent,Color(0x66000000),Color(0xAA000000)))))
+                    Column(Modifier.align(Alignment.BottomStart).padding(22.dp),
+                        verticalArrangement=Arrangement.spacedBy(9.dp)){
+                        Text("PERSONAL RADIO",fontSize=11.sp,letterSpacing=1.7.sp,
+                            fontWeight=FontWeight.Bold,color=Color.White.copy(alpha=.87f))
+                        Text("Your music.\nYour way.",fontSize=31.sp,
+                            fontWeight=FontWeight.Bold,lineHeight=34.sp,
+                            color=Color.White,modifier=Modifier.widthIn(max=240.dp))
+                        Text("The next great song is already in your library.",
+                            style=MaterialTheme.typography.bodySmall,color=Color.White.copy(alpha=.9f),
+                            modifier=Modifier.widthIn(max=285.dp))
                         Button(onClick={player.play(vm.home.songs)},
-                            enabled=vm.home.songs.isNotEmpty()) {
-                            Icon(Icons.Rounded.PlayArrow,null)
-                            Spacer(Modifier.width(6.dp));Text("Play something good")
+                            enabled=vm.home.songs.isNotEmpty(),
+                            colors=ButtonDefaults.buttonColors(
+                                containerColor=Color.White,contentColor=Color(0xFF14131D)),
+                            shape=CircleShape){
+                            Icon(Icons.Rounded.PlayArrow,contentDescription=null)
+                            Spacer(Modifier.width(5.dp))
+                            Text("Play something good",fontWeight=FontWeight.SemiBold)
                         }
                     }
                 }
@@ -670,16 +687,16 @@ private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)
                         color=MaterialTheme.colorScheme.error)
             }
         }
-        item { RecommendationShelf("Recently Added Songs",vm.recommendations?.recentTracks.orEmpty(),player) }
+        item { RecommendationShelf("Recently Added Songs",vm.recommendations?.recentTracks.orEmpty(),player,accent=JobbiTeal) }
         item { RecommendationShelf("Top This Week",vm.recommendations?.topWeek.orEmpty(),player,
-            subtitle="Your most played tracks in the last 7 days",showPlays=true) }
+            subtitle="Your most played tracks in the last 7 days",showPlays=true,accent=JobbiCoral) }
         item { RecommendationShelf("Top This Month",vm.recommendations?.topMonth.orEmpty(),player,
-            subtitle="Your most played tracks in the last 30 days",showPlays=true) }
+            subtitle="Your most played tracks in the last 30 days",showPlays=true,accent=JobbiViolet) }
         item { RecommendationShelf("Made for You",vm.recommendations?.madeForYou.orEmpty(),player,
-            subtitle="Favorite artists, familiar tracks and discoveries") }
+            subtitle="Favorite artists, familiar tracks and discoveries",accent=JobbiSky) }
         item { RecommendationShelf(vm.recommendations?.timeLabel ?: "Daily Mix",
             vm.recommendations?.timeMix.orEmpty(),player,
-            subtitle="Recommended for the time of day") }
+            subtitle="Recommended for the time of day",accent=JobbiAmber) }
         if(vm.recommendations!=null&&vm.recommendations!!.topMonth.isEmpty())
             item { Text("Weekly and monthly charts start tracking from this update. "+
                 "Older Navidrome totals don't have reliable per-day dates.",
@@ -703,11 +720,15 @@ private fun HomeScreen(vm: MusicViewModel, player: NativePlayer,onSongAdd:(Song)
 
 @Composable
 private fun RecommendationShelf(title:String,songs:List<Song>,player:NativePlayer,
-                                subtitle:String="",showPlays:Boolean=false) {
+                                subtitle:String="",showPlays:Boolean=false,
+                                accent:Color=JobbiIndigo) {
     if(songs.isEmpty())return
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
         Row(Modifier.fillMaxWidth().padding(horizontal=22.dp),
             verticalAlignment=Alignment.CenterVertically){
+            Box(Modifier.width(4.dp).height(31.dp)
+                .clip(RoundedCornerShape(5.dp)).background(accent))
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)){
                 Text(title,style=MaterialTheme.typography.titleLarge,
                     fontWeight=FontWeight.Bold)
@@ -715,7 +736,7 @@ private fun RecommendationShelf(title:String,songs:List<Song>,player:NativePlaye
                     style=MaterialTheme.typography.bodySmall,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            TextButton(onClick={player.play(songs)}){
+            TextButton(onClick={player.play(songs)},colors=ButtonDefaults.textButtonColors(contentColor=accent)){
                 Icon(Icons.Rounded.PlayArrow,null)
                 Text("Play all")
             }
@@ -774,7 +795,7 @@ private fun WeatherCitySection(vm:MusicViewModel,player:NativePlayer){
     if(vm.weatherCity.isNotBlank())
         RecommendationShelf(vm.recommendations?.weatherLabel ?: "Weather Mix",
             vm.recommendations?.weatherMix.orEmpty(),player,
-            subtitle="Songs picked using your music tags and current weather")
+            subtitle="Songs picked using your music tags and current weather",accent=JobbiSky)
 }
 
 @Composable
