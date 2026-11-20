@@ -90,6 +90,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -1068,20 +1071,24 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Set<Int>>(emptySet()) }
     Column {
-        Row(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=7.dp),
-            horizontalArrangement=Arrangement.spacedBy(9.dp)){
-            FilterChip(selected=source==0,onClick={source=0},
-                label={Text("My Library")},
-                leadingIcon={Icon(Icons.Rounded.LibraryMusic,null)})
-            FilterChip(selected=source==1,onClick={source=1},
-                label={Text("Find New Music")},
-                leadingIcon={Icon(Icons.Rounded.TravelExplore,null)})
+        SingleChoiceSegmentedButtonRow(
+            modifier=Modifier.fillMaxWidth()
+                .padding(horizontal=18.dp,vertical=8.dp)){
+            SegmentedButton(
+                selected=source==0,onClick={source=0},
+                shape=SegmentedButtonDefaults.itemShape(index=0,count=2),
+                label={Text("My Library")})
+            SegmentedButton(
+                selected=source==1,onClick={source=1},
+                shape=SegmentedButtonDefaults.itemShape(index=1,count=2),
+                label={Text("Find New Music")})
         }
         if(source==1){
             // Same source choices as the native iPhone Search tab. All existing
             // Soulseek / Invidious / NAS import controls stay in this screen.
             ServerDiscoverScreen(onBack={source=0},
-                initialQuery=vm.searchQuery.ifBlank{vm.serverSearchSeed})
+                initialQuery=vm.searchQuery.ifBlank{vm.serverSearchSeed},
+                showBack=false)
         }else{
         OutlinedTextField(vm.searchQuery,{selecting=false;selected=emptySet();vm.search(it)},
             modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=12.dp),
