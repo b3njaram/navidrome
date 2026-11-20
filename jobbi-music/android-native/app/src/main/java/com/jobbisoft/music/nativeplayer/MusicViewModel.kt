@@ -96,6 +96,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var savedSignInAvailable by androidx.compose.runtime.mutableStateOf(false)
         private set
+    // For the login UI only: account name is not secret, but the saved
+    // password never leaves encrypted Android Keystore-backed storage.
+    var savedUsername by androidx.compose.runtime.mutableStateOf("")
+        private set
     var isAdmin by androidx.compose.runtime.mutableStateOf(false)
         private set
     var busy by androidx.compose.runtime.mutableStateOf(false)
@@ -247,6 +251,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     SecureLoginStorage.load(getApplication())
                 }
                 val saved=remembered
+                savedUsername=saved?.username.orEmpty()
                 savedSignInAvailable=saved!=null
                 if(saved!=null){
                     JobbiApi.changeServer(getApplication(),saved.server)
@@ -282,6 +287,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         runCatching{SecureLoginStorage.clear(getApplication())}
                     }
                     savedSignInAvailable=false
+                    savedUsername=""
                     signedIn=false
                     offlineMode=false
                     account=""
@@ -394,6 +400,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             savedSignInAvailable = remember
+            savedUsername=if(remember)confirmedAccount else ""
         }catch (_: Exception){
             savedSignInAvailable = false
             message = "Signed in, but could not safely save your login. "+
@@ -406,6 +413,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         // when the server is unavailable. Never silently log in after Sign out.
         withContext(Dispatchers.IO) { SecureLoginStorage.clear(getApplication()) }
         savedSignInAvailable = false
+        savedUsername = ""
         if(!offlineMode)runCatching { JobbiApi.logout() }
         JobbiApi.clearSession()
         signedIn = false
