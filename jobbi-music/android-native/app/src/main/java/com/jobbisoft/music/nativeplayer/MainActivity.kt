@@ -399,7 +399,7 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                                 onClick={vm.select(destination.name)},
                                 icon={Icon(destination.icon,contentDescription=null)},
                                 label={Text(destination.name)},
-                                alwaysShowLabel=false
+                                alwaysShowLabel=true
                             )
                         }
                     }
