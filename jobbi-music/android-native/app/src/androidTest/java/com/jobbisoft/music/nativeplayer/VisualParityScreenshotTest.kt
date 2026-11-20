@@ -1,0 +1,61 @@
+package com.jobbisoft.music.nativeplayer
+
+import android.app.Application
+import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onRoot
+import androidx.lifecycle.ViewModelProvider
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.File
+
+/**
+ * Screenshots of real production Compose screens using deterministic test-only
+ * data. No NAS sign-in, streaming, deletions, or HTTP requests are required.
+ * The screenshots are uploaded as an Actions artifact for comparison with
+ * iPhone SwiftUI screenshots of the same fixture.
+ */
+@RunWith(AndroidJUnit4::class)
+class VisualParityScreenshotTest {
+    @get:Rule val rule=createAndroidComposeRule<MainActivity>()
+
+    @Test fun captureHomeLibrarySearchAndAccount() {
+        val vm=ViewModelProvider(rule.activity)[MusicViewModel::class.java]
+        rule.waitUntil(25000) { !vm.restoringSession }
+        rule.runOnUiThread { vm.installParityScreenshotFixture() }
+        rule.waitForIdle()
+        val labels=linkedMapOf(
+            "Home" to listOf("PERSONAL RADIO","Play something good"),
+            "Library" to listOf("Playlists","Artists","Favorite Songs"),
+            "Search" to listOf("My Library","Find New Music"),
+            "More" to listOf("Account","Signed in as")
+        )
+        val application=ApplicationProvider.getApplicationContext<Application>()
+        val folder=File(application.getExternalFilesDir(null),"jobbi-parity")
+        assertTrue("Cannot create test-only screenshot directory",folder.mkdirs()||folder.isDirectory)
+        for((screen,texts) in labels){
+            rule.runOnUiThread { vm.showParityScreenshotScreen(screen) }
+            rule.waitForIdle()
+            for(label in texts){
+                assertTrue("Missing $screen screen control: $label",
+                    rule.onAllNodesWithText(label,substring=true,useUnmergedTree=true)
+                        .fetchSemanticsNodes().isNotEmpty())
+            }
+            val screenshot=rule.onRoot().captureToImage().asAndroidBitmap()
+            val output=File(folder,"parity-android-"+screen.lowercase()+".png")
+            output.outputStream().use { stream ->
+                assertTrue("Failed to export screenshot "+output.name,
+                    screenshot.compress(Bitmap.CompressFormat.PNG,100,stream))
+            }
+            assertTrue("Screenshot is empty: "+output.name,output.length()>1000)
+            screenshot.recycle()
+        }
+    }
+}
