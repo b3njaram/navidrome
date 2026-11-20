@@ -92,7 +92,21 @@ jobs:
           arch: x86_64
           profile: pixel_4
           disable-animations: true
-          script: gradle --no-daemon -p jobbi-music/android-native :app:connectedDebugAndroidTest
+          script: |
+            gradle --no-daemon -p jobbi-music/android-native :app:connectedDebugAndroidTest
+            mkdir -p "$GITHUB_WORKSPACE/jobbi-parity-android"
+            # The emulator is still alive inside this action's script.
+            adb pull /sdcard/Android/data/com.jobbisoft.music.nativeplayer.debug/files/jobbi-parity/. \
+              "$GITHUB_WORKSPACE/jobbi-parity-android/"
+            test "$(find "$GITHUB_WORKSPACE/jobbi-parity-android" -name 'parity-android-*.png' | wc -l)" -ge 4
+      - name: Upload native Android signed-in screen captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jobbi-Android-Parity-Screenshots
+          path: jobbi-parity-android/parity-android-*.png
+          retention-days: 14
+          if-no-files-found: warn
       - name: Upload Android instrumented test reports
         if: always()
         uses: actions/upload-artifact@v4
