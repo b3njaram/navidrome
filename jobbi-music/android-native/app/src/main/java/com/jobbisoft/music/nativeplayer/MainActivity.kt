@@ -759,9 +759,11 @@ private fun CredentialField(
 
 @Composable
 private fun LoginScreen(vm:MusicViewModel) {
-    var user by remember { mutableStateOf("") }
+    var user by remember(vm.savedUsername) { mutableStateOf(vm.savedUsername) }
+    // Password is intentionally not prefilled into a Compose text field.
+    // "Reconnect to server" uses the AES-GCM encrypted saved credentials.
     var password by remember { mutableStateOf("") }
-    var server by remember { mutableStateOf(vm.server) }
+    var server by remember(vm.server) { mutableStateOf(vm.server) }
     var keepSignedIn by remember { mutableStateOf(true) }
     val dim=MaterialTheme.colorScheme.onSurfaceVariant
     val isDark=isSystemInDarkTheme()
