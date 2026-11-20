@@ -66,6 +66,7 @@ final class VisualParityScreenshotTests: XCTestCase {
         library.albums = (home.recent ?? []) + (home.featured ?? [])
         library.playlists = home.playlists ?? []
         library.favorites = [home.songs![0]]
+        player.installVisualParityFixture(home.songs ?? [])
         library.recommendations = try JSONDecoder().decode(Recommendations.self, from: Data("""
         {"recentTracks":[{"id":"fixture-track-2","title":"Ocean Lights","artist":"Jobbi Studio"}],
          "topWeek":[{"id":"fixture-track-1","title":"Sunset Drive","artist":"Jobbi Studio"}],
@@ -83,7 +84,8 @@ final class VisualParityScreenshotTests: XCTestCase {
             ("home", AnyView(NativeParityTabHost(selected: 0))),
             ("library", AnyView(NativeParityTabHost(selected: 2))),
             ("search", AnyView(NativeParityTabHost(selected: 3))),
-            ("more", AnyView(NavigationStack { SettingsView() }))
+            ("more", AnyView(NavigationStack { SettingsView() })),
+            ("nowplaying", AnyView(NowPlayingView()))
         ]
 
         for (name, content) in pages {
