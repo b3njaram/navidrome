@@ -29,4 +29,25 @@ class AndroidOfflineQueueTest {
         assertTrue(shouldEnqueueDownload(null,false))
         assertFalse(shouldEnqueueDownload(DownloadManager.STATUS_SUCCESSFUL,true))
     }
+    @Test fun completedOfflineFilesRemainPlayableAfterSystemDownloadHistoryIsRemoved(){
+        val done=DownloadManager.STATUS_SUCCESSFUL
+        val failed=DownloadManager.STATUS_FAILED
+        // Android may prune its DownloadManager record while retaining the
+        // perfectly valid, app-private audio file on disk.
+        assertTrue(isVerifiedOfflineRecording(done,failed,8000L,8000L))
+        assertTrue(isVerifiedOfflineRecording(done,null,8000L,0L))
+        assertTrue(isVerifiedOfflineRecording(failed,failed,8000L,8000L))
+        assertTrue(isVerifiedOfflineRecording(DownloadManager.STATUS_PENDING,
+            done,8000L,0L))
+    }
+    @Test fun partialTransfersNeverPretendToBeCompletedOfflineMusic(){
+        val pending=DownloadManager.STATUS_PENDING
+        val failed=DownloadManager.STATUS_FAILED
+        assertFalse(isVerifiedOfflineRecording(pending,pending,100L,8000L))
+        assertFalse(isVerifiedOfflineRecording(failed,null,100L,8000L))
+        assertFalse(isVerifiedOfflineRecording(pending,null,100L,0L))
+        assertFalse(isVerifiedOfflineRecording(pending,null,0L,0L))
+        assertFalse(isVerifiedOfflineRecording(DownloadManager.STATUS_SUCCESSFUL,
+            null,0L,8000L))
+    }
 }
