@@ -343,6 +343,12 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                             IconButton(onClick=vm::refresh){
                                 Icon(Icons.Rounded.Refresh,contentDescription="Refresh music")
                             }
+                        }else if(vm.selected=="Search"){
+                            IconButton(onClick={vm.search(vm.searchQuery)},
+                                enabled=vm.searchQuery.trim().length>=2){
+                                Icon(Icons.Rounded.ArrowForward,
+                                    contentDescription="Search")
+                            }
                         }else if(vm.selected=="Community"){
                             Row(verticalAlignment=Alignment.CenterVertically){
                                 IconButton(onClick={communityCreateSignal++}){
@@ -1100,6 +1106,15 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Set<Int>>(emptySet()) }
     Column {
+        // SwiftUI Search has the search field in the navigation drawer,
+        // above the two-way source selector.
+        if(source==0)OutlinedTextField(
+            vm.searchQuery,{selecting=false;selected=emptySet();vm.search(it)},
+            modifier=Modifier.fillMaxWidth()
+                .padding(horizontal=18.dp,vertical=9.dp),
+            placeholder={Text("Songs, artists, albums")},
+            leadingIcon={Icon(Icons.Rounded.Search,null)},
+            singleLine=true,shape=RoundedCornerShape(28.dp))
         SingleChoiceSegmentedButtonRow(
             modifier=Modifier.fillMaxWidth()
                 .padding(horizontal=18.dp,vertical=8.dp)){
@@ -1119,11 +1134,6 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 initialQuery=vm.searchQuery.ifBlank{vm.serverSearchSeed},
                 showBack=false)
         }else{
-        OutlinedTextField(vm.searchQuery,{selecting=false;selected=emptySet();vm.search(it)},
-            modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=12.dp),
-            placeholder={Text("Songs, albums, artists...")},
-            leadingIcon={Icon(Icons.Rounded.Search,null)},singleLine=true,
-            shape=RoundedCornerShape(28.dp))
         if(vm.searchingLibrary)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(!vm.searchingLibrary&&vm.searchQuery.isNotBlank()&&
             vm.lastSearchedTerm==vm.searchQuery.trim()&&
@@ -1309,9 +1319,17 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                           onDownloadAll:()->Unit,onDownloadFavorites:()->Unit) {
     val listState=rememberLazyListState()
     val scope=rememberCoroutineScope()
+    var playlistSearch by remember{mutableStateOf("")}
     LazyColumn(state=listState,
         contentPadding=PaddingValues(horizontal=18.dp,vertical=12.dp),
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item {
+            OutlinedTextField(playlistSearch,{playlistSearch=it},
+                modifier=Modifier.fillMaxWidth().padding(bottom=7.dp),
+                placeholder={Text("Search playlists by name")},
+                leadingIcon={Icon(Icons.Rounded.Search,null)},
+                singleLine=true,shape=RoundedCornerShape(28.dp))
+        }
         item {
             Column {
                 LibraryCategoryRow("Playlists",Icons.Rounded.QueueMusic,JobbiViolet){
@@ -1336,6 +1354,9 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                     vm.select("SavedImports")
                 }
             }
+        }
+        if(vm.albums.isNotEmpty())item {
+            AlbumShelf("Recently Added",vm.albums.take(12),vm::openAlbum)
         }
         item {
             FilledTonalButton(onClick={vm.select("Favorites")},
@@ -1420,7 +1441,9 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                 FilledTonalButton(onClick=onCreate){Icon(Icons.Rounded.Add,null);Text("New")}
             }
         }
-        items(vm.playlists,key={it.id}){playlist->
+        items(vm.playlists.filter{
+            playlistSearch.isBlank()||it.name.contains(playlistSearch,ignoreCase=true)
+        },key={it.id}){playlist->
             Card(Modifier.fillMaxWidth().clickable{vm.openPlaylist(playlist.id)},
                 shape=RoundedCornerShape(18.dp)) {
                 Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -1468,20 +1491,22 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
 @Composable
 private fun LibraryCategoryRow(title:String,icon:ImageVector,tint:Color,
                                onClick:()->Unit) {
-    Row(Modifier.fillMaxWidth()
-        .clip(RoundedCornerShape(13.dp))
-        .clickable(onClick=onClick)
-        .padding(horizontal=12.dp,vertical=11.dp),
-        verticalAlignment=Alignment.CenterVertically) {
-        Surface(shape=RoundedCornerShape(12.dp),color=tint.copy(alpha=.14f)){
+    Column {
+        Row(Modifier.fillMaxWidth()
+            .clickable(onClick=onClick)
+            .heightIn(min=52.dp)
+            .padding(horizontal=8.dp,vertical=11.dp),
+            verticalAlignment=Alignment.CenterVertically) {
             Icon(icon,contentDescription=null,tint=tint,
-                modifier=Modifier.padding(11.dp).size(22.dp))
+                modifier=Modifier.size(23.dp))
+            Spacer(Modifier.width(15.dp))
+            Text(title,modifier=Modifier.weight(1f),
+                fontWeight=FontWeight.Medium,fontSize=16.sp)
+            Icon(Icons.Rounded.ChevronRight,contentDescription=null,
+                tint=MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier=Modifier.size(20.dp))
         }
-        Spacer(Modifier.width(15.dp))
-        Text(title,modifier=Modifier.weight(1f),
-            fontWeight=FontWeight.Medium,fontSize=16.sp)
-        Icon(Icons.Rounded.ChevronRight,contentDescription=null,
-            tint=MaterialTheme.colorScheme.onSurfaceVariant)
+        HorizontalDivider(color=MaterialTheme.colorScheme.onSurface.copy(alpha=.08f))
     }
 }
 
