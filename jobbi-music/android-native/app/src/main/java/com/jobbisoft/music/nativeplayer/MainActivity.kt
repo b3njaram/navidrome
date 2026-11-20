@@ -2726,6 +2726,11 @@ private fun MoreScreen(vm:MusicViewModel,player:NativePlayer) {
                 AccountLinkRow("Manage downloaded music",Icons.Rounded.Download,JobbiTeal,
                     onClick={vm.select("Downloads")})
                 divider()
+                if(!vm.offlineMode){
+                    AccountLinkRow("Switch to offline downloads",Icons.Rounded.CloudOff,
+                        JobbiTeal,onClick=vm::listenOffline)
+                    divider()
+                }
                 AccountLinkRow("Refresh offline downloads",Icons.Rounded.Sync,JobbiTeal,
                     onClick=vm::updateDownloadStats)
                 if(vm.offlineMode){
