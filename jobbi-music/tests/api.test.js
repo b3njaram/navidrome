@@ -430,6 +430,26 @@ test('audio quality settings route to original or 128 kbps transcoded streaming'
   assert.equal(received.lastSubsonic.params.format,'mp3');
   assert.equal(received.lastSubsonic.params.maxBitRate,'128');
 });
+test('Android native seek can resume uncached transcoded audio at a bounded OpenSubsonic timeOffset',async()=>{
+  const unauthorized=await fetch(base+'/api/stream/song-1?timeOffset=42');
+  assert.equal(unauthorized.status,401);
+  for(const value of ['-1','0.5','86401','not-a-number']){
+    const invalid=await get('/api/stream/song-1?quality=balanced&timeOffset='+encodeURIComponent(value));
+    assert.equal(invalid.status,400,'Rejected unsupported timestamp '+value);
+  }
+  const resumed=await get('/api/stream/song-1?quality=saver&timeOffset=129');
+  assert.equal(resumed.status,200);
+  assert.equal(received.lastSubsonic.name,'stream');
+  assert.equal(received.lastSubsonic.params.id,'song-1');
+  assert.equal(received.lastSubsonic.params.timeOffset,'129');
+  assert.equal(received.lastSubsonic.params.format,'mp3');
+  assert.equal(received.lastSubsonic.params.maxBitRate,'128');
+  const lossless=await get('/api/stream/song-1?quality=original&timeOffset=0');
+  assert.equal(lossless.status,200);
+  assert.equal(received.lastSubsonic.params.format,'raw');
+  assert.equal(received.lastSubsonic.params.timeOffset,'0');
+});
+
 test('social routes use real Navidrome sessions, forbid unauthenticated access, and enforce CSRF',async()=>{
   if(!process.env.SOCIAL_TEST_DATABASE_URL)return;
   const noCookie=await fetch(base+'/api/social/home');
