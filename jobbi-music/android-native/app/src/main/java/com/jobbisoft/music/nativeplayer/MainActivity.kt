@@ -1098,11 +1098,11 @@ private fun SearchScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
             SegmentedButton(
                 selected=source==0,onClick={source=0},
                 shape=SegmentedButtonDefaults.itemShape(index=0,count=2),
-                label={Text("My Library")})
+                label={Text("My Library")},icon={})
             SegmentedButton(
                 selected=source==1,onClick={source=1},
                 shape=SegmentedButtonDefaults.itemShape(index=1,count=2),
-                label={Text("Find New Music")})
+                label={Text("Find New Music")},icon={})
         }
         if(source==1){
             // Same source choices as the native iPhone Search tab. All existing
@@ -1306,8 +1306,6 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
         verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
             Column {
-                Text("Browse Your Library",fontSize=22.sp,fontWeight=FontWeight.Bold,
-                    modifier=Modifier.padding(start=4.dp,bottom=8.dp))
                 LibraryCategoryRow("Playlists",Icons.Rounded.QueueMusic,JobbiViolet){
                     vm.select("PlaylistDirectory")
                 }
@@ -1489,8 +1487,7 @@ private fun PlaylistDirectoryScreen(vm:MusicViewModel,onCreate:()->Unit){
         verticalArrangement=Arrangement.spacedBy(9.dp)){
         item{
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-                Text("Playlists",fontSize=24.sp,fontWeight=FontWeight.Bold,
-                    modifier=Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
                 TextButton(onClick=onCreate){
                     Icon(Icons.Rounded.Add,null)
                     Text("New")
@@ -1542,8 +1539,6 @@ private fun AlbumDirectoryScreen(vm:MusicViewModel){
     LazyColumn(contentPadding=PaddingValues(horizontal=16.dp,vertical=14.dp),
         verticalArrangement=Arrangement.spacedBy(10.dp)){
         item{
-            Text("Albums",fontSize=24.sp,fontWeight=FontWeight.Bold,
-                modifier=Modifier.padding(bottom=8.dp))
             OutlinedTextField(value=query,onValueChange={query=it},
                 modifier=Modifier.fillMaxWidth(),singleLine=true,
                 placeholder={Text("Search albums and artists")},
@@ -1576,8 +1571,7 @@ private fun SavedImportsDirectoryScreen(vm:MusicViewModel){
         verticalArrangement=Arrangement.spacedBy(12.dp)){
         item{
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-                Text("Saved imports",fontSize=24.sp,fontWeight=FontWeight.Bold,
-                    modifier=Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
                 TextButton(onClick=vm::refreshCollectionJobs){
                     Icon(Icons.Rounded.Refresh,null)
                     Text("Refresh")
@@ -1642,7 +1636,6 @@ private fun ArtistDirectoryScreen(vm:MusicViewModel) {
     LazyColumn(contentPadding=PaddingValues(horizontal=18.dp,vertical=15.dp),
         verticalArrangement=Arrangement.spacedBy(8.dp)){
         item {
-            Text("Artists",fontSize=25.sp,fontWeight=FontWeight.Bold)
             OutlinedTextField(value=query,onValueChange={query=it},
                 modifier=Modifier.fillMaxWidth(),singleLine=true,
                 placeholder={Text("Find an artist")},
