@@ -1664,6 +1664,9 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                          onQuarantine:(List<Song>)->Unit) {
     val detail = vm.detail ?: return
     var filter by remember(detail.id) { mutableStateOf("") }
+    var renameDraft by remember(detail.id){mutableStateOf(detail.title)}
+    var showingRename by remember(detail.id){mutableStateOf(false)}
+    var confirmingDelete by remember(detail.id){mutableStateOf(false)}
     var selecting by remember(detail.id) { mutableStateOf(false) }
     var selected by remember(detail.id) { mutableStateOf<Set<Int>>(emptySet()) }
     val listed=remember(detail.songs,filter){
@@ -1710,6 +1713,12 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                             Icon(Icons.Rounded.Delete,null);Spacer(Modifier.width(5.dp))
                             Text("Remove offline")
                         }
+                    if(!detail.isPlaylist)
+                        OutlinedButton(onClick=vm::downloadOpenedAlbum,enabled=detail.songs.isNotEmpty()){
+                            Icon(Icons.Rounded.Download,null)
+                            Spacer(Modifier.width(5.dp))
+                            Text("Download album")
+                        }
                 }
                 Row(verticalAlignment=Alignment.CenterVertically){
                     TextButton(onClick={selecting=!selecting;selected=emptySet()}){
@@ -1748,6 +1757,22 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                         "Only ${detail.owner} can change this playlist's visibility.",
                         style=MaterialTheme.typography.bodySmall,
                         color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        OutlinedButton(onClick={
+                            renameDraft=detail.title
+                            showingRename=true
+                        }){
+                            Icon(Icons.Rounded.Edit,null,Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Rename playlist")
+                        }
+                        TextButton(onClick={confirmingDelete=true}){
+                            Icon(Icons.Rounded.Delete,null,tint=JobbiCoral,
+                                modifier=Modifier.size(18.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text("Delete playlist",color=JobbiCoral)
+                        }
+                    }
                     AssistChip(onClick=onInvite,label={Text("Collaborate")},
                         leadingIcon={Icon(Icons.Rounded.PersonAdd,null)})
                     FilledTonalButton(onClick=vm::heartAll) {
@@ -1788,6 +1813,28 @@ private fun DetailScreen(vm:MusicViewModel,player:NativePlayer,onSongAdd:(Song)-
                 onLongSelect={selecting=true;selected=selected+pair.first})
         }
     }
+    if(showingRename)AlertDialog(
+        onDismissRequest={showingRename=false},
+        title={Text("Rename playlist")},
+        text={OutlinedTextField(value=renameDraft,onValueChange={renameDraft=it.take(100)},
+            modifier=Modifier.fillMaxWidth(),singleLine=true,
+            label={Text("Playlist name")})},
+        confirmButton={TextButton(enabled=renameDraft.isNotBlank()&&!vm.busy,
+            onClick={showingRename=false;vm.renameOpenedPlaylist(renameDraft)}){
+            Text("Save")
+        }},
+        dismissButton={TextButton(onClick={showingRename=false}){Text("Cancel")}}
+    )
+    if(confirmingDelete)AlertDialog(
+        onDismissRequest={confirmingDelete=false},
+        title={Text("Delete this playlist?")},
+        text={Text("This deletes the playlist, not its songs. Recordings on the NAS, Favorites, and other playlists remain unchanged.")},
+        confirmButton={TextButton(enabled=!vm.busy,onClick={
+            confirmingDelete=false
+            vm.deleteOpenedPlaylist()
+        }){Text("Delete playlist",color=JobbiCoral)}},
+        dismissButton={TextButton(onClick={confirmingDelete=false}){Text("Cancel")}}
+    )
 }
 
 @Composable
