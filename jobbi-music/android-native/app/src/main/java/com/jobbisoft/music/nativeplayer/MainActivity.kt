@@ -413,9 +413,6 @@ fun JobbiMaterialApp(vm: MusicViewModel = viewModel()) {
                     }
                 }
                 val trailing: @Composable RowScope.() -> Unit = {
-                    if(vm.selected=="Library")IconButton(onClick={createPlaylist=true}){
-                        Icon(Icons.Rounded.Add,contentDescription="Create playlist")
-                    }
                     if(vm.selected in tabs.map{it.name})JobbiAccountAvatar(vm,onClick={
                         accountReturnTab=vm.selected
                         vm.select("More")
@@ -1485,6 +1482,42 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
             AlbumShelf("Recently Added",vm.albums.take(12),vm::openAlbum)
         }
         item {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Text("Playlists",style=MaterialTheme.typography.titleLarge,
+                    fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+                IconButton(onClick=onCreate){Icon(Icons.Rounded.Add,contentDescription="Create playlist")}
+            }
+        }
+        items(vm.playlists.filter{
+            playlistSearch.isBlank()||it.name.contains(playlistSearch,ignoreCase=true)
+        },key={it.id}){playlist->
+            Card(Modifier.fillMaxWidth().clickable{vm.openPlaylist(playlist.id)},
+                shape=RoundedCornerShape(18.dp)) {
+                Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Surface(color=JobbiViolet.copy(alpha=.16f),shape=RoundedCornerShape(16.dp)){
+                        Icon(Icons.Rounded.LibraryMusic,null,Modifier.padding(13.dp),
+                            tint=JobbiViolet)
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(playlist.name,fontWeight=FontWeight.Bold)
+                        Text("${playlist.count} tracks · ${if(playlist.public)"Public" else "Private"}",
+                            color=MaterialTheme.colorScheme.onSurfaceVariant,
+                            style=MaterialTheme.typography.bodySmall)
+                    }
+                    IconButton(onClick={onDownloadPlaylist(playlist)}){
+                        Icon(Icons.Rounded.Download,contentDescription="Download ${playlist.name}")
+                    }
+                    if(vm.hasOfflinePlaylist(playlist.id)){
+                        IconButton(onClick={onRemovePlaylist(playlist)},enabled=!vm.busy){
+                            Icon(Icons.Rounded.Delete,
+                                contentDescription="Remove offline downloads for "+playlist.name)
+                        }
+                    }
+                }
+            }
+        }
+        item {
             FilledTonalButton(onClick={vm.select("Favorites")},
                 modifier=Modifier.fillMaxWidth()){
                 Icon(Icons.Rounded.Favorite,null)
@@ -1556,42 +1589,6 @@ private fun LibraryScreen(vm:MusicViewModel,onCreate:()->Unit,
                             TextButton(onClick={vm.controlCollectionJob(job.id,"retry")}) {
                                 Text("Retry unmatched")
                             }
-                    }
-                }
-            }
-        }
-        item {
-            Row(verticalAlignment=Alignment.CenterVertically) {
-                Text("Your playlists",style=MaterialTheme.typography.titleLarge,
-                    fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
-                FilledTonalButton(onClick=onCreate){Icon(Icons.Rounded.Add,null);Text("New")}
-            }
-        }
-        items(vm.playlists.filter{
-            playlistSearch.isBlank()||it.name.contains(playlistSearch,ignoreCase=true)
-        },key={it.id}){playlist->
-            Card(Modifier.fillMaxWidth().clickable{vm.openPlaylist(playlist.id)},
-                shape=RoundedCornerShape(18.dp)) {
-                Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Surface(color=JobbiViolet.copy(alpha=.16f),shape=RoundedCornerShape(16.dp)){
-                        Icon(Icons.Rounded.LibraryMusic,null,Modifier.padding(13.dp),
-                            tint=JobbiViolet)
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(playlist.name,fontWeight=FontWeight.Bold)
-                        Text("${playlist.count} tracks · ${if(playlist.public)"Public" else "Private"}",
-                            color=MaterialTheme.colorScheme.onSurfaceVariant,
-                            style=MaterialTheme.typography.bodySmall)
-                    }
-                    IconButton(onClick={onDownloadPlaylist(playlist)}){
-                        Icon(Icons.Rounded.Download,contentDescription="Download ${playlist.name}")
-                    }
-                    if(vm.hasOfflinePlaylist(playlist.id)){
-                        IconButton(onClick={onRemovePlaylist(playlist)},enabled=!vm.busy){
-                            Icon(Icons.Rounded.Delete,
-                                contentDescription="Remove offline downloads for "+playlist.name)
-                        }
                     }
                 }
             }
