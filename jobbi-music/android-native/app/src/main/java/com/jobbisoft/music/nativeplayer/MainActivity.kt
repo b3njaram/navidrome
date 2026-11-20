@@ -818,18 +818,18 @@ private fun LoginScreen(vm:MusicViewModel) {
             Icon(Icons.Rounded.ArrowForward,contentDescription=null,
                 modifier=Modifier.size(20.dp))
         }
+        // Show the offline action even without a reachable server. It
+        // explains when this device lacks a verified saved account or actual
+        // completed files, without attempting an HTTP or DNS request.
+        FilledTonalButton(onClick=vm::listenOffline,
+            enabled=!vm.busy&&!vm.restoringSession,
+            modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),
+            shape=RoundedCornerShape(13.dp)) {
+            Icon(Icons.Rounded.CloudOff,contentDescription=null)
+            Spacer(Modifier.width(10.dp))
+            Text("Listen to downloads offline",fontWeight=FontWeight.SemiBold)
+        }
         if(vm.savedSignInAvailable) {
-            // Do not make the user's offline music wait for a failed DNS
-            // lookup. Explicitly open completed, account-scoped files from
-            // Android storage with zero server or Wi-Fi dependency.
-            FilledTonalButton(onClick=vm::listenOffline,
-                enabled=!vm.busy&&!vm.restoringSession,
-                modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),
-                shape=RoundedCornerShape(13.dp)) {
-                Icon(Icons.Rounded.CloudOff,contentDescription=null)
-                Spacer(Modifier.width(10.dp))
-                Text("Listen to downloads offline",fontWeight=FontWeight.SemiBold)
-            }
             OutlinedButton(onClick=vm::retrySavedSignIn,
                 enabled=!vm.busy&&!vm.restoringSession,
                 modifier=Modifier.fillMaxWidth()) {
