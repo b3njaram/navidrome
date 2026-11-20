@@ -42,6 +42,13 @@ private struct NativeParityTabHost: View {
         .tabViewBottomAccessory(isEnabled: player.hasMusic) {
             MiniPlayerView(onOpen: {})
         }
+        // Mirror RootView's native iOS 26 mini player accessory. Omitting
+        // this would make the baseline fundamentally different from a real
+        // signed-in session and invalidate placement comparisons.
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabViewBottomAccessory(isEnabled: true) {
+            MiniPlayerView(onOpen: {})
+        }
     }
 }
 
