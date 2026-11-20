@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onRoot
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
@@ -57,5 +59,23 @@ class VisualParityScreenshotTest {
             assertTrue("Screenshot is empty: "+output.name,output.length()>1000)
             screenshot.recycle()
         }
+        // Validate the actual full-screen Compose player, not only its
+        // Kotlin layout source. No media is streamed by this debug fixture.
+        rule.runOnUiThread { vm.showParityScreenshotScreen("Home") }
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Open Now Playing",useUnmergedTree=true)
+            .performClick()
+        rule.waitUntil(10000) {
+            rule.onAllNodesWithText("PLAYING FROM",substring=true,useUnmergedTree=true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        val playerImage=rule.onRoot().captureToImage().asAndroidBitmap()
+        val playerFile=File(folder,"parity-android-nowplaying.png")
+        playerFile.outputStream().use {
+            assertTrue("Could not export Android Now Playing",playerImage.compress(
+                Bitmap.CompressFormat.PNG,100,it))
+        }
+        assertTrue(playerFile.length()>1000)
+        playerImage.recycle()
     }
 }
