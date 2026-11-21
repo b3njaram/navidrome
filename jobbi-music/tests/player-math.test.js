@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {preferredDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds,canSeekToSeconds} from '../src/player-math.js';
+import {preferredDuration,expectedTrackDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds,canSeekToSeconds} from '../src/player-math.js';
 test('finite duration fallback',()=>{assert.equal(preferredDuration(242,Infinity),242);assert.equal(preferredDuration(0,131),131);});
 test('actual stream duration wins over mismatched catalog duration',()=>{
   assert.equal(preferredDuration(266,206),206);
   assert.equal(preferredDuration(206,266),266);
   assert.equal(preferredDuration(266,NaN),266);
+  assert.equal(expectedTrackDuration(266,206),266);
+  assert.equal(endedTooEarly(206,expectedTrackDuration(266,206)),true);
 });
 test('early-end recovery only seeks within a verified range',()=>{
   const ranges={length:1,start:()=>0,end:()=>206};
