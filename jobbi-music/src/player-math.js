@@ -3,6 +3,8 @@ export const finiteSeconds=value=>{const n=Number(value);return Number.isFinite(
 // Use actual decoded media duration when finite; Navidrome metadata can be stale.
 // The catalog is still the fallback for progressive streams reporting Infinity.
 export const preferredDuration=(catalog,stream)=>finiteSeconds(stream)||finiteSeconds(catalog);
+// Keep the catalog as an independent upper bound when detecting early EOF.
+export const expectedTrackDuration=(catalog,stream)=>Math.max(finiteSeconds(catalog),finiteSeconds(stream));
 // A failed seek to the end of a truncated file must never silently replay it.
 export const canSeekToSeconds=(ranges,target)=>{
   const seconds=Number(target);
