@@ -267,6 +267,13 @@ struct NowPlayingView: View {
                             Label("Play Next",
                                   systemImage: "text.line.first.and.arrowtriangle.forward")
                         }
+                        if !player.isUsingOriginalAudio && !player.isUsingOfflineAudio {
+                            Button {
+                                player.restartUsingOriginalAudio()
+                            } label: {
+                                Label("Restart using Original Audio", systemImage: "waveform")
+                            }
+                        }
                     }
                     Divider()
                     ForEach([15, 30, 45, 60], id: \.self) { minutes in
