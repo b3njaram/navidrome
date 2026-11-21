@@ -6,7 +6,7 @@ import SocialSpace from './SocialSpace.jsx';
 import NowPlaying from './NowPlaying.jsx';
 import PlaylistTools from './PlaylistTools.jsx';
 import PlaylistTransfer from './PlaylistTransfer.jsx';
-import {preferredDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds,canSeekToSeconds} from './player-math.js';
+import {preferredDuration,expectedTrackDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds,canSeekToSeconds} from './player-math.js';
 import './nowplaying.css';
 import {prepareImageUpload} from './image-upload.js';
 import {enqueueNext,enqueueLast,reorderUpcoming,removeUpcoming,clearUpcoming,nextQueueIndex} from './play-queue.js';
@@ -633,7 +633,7 @@ function App() {
   };
   const handleAudioEnded=e=>{
     if(!currentTrack)return;
-    const player=e.currentTarget,expected=preferredDuration(currentTrack.duration,player.duration);
+    const player=e.currentTarget,expected=expectedTrackDuration(currentTrack.duration,player.duration);
     if(endedTooEarly(player.currentTime,expected)){
       if(earlyEndRecovery.current.id!==currentTrack.id)earlyEndRecovery.current={id:currentTrack.id,attempted:false};
       const id=currentTrack.id;
