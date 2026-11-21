@@ -13,6 +13,7 @@ final class MusicPlayer: ObservableObject {
     @Published private(set) var duration: Double = 0
     @Published private(set) var isUsingOriginalAudio = false
     @Published private(set) var isUsingOfflineAudio = false
+    @Published private(set) var playbackIssue: String?
     @Published var shuffled = false
     @Published var repeatOne = false
     @Published private(set) var sleepUntil: Date?
@@ -47,6 +48,16 @@ final class MusicPlayer: ObservableObject {
 
     var active: Song? { queue.indices.contains(currentIndex) ? queue[currentIndex] : nil }
     var hasMusic: Bool { active != nil }
+
+    func acknowledgePlaybackIssue() { playbackIssue = nil }
+
+    private func reportPlaybackIssue(_ message: String) {
+        avPlayer.pause()
+        playing = false
+        error = message
+        playbackIssue = message
+        refreshNowPlaying()
+    }
 
     // Duration metadata may disagree with the real recording; only a large
     // verified early EOF should trigger recovery, never an ordinary last frame.
@@ -158,6 +169,7 @@ final class MusicPlayer: ObservableObject {
         elapsed = 0
         duration = song.durationSeconds
         error = nil
+        playbackIssue = nil
         let asset: AVURLAsset
         if let local = offline.localURL(for: song) {
             isUsingOfflineAudio = true
@@ -340,11 +352,8 @@ final class MusicPlayer: ObservableObject {
                 resumeOriginalAfterEarlyEnd(at: position)
                 return
             }
-            avPlayer.pause()
-            playing = false
-            error = "This recording ended early, even using its original audio. " +
-                    "Check the source file on the NAS or try another copy."
-            refreshNowPlaying()
+            reportPlaybackIssue("This recording ended early, even using its original audio. " +
+                                "Check the source file on the NAS or try another copy.")
             return
         }
         if repeatOne { playAt(currentIndex) }
@@ -358,10 +367,7 @@ final class MusicPlayer: ObservableObject {
         guard let song = active, let api,
               let remote = api.url("/api/stream/" + JobbiAPI.encode(song.id) +
                                    "?quality=original") else {
-            avPlayer.pause()
-            playing = false
-            error = "The stream ended early and original audio is unavailable."
-            refreshNowPlaying()
+            reportPlaybackIssue("The stream ended early and original audio is unavailable.")
             return
         }
         recoveryAttempted = true
@@ -384,9 +390,8 @@ final class MusicPlayer: ObservableObject {
                 let realDuration = length.seconds
                 guard realDuration.isFinite, realDuration > position + 1 else {
                     self.recoveringOriginal = false
-                    self.error = "The original recording also ends too early, or its length " +
-                                 "cannot be read. Check the NAS file."
-                    self.refreshNowPlaying()
+                    self.reportPlaybackIssue("The original recording also ends too early, " +
+                                             "or its length cannot be read. Check the NAS file.")
                     return
                 }
                 self.avPlayer.seek(
@@ -403,12 +408,13 @@ final class MusicPlayer: ObservableObject {
                             self.elapsed = actualPosition
                             self.duration = realDuration
                             self.error = nil
+                            self.playbackIssue = nil
                             self.avPlayer.play()
                             self.playing = true
                         } else {
-                            self.playing = false
-                            self.error = "The original recording could not seek to the missing " +
-                                         "part of the song. Playback was stopped to avoid restarting it."
+                            self.reportPlaybackIssue(
+                                "The original recording could not seek to the missing part " +
+                                "of the song. Playback was stopped to avoid restarting it.")
                         }
                         self.refreshNowPlaying()
                     }
@@ -417,8 +423,8 @@ final class MusicPlayer: ObservableObject {
                 guard let self, self.playbackGeneration == generation,
                       self.avPlayer.currentItem === replacement else { return }
                 self.recoveringOriginal = false
-                self.error = "Cannot load the original recording: " + error.localizedDescription
-                self.refreshNowPlaying()
+                self.reportPlaybackIssue("Cannot load the original recording: " +
+                                         error.localizedDescription)
             }
         }
     }
@@ -485,6 +491,7 @@ final class MusicPlayer: ObservableObject {
         currentArtwork = nil
         playbackGeneration += 1
         recoveringOriginal = false
+        playbackIssue = nil
         queue = []
         currentIndex = 0
         avPlayer.replaceCurrentItem(with: nil)
