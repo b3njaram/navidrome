@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import AVFoundation
 @testable import JobbiMusic
 
 @MainActor
@@ -73,6 +74,25 @@ final class JobbiMusicTests: XCTestCase {
         XCTAssertEqual(MusicPlayer.listenThreshold(duration: 900), 240)
         XCTAssertEqual(MusicPlayer.listenThreshold(duration: 8), 5)
         XCTAssertEqual(MusicPlayer.listenThreshold(duration: 0), 30)
+    }
+
+    func testNativeIOSDetectsPrematureEndWithoutFalseTriggers() {
+        // 4:26 catalog, 3:26 decoded stream: the missing minute must not cause a loop.
+        XCTAssertTrue(MusicPlayer.endedTooEarly(at: 206, catalog: 266, decoded: 206))
+        XCTAssertFalse(MusicPlayer.endedTooEarly(at: 262, catalog: 266, decoded: 266))
+        XCTAssertFalse(MusicPlayer.endedTooEarly(at: 266, catalog: 266, decoded: 266))
+        XCTAssertFalse(MusicPlayer.endedTooEarly(at: .nan, catalog: 266, decoded: 266))
+        XCTAssertFalse(MusicPlayer.endedTooEarly(at: 0, catalog: 266, decoded: 206))
+        XCTAssertFalse(MusicPlayer.endedTooEarly(at: 205, catalog: 0, decoded: 206))
+        XCTAssertTrue(MusicPlayer.endedTooEarly(at: 150, catalog: 0, decoded: 206))
+    }
+
+    func testEndNotificationsOnlyApplyToCurrentAVPlayerItem() {
+        let current = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/jobbi-current.mp3"))
+        let previous = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/jobbi-previous.mp3"))
+        XCTAssertTrue(MusicPlayer.isCurrentEndEvent(current, current: current))
+        XCTAssertFalse(MusicPlayer.isCurrentEndEvent(previous, current: current))
+        XCTAssertFalse(MusicPlayer.isCurrentEndEvent(current, current: nil))
     }
 
     func testRealPhotoBecomesSmallJPEGForServer() throws {

@@ -11,6 +11,9 @@ final class MusicPlayer: ObservableObject {
     @Published private(set) var playing = false
     @Published private(set) var elapsed: Double = 0
     @Published private(set) var duration: Double = 0
+    @Published private(set) var isUsingOriginalAudio = false
+    @Published private(set) var isUsingOfflineAudio = false
+    @Published private(set) var playbackIssue: String?
     @Published var shuffled = false
     @Published var repeatOne = false
     @Published private(set) var sleepUntil: Date?
@@ -19,6 +22,9 @@ final class MusicPlayer: ObservableObject {
     private let avPlayer = AVPlayer()
     private var progressObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var playbackGeneration = 0
+    private var recoveryAttempted = false
+    private var recoveringOriginal = false
     private weak var api: JobbiAPI?
     private weak var offline: OfflineLibrary?
     private var realListenSeconds: Double = 0
@@ -42,6 +48,51 @@ final class MusicPlayer: ObservableObject {
 
     var active: Song? { queue.indices.contains(currentIndex) ? queue[currentIndex] : nil }
     var hasMusic: Bool { active != nil }
+
+    func acknowledgePlaybackIssue() { playbackIssue = nil }
+
+    private func reportPlaybackIssue(_ message: String) {
+        avPlayer.pause()
+        playing = false
+        error = message
+        playbackIssue = message
+        refreshNowPlaying()
+    }
+
+    // Duration metadata may disagree with the real recording; only a large
+    // verified early EOF should trigger recovery, never an ordinary last frame.
+    static func endedTooEarly(at position: Double, catalog: Double, decoded: Double) -> Bool {
+        guard position.isFinite, position > 5 else { return false }
+        let stated = catalog.isFinite && catalog > 0 ? catalog : 0
+        let actual = decoded.isFinite && decoded > 0 ? decoded : 0
+        let expected = max(stated, actual)
+        guard expected > 0 else { return false }
+        return expected - position > max(7, min(18, expected * 0.04))
+    }
+
+    static func isCurrentEndEvent(_ item: AVPlayerItem, current: AVPlayerItem?) -> Bool {
+        item === current
+    }
+
+    private static let originalSongPreferenceKey = "jobbi.ios.preferOriginalTracks"
+    private func prefersOriginal(_ song: Song, api: JobbiAPI) -> Bool {
+        let key = api.server + "|" + song.id
+        return (UserDefaults.standard.stringArray(forKey: Self.originalSongPreferenceKey) ?? [])
+            .contains(key)
+    }
+
+    /// Bypass a possibly faulty Navidrome MP3 transcode for this recording,
+    /// without increasing bandwidth for every other listener or song.
+    func restartUsingOriginalAudio() {
+        guard let song = active, let api, !isUsingOfflineAudio else { return }
+        let key = api.server + "|" + song.id
+        var saved = UserDefaults.standard.stringArray(forKey: Self.originalSongPreferenceKey) ?? []
+        saved.removeAll(where: { $0 == key })
+        saved.append(key)
+        UserDefaults.standard.set(Array(saved.suffix(256)), forKey: Self.originalSongPreferenceKey)
+        playAt(currentIndex) // Explicit user action: restarting from the beginning is intentional.
+    }
+
     var fraction: Double {
         guard duration > 0 else { return 0 }
         return min(1, max(0, elapsed / duration))
@@ -54,8 +105,9 @@ final class MusicPlayer: ObservableObject {
                 Task { @MainActor [weak self] in self?.tick(time) }
             }
         endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.finished() }
+            forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] notification in
+                guard let endedItem = notification.object as? AVPlayerItem else { return }
+                Task { @MainActor [weak self] in self?.finished(item: endedItem) }
             }
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
@@ -101,6 +153,9 @@ final class MusicPlayer: ObservableObject {
         guard queue.indices.contains(index), let api, let offline else { return }
         // Close out any qualified listen before changing recordings.
         submitIfQualified()
+        playbackGeneration += 1
+        recoveryAttempted = false
+        recoveringOriginal = false
         currentIndex = index
         guard let song = active else { return }
         // Track changes must immediately discard old artwork, even if the
@@ -114,12 +169,19 @@ final class MusicPlayer: ObservableObject {
         elapsed = 0
         duration = song.durationSeconds
         error = nil
+        playbackIssue = nil
         let asset: AVURLAsset
         if let local = offline.localURL(for: song) {
+            isUsingOfflineAudio = true
+            isUsingOriginalAudio = true
             asset = AVURLAsset(url: local)
         } else {
+            isUsingOfflineAudio = false
+            let chosenQuality = prefersOriginal(song, api: api) ? "original"
+                : (UserDefaults.standard.string(forKey: "jobbi.quality") ?? "balanced")
+            isUsingOriginalAudio = chosenQuality == "original"
             guard let remote = api.url("/api/stream/" + JobbiAPI.encode(song.id)
-                + "?quality=" + (UserDefaults.standard.string(forKey: "jobbi.quality") ?? "balanced")) else {
+                + "?quality=" + chosenQuality) else {
                 error = "Cannot create a secure stream URL."
                 return
             }
@@ -150,7 +212,7 @@ final class MusicPlayer: ObservableObject {
     }
 
     func resume() {
-        guard active != nil else { return }
+        guard active != nil, !recoveringOriginal else { return }
         avPlayer.play()
         playing = true
         lastTime = Date()
@@ -219,7 +281,7 @@ final class MusicPlayer: ObservableObject {
         else { seek(0) }
     }
     func seek(_ seconds: Double) {
-        guard seconds.isFinite else { return }
+        guard seconds.isFinite, !recoveringOriginal else { return }
         accumulateTime()
         let target = max(0, min(seconds, duration > 0 ? duration : seconds))
         avPlayer.seek(to: CMTime(seconds: target, preferredTimescale: 600))
@@ -267,6 +329,7 @@ final class MusicPlayer: ObservableObject {
             return
         }
         accumulateTime()
+        if recoveringOriginal { return } // Preserve the last real position until the seek verifies.
         if time.seconds.isFinite { elapsed = max(0, time.seconds) }
         let itemDuration = avPlayer.currentItem?.duration.seconds ?? 0
         if itemDuration.isFinite && itemDuration > 0 { duration = itemDuration }
@@ -274,11 +337,96 @@ final class MusicPlayer: ObservableObject {
         refreshNowPlaying()
     }
 
-    private func finished() {
+    private func finished(item: AVPlayerItem) {
+        // Notifications for an old item can arrive after switching songs.
+        // Never skip or repeat the new track because the old item finished.
+        guard Self.isCurrentEndEvent(item, current: avPlayer.currentItem),
+              !recoveringOriginal else { return }
         accumulateTime()
         submitIfQualified()
+        let position = item.currentTime().seconds
+        if Self.endedTooEarly(at: position,
+                             catalog: active?.durationSeconds ?? 0,
+                             decoded: item.duration.seconds) {
+            if !isUsingOfflineAudio && !isUsingOriginalAudio && !recoveryAttempted {
+                resumeOriginalAfterEarlyEnd(at: position)
+                return
+            }
+            reportPlaybackIssue("This recording ended early, even using its original audio. " +
+                                "Check the source file on the NAS or try another copy.")
+            return
+        }
         if repeatOne { playAt(currentIndex) }
         else { next() }
+    }
+
+    /// Use the raw recording after a prematurely finished transcode, but do not
+    /// silently start it at zero. Resume only when the original asset reports
+    /// enough duration and the seek actually lands at the requested timestamp.
+    private func resumeOriginalAfterEarlyEnd(at position: Double) {
+        guard let song = active, let api,
+              let remote = api.url("/api/stream/" + JobbiAPI.encode(song.id) +
+                                   "?quality=original") else {
+            reportPlaybackIssue("The stream ended early and original audio is unavailable.")
+            return
+        }
+        recoveryAttempted = true
+        recoveringOriginal = true
+        let generation = playbackGeneration
+        let cookies = HTTPCookieStorage.shared.cookies(for: remote) ?? []
+        let asset = AVURLAsset(url: remote, options: [AVURLAssetHTTPCookiesKey: cookies])
+        let replacement = AVPlayerItem(asset: asset)
+        avPlayer.pause()
+        playing = false
+        avPlayer.replaceCurrentItem(with: replacement)
+        isUsingOriginalAudio = true
+        refreshNowPlaying()
+
+        Task { @MainActor [weak self] in
+            do {
+                let length = try await asset.load(.duration)
+                guard let self, self.playbackGeneration == generation,
+                      self.avPlayer.currentItem === replacement else { return }
+                let realDuration = length.seconds
+                guard realDuration.isFinite, realDuration > position + 1 else {
+                    self.recoveringOriginal = false
+                    self.reportPlaybackIssue("The original recording also ends too early, " +
+                                             "or its length cannot be read. Check the NAS file.")
+                    return
+                }
+                self.avPlayer.seek(
+                    to: CMTime(seconds: position, preferredTimescale: 600),
+                    toleranceBefore: .zero, toleranceAfter: .zero
+                ) { completed in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.playbackGeneration == generation,
+                              self.avPlayer.currentItem === replacement else { return }
+                        self.recoveringOriginal = false
+                        let actualPosition = self.avPlayer.currentTime().seconds
+                        if completed && actualPosition.isFinite &&
+                           abs(actualPosition - position) <= 2.5 {
+                            self.elapsed = actualPosition
+                            self.duration = realDuration
+                            self.error = nil
+                            self.playbackIssue = nil
+                            self.avPlayer.play()
+                            self.playing = true
+                        } else {
+                            self.reportPlaybackIssue(
+                                "The original recording could not seek to the missing part " +
+                                "of the song. Playback was stopped to avoid restarting it.")
+                        }
+                        self.refreshNowPlaying()
+                    }
+                }
+            } catch {
+                guard let self, self.playbackGeneration == generation,
+                      self.avPlayer.currentItem === replacement else { return }
+                self.recoveringOriginal = false
+                self.reportPlaybackIssue("Cannot load the original recording: " +
+                                         error.localizedDescription)
+            }
+        }
     }
 
     /// The Lock Screen, Control Center and system Now Playing UI (including
@@ -341,6 +489,9 @@ final class MusicPlayer: ObservableObject {
         artworkTask?.cancel()
         artworkTask = nil
         currentArtwork = nil
+        playbackGeneration += 1
+        recoveringOriginal = false
+        playbackIssue = nil
         queue = []
         currentIndex = 0
         avPlayer.replaceCurrentItem(with: nil)

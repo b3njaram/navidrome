@@ -156,6 +156,14 @@ struct NowPlayingView: View {
             }
             .navigationBarHidden(true)
             .preferredColorScheme(.dark)
+            .alert("Playback problem", isPresented: Binding(
+                get: { player.playbackIssue != nil },
+                set: { if !$0 { player.acknowledgePlaybackIssue() } }
+            )) {
+                Button("OK") { player.acknowledgePlaybackIssue() }
+            } message: {
+                Text(player.playbackIssue ?? "The recording could not finish.")
+            }
             .sheet(isPresented: $showingQueue) {
                 NavigationStack {
                     List {
@@ -266,6 +274,13 @@ struct NowPlayingView: View {
                         } label: {
                             Label("Play Next",
                                   systemImage: "text.line.first.and.arrowtriangle.forward")
+                        }
+                        if !player.isUsingOriginalAudio && !player.isUsingOfflineAudio {
+                            Button {
+                                player.restartUsingOriginalAudio()
+                            } label: {
+                                Label("Restart using Original Audio", systemImage: "waveform")
+                            }
                         }
                     }
                     Divider()
