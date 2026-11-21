@@ -6,7 +6,7 @@ import SocialSpace from './SocialSpace.jsx';
 import NowPlaying from './NowPlaying.jsx';
 import PlaylistTools from './PlaylistTools.jsx';
 import PlaylistTransfer from './PlaylistTransfer.jsx';
-import {preferredDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds} from './player-math.js';
+import {preferredDuration,expectedTrackDuration,cappedPosition,progressPercent,endedTooEarly,listenThresholdSeconds,canSeekToSeconds} from './player-math.js';
 import './nowplaying.css';
 import {prepareImageUpload} from './image-upload.js';
 import {enqueueNext,enqueueLast,reorderUpcoming,removeUpcoming,clearUpcoming,nextQueueIndex} from './play-queue.js';
@@ -633,22 +633,43 @@ function App() {
   };
   const handleAudioEnded=e=>{
     if(!currentTrack)return;
-    const player=e.currentTarget,expected=preferredDuration(currentTrack.duration,player.duration);
+    const player=e.currentTarget,expected=expectedTrackDuration(currentTrack.duration,player.duration);
     if(endedTooEarly(player.currentTime,expected)){
       if(earlyEndRecovery.current.id!==currentTrack.id)earlyEndRecovery.current={id:currentTrack.id,attempted:false};
-      if(!earlyEndRecovery.current.attempted){
+      const id=currentTrack.id;
+      // The original file is the only safe fallback for a broken transcode.
+      // Never retry a second time or re-open an already-original stream.
+      if(!earlyEndRecovery.current.attempted&&quality!=='original'&&!player.getAttribute('src')?.includes('quality=original')){
         earlyEndRecovery.current.attempted=true;
-        const resume=Math.max(0,player.currentTime-2),id=currentTrack.id;
-        player.addEventListener('loadedmetadata',()=>{
+        const resume=Math.max(0,player.currentTime-2);
+        const recoverySrc=`/api/stream/${encodeURIComponent(id)}?quality=original&recovery=1`;
+        const fail=()=>{
           if(activeAudioTrack.current!==id)return;
-          try{player.currentTime=resume;}catch{}
-          player.play().then(()=>setPlaying(true)).catch(()=>setPlaying(false));
+          setPlaying(false);
+          setError('This recording ended early and its original file could not resume at the correct position. Check the NAS file or try another copy.');
+        };
+        player.addEventListener('loadedmetadata',()=>{
+          if(activeAudioTrack.current!==id||player.getAttribute('src')!==recoverySrc)return;
+          // Some original files or HTTP responses are not seekable at all.
+          // Playing them anyway would restart the song with the old timer.
+          if(!canSeekToSeconds(player.seekable,resume)){fail();return;}
+          const onSeeked=()=>{
+            if(activeAudioTrack.current!==id)return;
+            if(Math.abs(player.currentTime-resume)>2.5){fail();return;}
+            player.play().then(()=>{setPlaying(true);setError('')}).catch(()=>fail());
+          };
+          player.addEventListener('seeked',onSeeked,{once:true});
+          try{player.currentTime=resume;}catch{
+            player.removeEventListener('seeked',onSeeked);
+            fail();
+          }
         },{once:true});
-        player.src=`/api/stream/${encodeURIComponent(id)}?quality=original&recovery=1`;
+        player.src=recoverySrc;
         player.load();
         return;
       }
-      setPlaying(false);setError('This song ended early even after retrying the original recording. Check the NAS source file.');
+      setPlaying(false);
+      setError('This recording ended before its expected length. Check its source file or try Original quality.');
       return;
     }
     // Qualified play was already reported once by real elapsed listening time.
