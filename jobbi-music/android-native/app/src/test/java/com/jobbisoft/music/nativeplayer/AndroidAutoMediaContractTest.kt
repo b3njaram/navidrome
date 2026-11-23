@@ -59,6 +59,29 @@ class AndroidAutoMediaContractTest {
         assertNull(artwork.get(Uri.parse("http://music.jobbisoft.com.mx/api/cover/s1")))
     }
 
+    @Test fun carArtworkOnlyAcceptsOriginalCoverEndpointOnConfiguredHTTPSServer() {
+        val server=Uri.parse("https://music.jobbisoft.com.mx")
+        assertTrue(CarArtworkProvider.isTrustedCoverUri(
+            Uri.parse("https://music.jobbisoft.com.mx/api/cover/song-id"),server))
+        assertFalse(CarArtworkProvider.isTrustedCoverUri(
+            Uri.parse("https://other.example.com/api/cover/song-id"),server))
+        assertFalse(CarArtworkProvider.isTrustedCoverUri(
+            Uri.parse("http://music.jobbisoft.com.mx/api/cover/song-id"),server))
+        assertFalse(CarArtworkProvider.isTrustedCoverUri(
+            Uri.parse("https://music.jobbisoft.com.mx/api/cover/"),server))
+        assertFalse(CarArtworkProvider.isTrustedCoverUri(
+            Uri.parse("https://music.jobbisoft.com.mx/api/cover/song-id?redirect=1"),server))
+        assertFalse(CarArtworkProvider.isTrustedCoverUri(
+            Uri.parse("https://music.jobbisoft.com.mx/api/stream/song-id"),server))
+    }
+
+    @Test fun carArtworkNeverExposesPrivateNasUrlWhenSignedOut() {
+        JobbiApi.clearSession()
+        JobbiApi.configure(context)
+        val remote=Uri.parse("https://music.jobbisoft.com.mx/api/cover/secret")
+        assertNull(CarArtworkProvider.localUri(context,remote))
+    }
+
     @Test fun mediaMetadataSupportsEmbeddedAlbumArtForSamsungSystemUi() {
         val art=byteArrayOf(1,2,3,4)
         val metadata=MediaMetadata.Builder()
