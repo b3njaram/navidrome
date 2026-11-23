@@ -142,9 +142,10 @@ class MusicPlaybackService : MediaLibraryService() {
         artworkJob?.cancel()
         val uri=item?.mediaMetadata?.artworkUri ?: return
         if(item.mediaMetadata.artworkData != null)return
+        val remote=CarArtworkProvider.originalUri(uri) ?: uri
         val songId=item.mediaId
         artworkJob=artworkScope.launch {
-            val art=systemArtwork.get(uri) ?: return@launch
+            val art=systemArtwork.get(remote) ?: return@launch
             val player=playback ?: return@launch
             val index=player.currentMediaItemIndex
             if(index<0 || player.currentMediaItem?.mediaId!=songId)return@launch
@@ -364,7 +365,8 @@ class NativePlayer(private val context: Context) {
             .setArtist(song.artist)
             .setAlbumTitle(song.album)
             .setDurationMs(SystemMediaControls.durationMillis(song.duration))
-            .setArtworkUri(JobbiApi.coverUrl(song.cover)?.let(Uri::parse))
+            .setArtworkUri(CarArtworkProvider.localUri(
+                context, JobbiApi.coverUrl(song.cover)?.let(Uri::parse)))
             .build()
         return MediaItem.Builder()
             .setMediaId(song.id)
