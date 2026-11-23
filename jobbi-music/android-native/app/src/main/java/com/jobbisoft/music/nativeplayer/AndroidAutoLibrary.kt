@@ -96,7 +96,8 @@ internal class AndroidAutoLibrary(private val context: Context) {
             .setMediaMetadata(MediaMetadata.Builder()
                 .setTitle(album.name)
                 .setArtist(album.artist)
-                .setArtworkUri(JobbiApi.coverUrl(album.cover)?.let(Uri::parse))
+                .setArtworkUri(CarArtworkProvider.localUri(
+                    context, JobbiApi.coverUrl(album.cover)?.let(Uri::parse)))
                 .setIsBrowsable(true)
                 .setIsPlayable(false)
                 .build())
@@ -122,7 +123,8 @@ internal class AndroidAutoLibrary(private val context: Context) {
                 .setArtist(song.artist)
                 .setAlbumTitle(song.album)
                 .setDurationMs(SystemMediaControls.durationMillis(song.duration))
-                .setArtworkUri(JobbiApi.coverUrl(song.cover)?.let(Uri::parse))
+                .setArtworkUri(CarArtworkProvider.localUri(
+                    context, JobbiApi.coverUrl(song.cover)?.let(Uri::parse)))
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .build())
