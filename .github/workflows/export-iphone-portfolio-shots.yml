@@ -1,0 +1,67 @@
+name: Export authentic native iPhone screenshots for portfolio
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/export-iphone-portfolio-shots.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actual iOS simulator screenshot test attachments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/jobbi-parity
+          gh run download 44873426245 \
+            --repo b3njaram/navidrome \
+            --name Jobbi-iPhone-Parity-Screenshots \
+            --dir /tmp/jobbi-parity
+          test -s /tmp/jobbi-parity/manifest.json
+      - name: Export real SwiftUI screens to optimized WebP
+        run: |
+          python3 -m pip install --break-system-packages pillow
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          d=Path('/tmp/jobbi-parity')
+          out=Path('docs/portfolio-screenshots')
+          out.mkdir(parents=True,exist_ok=True)
+          manifest=json.loads((d/'manifest.json').read_text())
+          attachments=[a for part in manifest for a in part.get('attachments',[])]
+          for name in ('home','nowplaying'):
+              matches=[a for a in attachments if a.get('suggestedHumanReadableName','').startswith('parity-ios-'+name+'_')]
+              if len(matches)!=1:
+                  raise SystemExit(f'Expected exactly 1 authentic iOS {name} attachment: {len(matches)}')
+              src=d/matches[0]['exportedFileName']
+              img=Image.open(src).convert('RGB')
+              img.thumbnail((590,1275))
+              dst=out/('jobbi-iphone-'+name+'.webp')
+              img.save(dst,'WEBP',quality=86,method=6)
+              print(name, img.size, dst.stat().st_size)
+          PY
+      - name: Commit original simulator fixture screenshots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/portfolio-screenshots/jobbi-iphone-*.webp
+          if ! git diff --cached --quiet; then
+            git commit -m "Add genuine Jobbi Music SwiftUI iPhone simulator screenshots"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Real-Jobbi-iPhone-UI-for-Portfolio
+          path: docs/portfolio-screenshots/jobbi-iphone-*.webp
+          if-no-files-found: error
+          retention-days: 30
