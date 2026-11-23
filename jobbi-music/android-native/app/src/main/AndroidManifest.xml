@@ -16,6 +16,13 @@
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc"/>
+        <!-- Android Auto and the phone run in different processes. Give the
+             car a read-only local image URI, never a private NAS HTTPS URL. -->
+        <provider
+            android:name=".CarArtworkProvider"
+            android:authorities="${applicationId}.carart"
+            android:exported="true"
+            android:grantUriPermissions="true"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
