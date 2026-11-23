@@ -98,3 +98,29 @@ gradle :app:testDebugUnitTest :app:assembleDebug
 ```
 
 The APK appears in `app/build/outputs/apk/debug/app-debug.apk`.
+
+### Android Auto missing album art / missing app launcher entry (Nov 2026)
+
+Android Auto's artwork browser cannot use Jobbi Music's authenticated NAS
+`https://.../api/cover/...` URL: the car host does not share the phone app's
+HTTP-only cookies. The native service now supplies `content://<package>.carart/cover/<opaque-token>`
+in each track and album's Media3 metadata. A read-only provider verifies the
+current signed-in account, retrieves the image with Jobbi's authenticated
+client, compresses it to a bounded JPEG and serves the local image. Phone
+lock-screen artwork still uses small embedded `artworkData` as well.
+No media files are exposed or publicly listed.
+
+Android Auto app *discovery* is separate. This APK is installed outside
+Google Play; Android Auto may hide it until **Android Auto phone settings →
+Developer settings → Unknown sources**, then **Customize launcher → Jobbi
+Music**. Reconnect Android Auto after enabling it. The DEBUG application ID
+is `com.jobbisoft.music.nativeplayer.debug`; do not assume the older WebView
+APK is the native MediaLibraryService app. Android Auto, not Jobbi, chooses
+which installed music player to show by default. You must switch sources in
+Android Auto to open Jobbi Music's Home/Playlists/Downloads, and the host may
+still enforce installation-source restrictions.
+
+Verify on a physical phone/car using a song with valid album cover metadata,
+a playlist browse with artwork, and offline playback. CI tests the provider
+source validation and Android app build, but cannot reproduce Google Play
+Services launcher eligibility or a vehicle's display.
